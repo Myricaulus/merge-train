@@ -363,18 +363,37 @@ if(knopf){
  if(ich&&ich.status==='fertig'){knopf.textContent='✓ fertig';knopf.classList.add('erledigt');knopf.disabled=true;weiter()}
  else if(!MR.dateien){knopf.style.display='none'}
  knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
+  if(location.protocol.startsWith('http')){
+   fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projekt:MR.projekt,sha:MR.sha,k:MR.k})})
+    .then(r=>r.json()).then(d=>{if(!d.ok){knopf.disabled=false;meld.textContent=d.text;return}
+     ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()})
+    .catch(e=>{knopf.disabled=false;meld.textContent='mr-Server nicht erreichbar – mr erneut aufrufen'});
+   return}
   location.href=`mr://fertig/${encodeURIComponent(MR.projekt)}?sha=${MR.sha}&k=${MR.k}`;
   let n=0;const t=setInterval(()=>{n++;const sc=document.createElement('script');sc.src='zug.js?t='+Date.now();
    sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);ZUG=window.MR_ZUG.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()}};
    document.head.appendChild(sc);
    if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (mr --einrichten)'}},500)})}
-document.addEventListener('keydown',e=>{if(e.key==='n'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){const n=naechster();if(n)location.href=n.datei}});
+document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
+ if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
+ else if(e.key==='Enter'&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
 """
 
 ORDNER = os.path.expanduser("~/.cache/mr")
 PROJEKTE = os.path.expanduser("~/Projects")
 RUNDE = os.path.join(ORDNER, "runde.json")
 SCHLUESSEL = os.path.join(ORDNER, "schluessel")
+import threading
+SPERRE = threading.Lock()
+
+def ersetzen(ziel, inhalt):
+    """Atomar schreiben (eigene Temp-Datei je Aufruf, damit parallele Abrufe sich nicht stören)."""
+    import tempfile
+    fd, tmp = tempfile.mkstemp(dir=ORDNER, prefix=".tmp-")
+    with os.fdopen(fd, "w") as f:
+        f.write(inhalt)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, ziel)
 
 def schluessel():
     os.makedirs(ORDNER, exist_ok=True)
@@ -439,10 +458,7 @@ def zug_schreiben(stats):
     wagen = [w for w in stats if w["dateien"] and w["p"] not in fertig]
     wagen += [dict(w, status="fertig") for w in fertig.values()]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
-    tmp = os.path.join(ORDNER, "zug.js.tmp")
-    with open(tmp, "w") as f:
-        f.write("window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
-    os.replace(tmp, os.path.join(ORDNER, "zug.js"))
+    ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
     return wagen
 
 def seite_schreiben(wurzel, von, bis, inline=False):
@@ -475,8 +491,8 @@ def seite_schreiben(wurzel, von, bis, inline=False):
                   f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
     leer = '<div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div>' if not dateien else ""
     mr = json.dumps({"projekt": projekt, "sha": sha, "k": schluessel(), "dateien": len(dateien)})
-    hilfe = ('<div class="hilfe"><kbd>j</kbd>/<kbd>k</kbd> Datei · <kbd>n</kbd> nächstes Projekt<br>'
-             '<kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    hilfe = ('<div class="hilfe"><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
+             '<kbd>j</kbd>/<kbd>k</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
 <style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
@@ -488,9 +504,7 @@ def seite_schreiben(wurzel, von, bis, inline=False):
 <main>{leer}{"".join(datei_html(n, d, wurzel, basis, bis) for n, d in enumerate(dateien))}</main></div>
 <script>const MR={mr};{JS}{JS_ZUG}</script></body></html>"""
     ziel = os.path.join(ORDNER, dateiname(projekt))
-    with open(ziel + ".tmp", "w") as f:
-        f.write(seite)
-    os.replace(ziel + ".tmp", ziel)
+    ersetzen(ziel, seite)
     return ziel
 
 def alles_erzeugen(von, bis, inline):
@@ -513,32 +527,28 @@ def oeffnen(pfad):
 def melden(text):
     subprocess.run(["notify-send", "-a", "mr", "-i", "vcs-merge-request", "mr", text], check=False)
 
-def fertig_url(url):
-    """mr://fertig/<projekt>?sha=…&k=… – vom Knopf in der Seite."""
+def fertig(projekt, sha, k):
+    """reviewed auf den gesehenen Stand setzen. Rückgabe (ok, text)."""
     import json
-    from urllib.parse import urlparse, parse_qs, unquote
-    u = urlparse(url); q = parse_qs(u.query)
-    projekt = unquote((u.netloc + u.path).removeprefix("fertig/").removeprefix("fertig").strip("/"))
-    if u.scheme != "mr" or not (u.netloc + u.path).startswith("fertig"):
-        sys.exit("mr: unbekannte URL")
-    if q.get("k", [""])[0] != schluessel():
-        melden("Abgelehnt: falscher Schlüssel im Link."); sys.exit("mr: falscher Schlüssel")
+    if k != schluessel():
+        return False, "Abgelehnt: falscher Schlüssel."
     repos = {projektname(r): r for r in finde_repos()}
     if projekt not in repos:
-        melden(f"Unbekanntes Projekt: {projekt}"); sys.exit("mr: unbekanntes Projekt")
-    wurzel, sha = repos[projekt], q.get("sha", [""])[0]
-    if not re.fullmatch(r"[0-9a-f]{40}", sha) or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
-        melden("Abgelehnt: unbekannter Stand."); sys.exit("mr: sha fehlt")
+        return False, f"Unbekanntes Projekt: {projekt}"
+    wurzel = repos[projekt]
+    if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
+        return False, "Abgelehnt: unbekannter Stand."
     if git(wurzel, "merge-base", "--is-ancestor", "reviewed", sha, check=False) is None:
-        melden(f"{projekt}: reviewed ist nicht Vorgänger des gesehenen Stands – nichts geändert."); sys.exit(1)
+        return False, f"{projekt}: reviewed ist nicht Vorgänger des gesehenen Stands – nichts geändert."
     st = statistik(wurzel, "reviewed", sha)
     log = git(wurzel, "log", "--format=%B", f"reviewed..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", "reviewed", sha)
-    r = runde_laden()
-    r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
-    with open(RUNDE, "w") as f:
-        json.dump(r, f, ensure_ascii=False, indent=1)
+    with SPERRE:
+        r = runde_laden()
+        r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
+        with open(RUNDE, "w") as f:
+            json.dump(r, f, ensure_ascii=False, indent=1)
     zug_schreiben([statistik(w) for w in repos.values()])
     erledigt = []
     for t in schliesst:
@@ -546,8 +556,107 @@ def fertig_url(url):
                             cwd=wurzel, capture_output=True).returncode == 0
         erledigt.append(t + ("" if ok else " (Fehler)"))
     rest = git(wurzel, "rev-list", "--count", f"{sha}..claude").strip()
-    melden(f"{projekt}: reviewed → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
-           + (f"\nAchtung: claude hat {rest} neuere Commit(s)" if rest != "0" else ""))
+    text = (f"{projekt}: reviewed → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
+            + (f"\nAchtung: claude hat {rest} neuere Commit(s)" if rest != "0" else ""))
+    melden(text)
+    return True, text
+
+def fertig_url(url):
+    """mr://fertig/<projekt>?sha=…&k=… – Rückfallweg für Seiten, die als file:// offen sind."""
+    from urllib.parse import urlparse, parse_qs, unquote
+    u = urlparse(url); q = parse_qs(u.query)
+    if u.scheme != "mr" or not (u.netloc + u.path).startswith("fertig"):
+        sys.exit("mr: unbekannte URL")
+    projekt = unquote((u.netloc + u.path).removeprefix("fertig/").removeprefix("fertig").strip("/"))
+    ok, text = fertig(projekt, q.get("sha", [""])[0], q.get("k", [""])[0])
+    if not ok:
+        melden(text); sys.exit("mr: " + text)
+
+# ---------------------------------------------------------------- Server (nur bei Bedarf)
+
+PORT = 8771
+LEERLAUF_S = 3600
+
+def server_laeuft():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/ping", timeout=0.5) as r:
+            return r.read() == b"mr"
+    except OSError:
+        return False
+
+def server_sicherstellen():
+    import time
+    if server_laeuft():
+        return True
+    log = open(os.path.join(ORDNER, "server.log"), "a")
+    subprocess.Popen([sys.executable, os.path.realpath(__file__), "--server"], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+    for _ in range(40):
+        time.sleep(0.1)
+        if server_laeuft():
+            return True
+    return False
+
+def server():
+    """Liefert ~/.cache/mr auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“ an.
+    Beendet sich nach LEERLAUF_S ohne Anfrage."""
+    import json, time
+    from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+    schluessel()
+    zuletzt = [time.time()]
+    herkunft = f"http://127.0.0.1:{PORT}"
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def senden(self, code, body, typ="text/html; charset=utf-8"):
+            if isinstance(body, str): body = body.encode()
+            self.send_response(code); self.send_header("Content-Type", typ)
+            self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+        def do_GET(self):
+            zuletzt[0] = time.time()
+            pfad = self.path.split("?", 1)[0].lstrip("/")
+            try:
+                if pfad == "ping":
+                    return self.senden(200, "mr", "text/plain")
+                repos = {dateiname(projektname(r)): r for r in finde_repos()}
+                if pfad == "zug.js":
+                    zug_schreiben([statistik(r) for r in repos.values()])
+                    return self.senden(200, open(os.path.join(ORDNER, "zug.js"), "rb").read(),
+                                       "text/javascript; charset=utf-8")
+                if pfad == "":
+                    wagen = zug_schreiben([statistik(r) for r in repos.values()])
+                    offen = [w for w in wagen if w["status"] == "offen"]
+                    if not offen:
+                        return self.senden(200, "<!doctype html><meta charset=utf-8><p style='font:16px system-ui'>Alles durch – überall reviewed = claude 🎉</p>")
+                    self.send_response(302); self.send_header("Location", "/" + offen[0]["datei"]); self.end_headers(); return
+                if pfad in repos:
+                    datei = seite_schreiben(repos[pfad], "reviewed", "claude")
+                    return self.senden(200, open(datei, "rb").read())
+                self.senden(404, "nicht gefunden", "text/plain")
+            except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
+                self.senden(500, f"mr: {e}", "text/plain; charset=utf-8")
+        def do_POST(self):
+            zuletzt[0] = time.time()
+            if self.path != "/fertig" or self.headers.get("Origin", herkunft) != herkunft:
+                return self.senden(403, "verboten", "text/plain")
+            try:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                ok, text = fertig(str(d.get("projekt", "")), str(d.get("sha", "")), str(d.get("k", "")))
+                wagen = json.loads(open(os.path.join(ORDNER, "zug.js")).read()[len("window.MR_ZUG="):-1])["wagen"]
+                self.senden(200 if ok else 400, json.dumps({"ok": ok, "text": text, "wagen": wagen}, ensure_ascii=False),
+                            "application/json")
+            except Exception as e:
+                self.senden(500, json.dumps({"ok": False, "text": f"mr: {e}"}), "application/json")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    def waechter():
+        while time.time() - zuletzt[0] < LEERLAUF_S:
+            time.sleep(30)
+        srv.shutdown()
+    threading.Thread(target=waechter, daemon=True).start()
+    srv.serve_forever()
 
 def einrichten():
     app = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
@@ -569,10 +678,13 @@ def main():
     ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
     ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
     ap.add_argument("--url", help=argparse.SUPPRESS)
+    ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--einrichten", action="store_true", help="Link-Handler mr:// für den Knopf „fertig“ einrichten")
     o = ap.parse_args()
     if o.url:
         return fertig_url(o.url)
+    if o.server:
+        return server()
     if o.einrichten:
         return einrichten()
     wurzel = None
@@ -599,9 +711,14 @@ def main():
         if not offen:
             print("mr: nichts zu prüfen – überall reviewed = claude"); return
         ziel = os.path.join(ORDNER, offen[0]["datei"])
-    print(ziel)
-    if not o.nur_datei:
-        oeffnen(ziel)
+    if o.nur_datei or o.von != "reviewed" or o.bis != "claude" or o.inline:
+        print(ziel)
+        if not o.nur_datei:
+            oeffnen(ziel)
+        return
+    url = f"http://127.0.0.1:{PORT}/{os.path.basename(ziel)}" if server_sicherstellen() else ziel
+    print(url)
+    oeffnen(url)
 
 if __name__ == "__main__":
     main()
