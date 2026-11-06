@@ -288,7 +288,7 @@ try{if(localStorage.mrInline)document.body.classList.add('inline')}catch(_){}
 """
 
 JS_ZUG = """
-const ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
+let ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
 function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
  const offen=ZUG.filter(w=>w.status==='offen'&&w.p!==MR.projekt);
  return offen.find(w=>ZUG.indexOf(w)>i)||offen[0]||null}
@@ -315,7 +315,7 @@ function lok(){ // bayerische S 3/6 (Vorbild 3673), Fahrtrichtung rechts; lokale
  ${rad(12,64,6)}${rad(38,64,6)}${rad(88,63,7)}${rad(106,59,11)}${rad(130,59,11)}${rad(154,59,11)}${rad(174,64,6)}${rad(188,64,6)}
  <line x1="106" y1="62" x2="154" y2="62" stroke="#c9c9c9" stroke-width="2.2" stroke-linecap="round"/>
  <line x1="154" y1="62" x2="170" y2="52" stroke="#c9c9c9" stroke-width="1.8"/>`}
-function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)return;
+function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)return;const sl=box.scrollLeft;box.innerHTML='';
  const W=170,H=56,G=14,y=22,LW=200,yr=y+H+10,ns='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(ns,'svg'),breite=4+ZUG.length*(W+G)+LW+6;
  svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
@@ -346,7 +346,7 @@ if(knopf){
  knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
   location.href=`mr://fertig/${encodeURIComponent(MR.projekt)}?sha=${MR.sha}&k=${MR.k}`;
   let n=0;const t=setInterval(()=>{n++;const sc=document.createElement('script');sc.src='zug.js?t='+Date.now();
-   sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);location.reload()}};
+   sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);ZUG=window.MR_ZUG.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()}};
    document.head.appendChild(sc);
    if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (mr --einrichten)'}},500)})}
 document.addEventListener('keydown',e=>{if(e.key==='n'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){const n=naechster();if(n)location.href=n.datei}});
