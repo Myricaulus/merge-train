@@ -2,22 +2,35 @@
 """mr – Merge-Request-Ansicht reviewed ← claude, sofort im Browser.
 
 Aufruf:
-  mr [ordner] [--von reviewed] [--bis claude] [--meld] [--inline]
+  mr [ordner] [--von reviewed] [--bis claude] [--meld] [--inline] [--nur-datei]
 
-Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab:
-Commits, Dateiliste mit +/-, alle Diffs nebeneinander (Taste i: inline),
-und öffnet sie im Browser. Verglichen wird wie in GitLab ab dem
-gemeinsamen Vorgänger (reviewed...claude).
+Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab und öffnet sie:
+oben (schwebend) Commits mit vollen Nachrichten, links (schwebend) die
+Dateiliste, rechts alle Diffs nebeneinander mit Syntaxhervorhebung.
+Verglichen wird wie in GitLab ab dem gemeinsamen Vorgänger (reviewed...claude).
 
-Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf.
---meld öffnet stattdessen Meld mit dem Ordnervergleich.
+Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf,
+c Commits ein-/ausklappen.  --meld öffnet stattdessen Meld (Ordnervergleich).
 """
-import argparse, difflib, html, os, re, subprocess, sys, webbrowser
+import argparse, difflib, html, os, re, subprocess, sys
 from datetime import datetime
 
-def git(ordner, *a):
-    return subprocess.run(["git", "-C", ordner, *a], capture_output=True,
-                          text=True, errors="replace", check=True).stdout
+try:
+    from pygments.lexers import get_lexer_for_filename, get_lexer_by_name
+    from pygments.util import ClassNotFound
+    from pygments import token as T
+    PYGMENTS = True
+except ImportError:
+    PYGMENTS = False
+
+# ---------------------------------------------------------------- git
+
+def git(ordner, *a, check=True):
+    r = subprocess.run(["git", "-C", ordner, *a], capture_output=True,
+                       text=True, errors="replace")
+    if check and r.returncode:
+        raise subprocess.CalledProcessError(r.returncode, a, r.stdout, r.stderr)
+    return r.stdout if r.returncode == 0 else None
 
 def zerlegen(diff):
     """Unified-Diff in Dateien → Hunks → Zeilen zerlegen."""
@@ -30,10 +43,10 @@ def zerlegen(diff):
             dateien.append(d); h = None
         elif d is None:
             continue
-        elif z.startswith("new file"): d["status"] = "neu"
-        elif z.startswith("deleted file"): d["status"] = "gelöscht"
-        elif z.startswith("rename from"): d["status"] = "umbenannt"
-        elif z.startswith("Binary files"): d["binaer"] = True
+        elif h is None and z.startswith("new file"): d["status"] = "neu"
+        elif h is None and z.startswith("deleted file"): d["status"] = "gelöscht"
+        elif h is None and z.startswith("rename from"): d["status"] = "umbenannt"
+        elif h is None and z.startswith("Binary files"): d["binaer"] = True
         elif z.startswith("@@"):
             m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)", z)
             h = {"a": int(m.group(1)), "b": int(m.group(2)), "kopf": m.group(3).strip(), "z": []}
@@ -44,27 +57,102 @@ def zerlegen(diff):
             if z[0] == "-": d["minus"] += 1
     return dateien
 
-def markieren(a, b):
-    """Geänderte Teile innerhalb einer Zeile hervorheben."""
+# ---------------------------------------------------------------- Syntax
+
+SONDER = {".razor": "html", ".cshtml": "html", ".vue": "html", ".svelte": "html",
+          ".conf": "ini", ".service": "ini", ".desktop": "ini", ".webmanifest": "json"}
+
+def lexer_fuer(pfad):
+    if not PYGMENTS:
+        return None
+    ext = os.path.splitext(pfad)[1].lower()
+    try:
+        if ext in SONDER:
+            return get_lexer_by_name(SONDER[ext], stripnl=False, ensurenl=False)
+        return get_lexer_for_filename(pfad, stripnl=False, ensurenl=False)
+    except ClassNotFound:
+        return None
+
+def klasse(tt):
+    if not PYGMENTS: return ""
+    if tt in T.Comment: return "tc"
+    if tt in T.String or tt in T.Literal.String: return "ts"
+    if tt in T.Number: return "tn"
+    if tt in T.Keyword: return "tk"
+    if tt in T.Name.Tag: return "tt"
+    if tt in T.Name.Attribute: return "ta"
+    if tt in T.Name.Function or tt in T.Name.Class: return "tf"
+    if tt in T.Name.Builtin or tt in T.Name.Decorator: return "tb"
+    if tt in T.Name.Variable: return "tv"
+    if tt in T.Operator: return "to"
+    if tt in T.Generic.Heading or tt in T.Generic.Subheading: return "tk"
+    return ""
+
+def zeilen_tokens(text, pfad):
+    """Ganze Datei lexen (damit mehrzeilige Kommentare/Strings stimmen),
+    Ergebnis: Liste je Zeile von (klasse, text)."""
+    lx = lexer_fuer(pfad)
+    if lx is None or text is None or len(text) > 2_000_000:
+        return None
+    zeilen, akt = [], []
+    for tt, wert in lx.get_tokens(text):
+        k = klasse(tt)
+        teile = wert.split("\n")
+        for i, t in enumerate(teile):
+            if i:
+                zeilen.append(akt); akt = []
+            if t:
+                akt.append((k, t))
+    zeilen.append(akt)
+    return zeilen
+
+def darstellen(toks, roh, bereiche, tag):
+    """Zeile als HTML: Syntaxklassen + markierte Änderungsbereiche (tag = del/ins)."""
+    if toks is None or "".join(t for _, t in toks) != roh:
+        toks = [("", roh)]
+    grenzen = sorted({0, len(roh), *[x for b in bereiche for x in b]})
+    def geaendert(p):
+        return any(a <= p < b for a, b in bereiche)
+    out, pos = [], 0
+    for k, t in toks:
+        ende = pos + len(t)
+        schnitte = [g for g in grenzen if pos < g < ende]
+        start = pos
+        for g in schnitte + [ende]:
+            stueck = html.escape(roh[start:g])
+            if k: stueck = f'<span class="{k}">{stueck}</span>'
+            if bereiche and geaendert(start): stueck = f"<{tag}>{stueck}</{tag}>"
+            out.append(stueck); start = g
+        pos = ende
+    return "".join(out)
+
+def intraline(a, b):
+    """Geänderte Bereiche in a und b, nur wenn sich die Zeilen ähneln."""
     if len(a) + len(b) > 4000:
-        return html.escape(a), html.escape(b)
+        return [], []
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    if sm.ratio() < 0.5:
+        return [], []
     ra, rb = [], []
     for op, i1, i2, j1, j2 in sm.get_opcodes():
-        ta, tb = html.escape(a[i1:i2]), html.escape(b[j1:j2])
-        if op == "equal":
-            ra.append(ta); rb.append(tb)
-        else:
-            if ta: ra.append(f"<del>{ta}</del>")
-            if tb: rb.append(f"<ins>{tb}</ins>")
-    return "".join(ra), "".join(rb)
+        if op != "equal":
+            if i2 > i1: ra.append((i1, i2))
+            if j2 > j1: rb.append((j1, j2))
+    return ra, rb
 
-def hunk_zeilen(h):
-    """Zeilen paaren: (typ, nr_a, text_a, nr_b, text_b)."""
+# ---------------------------------------------------------------- HTML
+
+def hunk_zeilen(h, ta_tok, tb_tok):
+    """Zeilen paaren: (typ, nr_a, html_a, nr_b, html_b)."""
+    def tok(tabelle, nr):
+        return tabelle[nr - 1] if tabelle and 0 < nr <= len(tabelle) else None
     rows, a, b, i, z = [], h["a"], h["b"], 0, h["z"]
     while i < len(z):
         if z[i][0] == " ":
-            t = html.escape(z[i][1]); rows.append(("ctx", a, t, b, t)); a += 1; b += 1; i += 1
+            t = z[i][1]
+            rows.append(("ctx", a, darstellen(tok(ta_tok, a), t, [], ""),
+                         b, darstellen(tok(tb_tok, b), t, [], "")))
+            a += 1; b += 1; i += 1
             continue
         weg, dazu = [], []
         while i < len(z) and z[i][0] == "-": weg.append(z[i][1]); i += 1
@@ -72,95 +160,115 @@ def hunk_zeilen(h):
         for k in range(max(len(weg), len(dazu))):
             ta = weg[k] if k < len(weg) else None
             tb = dazu[k] if k < len(dazu) else None
-            if ta is not None and tb is not None:
-                ha, hb = markieren(ta, tb)
-            else:
-                ha = html.escape(ta) if ta is not None else None
-                hb = html.escape(tb) if tb is not None else None
+            ba, bb = intraline(ta, tb) if ta is not None and tb is not None else ([], [])
+            ha = darstellen(tok(ta_tok, a), ta, ba, "del") if ta is not None else None
+            hb = darstellen(tok(tb_tok, b), tb, bb, "ins") if tb is not None else None
             rows.append(("chg", a if ta is not None else None, ha, b if tb is not None else None, hb))
             if ta is not None: a += 1
             if tb is not None: b += 1
     return rows
 
-def datei_html(n, d):
+def datei_html(n, d, wurzel, basis, bis):
     name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
     kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
             f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
             f'<span class="m">−{d["minus"]}</span></summary>')
+    auf = f'<details open class="datei" id="d{n}">{kopf}'
     if d["binaer"]:
-        return f'<details open class="datei" id="d{n}">{kopf}<div class="leer">Binärdatei</div></details>'
+        return f'{auf}<div class="leer">Binärdatei</div></details>'
     if not d["hunks"]:
-        return f'<details open class="datei" id="d{n}">{kopf}<div class="leer">keine Inhaltsänderung</div></details>'
+        return f'{auf}<div class="leer">keine Inhaltsänderung</div></details>'
+    alt_text = git(wurzel, "show", f"{basis}:{d['alt']}", check=False) if d["status"] != "neu" else ""
+    neu_text = git(wurzel, "show", f"{bis}:{d['neu']}", check=False) if d["status"] != "gelöscht" else ""
+    ta_tok = zeilen_tokens(alt_text, d["alt"])
+    tb_tok = zeilen_tokens(neu_text, d["neu"])
     sbs, inl = [], []
     for h in d["hunks"]:
         hk = html.escape(f'@@ -{h["a"]} +{h["b"]} @@ {h["kopf"]}')
-        sbs.append(f'<tr class="hk"><td colspan="4">{hk}</td></tr>')
-        inl.append(f'<tr class="hk"><td colspan="3">{hk}</td></tr>')
-        for typ, na, ta, nb, tb in hunk_zeilen(h):
+        sbs.append(f'<tr class="hk"><td></td><td colspan="3">{hk}</td></tr>')
+        inl.append(f'<tr class="hk"><td></td><td></td><td>{hk}</td></tr>')
+        rows = hunk_zeilen(h, ta_tok, tb_tok)
+        weg, dazu = [], []
+        def leeren():
+            for na, x in weg: inl.append(f'<tr><td class="n">{na}</td><td class="n"></td><td class="c weg">{x}</td></tr>')
+            for nb, x in dazu: inl.append(f'<tr><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{x}</td></tr>')
+            weg.clear(); dazu.clear()
+        for typ, na, ha, nb, hb in rows:
             if typ == "ctx":
-                sbs.append(f'<tr><td class="n">{na}</td><td class="c">{ta}</td><td class="n">{nb}</td><td class="c">{tb}</td></tr>')
+                sbs.append(f'<tr><td class="n">{na}</td><td class="c">{ha}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
+                leeren()
+                inl.append(f'<tr><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
                 continue
-            la = f'<td class="n">{na}</td><td class="c weg">{ta}</td>' if ta is not None else '<td class="n"></td><td class="c nix"></td>'
-            lb = f'<td class="n">{nb}</td><td class="c dazu">{tb}</td>' if tb is not None else '<td class="n"></td><td class="c nix"></td>'
+            la = f'<td class="n">{na}</td><td class="c weg">{ha}</td>' if ha is not None else '<td class="n"></td><td class="c nix"></td>'
+            lb = f'<td class="n">{nb}</td><td class="c dazu">{hb}</td>' if hb is not None else '<td class="n"></td><td class="c nix"></td>'
             sbs.append(f"<tr>{la}{lb}</tr>")
-        inl.extend(inline_bloecke(h))  # inline: je Block erst alle weg, dann alle dazu
-    return (f'<details open class="datei" id="d{n}">{kopf}'
-            f'<table class="sbs">{"".join(sbs)}</table>'
-            f'<table class="inl">{"".join(inl)}</table></details>')
-
-def inline_bloecke(h):
-    rows = hunk_zeilen(h)
-    out, weg, dazu = [], [], []
-    def leeren():
-        for na, ta in weg: out.append(f'<tr><td class="n">{na}</td><td class="n"></td><td class="c weg">{ta}</td></tr>')
-        for nb, tb in dazu: out.append(f'<tr><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{tb}</td></tr>')
-        weg.clear(); dazu.clear()
-    for typ, na, ta, nb, tb in rows:
-        if typ == "ctx":
-            leeren(); out.append(f'<tr><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{ta}</td></tr>')
-        else:
-            if ta is not None: weg.append((na, ta))
-            if tb is not None: dazu.append((nb, tb))
-    leeren()
-    return out
+            if ha is not None: weg.append((na, ha))
+            if hb is not None: dazu.append((nb, hb))
+        leeren()
+    cs = '<colgroup><col class="cn"><col><col class="cn"><col></colgroup>'
+    ci = '<colgroup><col class="cn"><col class="cn"><col></colgroup>'
+    return (f'{auf}<table class="sbs">{cs}{"".join(sbs)}</table>'
+            f'<table class="inl">{ci}{"".join(inl)}</table></details>')
 
 CSS = """
-:root{--bg:#fff;--fg:#1f2328;--muted:#656d76;--rand:#d0d7de;--kopf:#f6f8fa;--weg:#ffebe9;--wegs:#ffc1bc;
---dazu:#e6ffec;--dazus:#abf2bc;--hk:#ddf4ff;--nix:#f6f8fa;--p:#1a7f37;--m:#cf222e}
+:root{--bg:#fff;--fg:#1f2328;--muted:#656d76;--rand:#d0d7de;--kopf:#f6f8fa;--weg:#ffebe9;--wegs:#ffb8b0;
+--dazu:#e6ffec;--dazus:#a6f0b6;--hk:#ddf4ff;--nix:#f6f8fa;--p:#1a7f37;--m:#cf222e;--akt:#ddf4ff;
+--tk:#cf222e;--ts:#0a3069;--tc:#6e7781;--tn:#0550ae;--tt:#116329;--ta:#0550ae;--tf:#8250df;--tb:#953800;--tv:#953800;--to:#1f2328}
 @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8d96a0;--rand:#30363d;--kopf:#161b22;
---weg:#3b1d22;--wegs:#7d2a33;--dazu:#13291b;--dazus:#1f6b35;--hk:#12263a;--nix:#161b22;--p:#3fb950;--m:#f85149}}
-body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0 auto;max-width:1800px;padding:16px}
-h1{font-size:20px;margin:0 0 4px} .sub{color:var(--muted);margin-bottom:16px}
-code,.c,.hk td{font:12.5px ui-monospace,"JetBrains Mono",monospace}
-.box{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px}
-.box h2{font-size:14px;margin:0;padding:8px 12px;background:var(--kopf);border-bottom:1px solid var(--rand)}
-.box ul{margin:0;padding:8px 12px 8px 30px} .box li{margin:2px 0}
-a{color:inherit} .p{color:var(--p)} .m{color:var(--m)}
-.datei{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;overflow:hidden}
-.datei summary{position:sticky;top:0;z-index:1;background:var(--kopf);padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--rand)}
+--weg:#3b1d22;--wegs:#80303a;--dazu:#13291b;--dazus:#21703a;--hk:#12263a;--nix:#161b22;--p:#3fb950;--m:#f85149;--akt:#1f3a5f;
+--tk:#ff7b72;--ts:#a5d6ff;--tc:#8b949e;--tn:#79c0ff;--tt:#7ee787;--ta:#79c0ff;--tf:#d2a8ff;--tb:#ffa657;--tv:#ffa657;--to:#e6edf3}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0}
+code,.c,.hk td,.nachricht{font:12.5px ui-monospace,"JetBrains Mono",monospace}
+a{color:inherit;text-decoration:none} .p{color:var(--p)} .m{color:var(--m)} .sub{color:var(--muted)}
+#kopf{position:sticky;top:0;z-index:5;background:var(--kopf);border-bottom:1px solid var(--rand);padding:8px 16px}
+#kopf h1{font-size:17px;margin:0;display:inline} #kopf .sub{margin-left:12px}
+#commits{margin-top:6px} #commits summary{cursor:pointer;color:var(--muted);font-size:13px}
+#commits .liste{max-height:32vh;overflow:auto;margin-top:6px}
+.commit{border-left:3px solid var(--rand);padding:2px 0 4px 10px;margin:4px 0}
+.commit b{font-weight:600} .nachricht{white-space:pre-wrap;color:var(--muted);margin-top:2px}
+.todos{margin-top:4px} .todos code{background:var(--akt);padding:1px 5px;border-radius:4px;margin-right:4px}
+.rahmen{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;padding:16px}
+#liste{position:sticky;top:calc(var(--kopfh,60px) + 16px);align-self:start;max-height:calc(100vh - var(--kopfh,60px) - 32px);
+overflow:auto;border:1px solid var(--rand);border-radius:6px;font-size:13px}
+#liste h2{font-size:13px;margin:0;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand)}
+#liste a{display:block;padding:3px 10px;border-left:3px solid transparent}
+#liste a:hover{background:var(--kopf)} #liste a.akt{background:var(--akt);border-left-color:var(--tn)}
+#liste .ord{color:var(--muted)} #liste .zahl{float:right;margin-left:6px;font-size:12px}
+main{min-width:0}
+.datei{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;scroll-margin-top:calc(var(--kopfh,60px) + 8px)}
+.datei summary{position:sticky;top:var(--kopfh,60px);z-index:2;background:var(--kopf);padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--rand);border-radius:6px 6px 0 0}
 .st{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--rand);color:var(--muted)}
 .st-neu{color:var(--p)} .st-gelöscht{color:var(--m)}
-table{border-collapse:collapse;width:100%;table-layout:fixed}
-.sbs td.n{width:48px} .inl td.n{width:48px}
-td.n{color:var(--muted);text-align:right;padding:0 8px;user-select:none;font:12px ui-monospace,monospace;vertical-align:top}
-td.c{white-space:pre-wrap;word-break:break-all;padding:0 8px;vertical-align:top}
+table{border-collapse:collapse;width:100%;table-layout:fixed} col.cn{width:44px}
+td.n{color:var(--muted);text-align:right;padding:0 6px;user-select:none;font:12px ui-monospace,monospace;vertical-align:top}
+td.c{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 8px;vertical-align:top;tab-size:4}
 .weg{background:var(--weg)} .dazu{background:var(--dazu)} .nix{background:var(--nix)}
-del{background:var(--wegs);text-decoration:none} ins{background:var(--dazus);text-decoration:none}
-tr.hk td{background:var(--hk);color:var(--muted);padding:4px 8px}
-.sbs td.c+td.n{border-left:1px solid var(--rand)}
+td.weg+td.n,td.dazu+td.n,td.nix+td.n,.sbs td.c+td.n{border-left:1px solid var(--rand)}
+del{background:var(--wegs);text-decoration:none;border-radius:2px} ins{background:var(--dazus);text-decoration:none;border-radius:2px}
+tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .inl{display:none} body.inline .inl{display:table} body.inline .sbs{display:none}
 .leer{padding:12px;color:var(--muted)}
-.hilfe{position:fixed;right:12px;bottom:8px;color:var(--muted);font-size:12px;background:var(--bg);padding:2px 6px}
+.hilfe{position:fixed;right:12px;bottom:8px;color:var(--muted);font-size:12px;background:var(--bg);padding:2px 6px;border:1px solid var(--rand);border-radius:4px}
+.tk{color:var(--tk)} .ts{color:var(--ts)} .tc{color:var(--tc);font-style:italic} .tn{color:var(--tn)} .tt{color:var(--tt)}
+.ta{color:var(--ta)} .tf{color:var(--tf)} .tb{color:var(--tb)} .tv{color:var(--tv)} .to{color:var(--to)}
 """
 
 JS = """
-const ds=[...document.querySelectorAll('.datei')];let i=-1;
-function geh(k){if(!ds.length)return;i=Math.max(0,Math.min(ds.length-1,k));ds[i].open=true;ds[i].scrollIntoView({block:'start'});}
-document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey)return;
- const y=window.scrollY;if(e.key==='j'||e.key==='k'){i=ds.findIndex(d=>d.offsetTop>y+5)-1;if(i<-1)i=ds.length-1;}
- if(e.key==='j')geh(i+1);else if(e.key==='k')geh(e.key==='k'&&ds[i]&&ds[i].offsetTop<y-5?i:i-1);
+const ds=[...document.querySelectorAll('.datei')],ls=[...document.querySelectorAll('#liste a')],kopf=document.getElementById('kopf');
+function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHeight+'px')}
+kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
+function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(d.getBoundingClientRect().top<=g)k=j});return k}
+function markiere(){const k=aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k];if(a){const r=a.getBoundingClientRect(),p=a.parentElement.getBoundingClientRect();if(r.top<p.top||r.bottom>p.bottom)a.scrollIntoView({block:'nearest'})}}
+addEventListener('scroll',markiere,{passive:true});markiere();
+function geh(k){if(!ds.length)return;k=Math.max(0,Math.min(ds.length-1,k));ds[k].open=true;ds[k].scrollIntoView({block:'start'})}
+document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;
+ const k=aktuell();
+ if(e.key==='j')geh(ds[k]&&ds[k].getBoundingClientRect().top>kopf.offsetHeight+30?k:k+1);
+ else if(e.key==='k')geh(ds[k]&&ds[k].getBoundingClientRect().top<kopf.offsetHeight-5?k:k-1);
  else if(e.key==='i'){document.body.classList.toggle('inline');try{localStorage.mrInline=document.body.classList.contains('inline')?1:''}catch(_){}}
- else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu);}});
+ else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu)}
+ else if(e.key==='c'){const c=document.getElementById('commits');c.open=!c.open}});
 try{if(localStorage.mrInline)document.body.classList.add('inline')}catch(_){}
 """
 
@@ -177,39 +285,51 @@ def main():
         wurzel = git(o.ordner, "rev-parse", "--show-toplevel").strip()
         for b in (o.von, o.bis):
             git(wurzel, "rev-parse", "--verify", "-q", b)
-    except subprocess.CalledProcessError as e:
+        basis = git(wurzel, "merge-base", o.von, o.bis).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
         sys.exit(f"mr: kein Git-Repo oder Branch fehlt ({o.von}/{o.bis}) in {o.ordner}")
-    projekt = os.path.relpath(wurzel, os.path.expanduser("~/Projects")) if wurzel.startswith(os.path.expanduser("~/Projects/")) else os.path.basename(wurzel)
-    bereich = f"{o.von}...{o.bis}"
+    proj_dir = os.path.expanduser("~/Projects/")
+    projekt = os.path.relpath(wurzel, proj_dir) if wurzel.startswith(proj_dir) else os.path.basename(wurzel)
 
     if o.meld:
-        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt", bereich],
-                         start_new_session=True)
+        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt",
+                          f"{o.von}...{o.bis}"], start_new_session=True)
         return
 
-    commits = git(wurzel, "log", "--reverse", "--format=%h\x1f%ad\x1f%s", "--date=format:%d.%m. %H:%M", f"{o.von}..{o.bis}")
-    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", bereich)
+    roh = git(wurzel, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
+              "--date=format:%d.%m. %H:%M", f"{o.von}..{o.bis}")
+    commits = [c.strip("\n").split("\x1f") for c in roh.split("\x1e") if c.strip()]
+    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", basis, o.bis)
     dateien = zerlegen(diff)
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
-    todos = sorted(set(re.findall(r"todo:([\w.-]+)", git(wurzel, "log", "--format=%B", f"{o.von}..{o.bis}"))))
+    todos = sorted(set(re.findall(r"todo:([\w.-]+)", roh)))
 
-    cl = "".join(f'<li><code>{html.escape(h)}</code> {html.escape(s)} <span class="sub">{html.escape(t)}</span></li>'
-                 for h, t, s in (z.split("\x1f") for z in commits.splitlines() if z))
-    fl = "".join(f'<li><a href="#d{n}">{html.escape(d["neu"])}</a> <span class="p">+{d["plus"]}</span> '
-                 f'<span class="m">−{d["minus"]}</span> <span class="sub">{d["status"] if d["status"]!="geändert" else ""}</span></li>'
-                 for n, d in enumerate(dateien))
-    td = (f'<div class="box"><h2>todos</h2><ul>{"".join(f"<li><code>{html.escape(t)}</code></li>" for t in todos)}</ul></div>'
+    def nachricht(b):
+        b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
+        return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
+    cl = "".join(f'<div class="commit"><code>{html.escape(h)}</code> <b>{html.escape(s)}</b> '
+                 f'<span class="sub">{html.escape(t)}</span>{nachricht(b)}</div>'
+                 for h, t, s, b in commits) or '<div class="sub">keine Commits</div>'
+    td = ('<div class="todos">todos: ' + "".join(f"<code>{html.escape(t)}</code>" for t in todos) + "</div>"
           if todos else "")
-    leer = '<div class="box"><div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div></div>' if not dateien else ""
+    fl, letzter = [], None
+    for n, d in enumerate(dateien):
+        ordner, name = os.path.split(d["neu"])
+        if ordner != letzter:
+            fl.append(f'<div class="sub" style="padding:6px 10px 0">{html.escape(ordner or "/")}</div>'); letzter = ordner
+        fl.append(f'<a href="#d{n}" title="{html.escape(d["neu"])}"><span class="zahl"><span class="p">+{d["plus"]}</span> '
+                  f'<span class="m">−{d["minus"]}</span></span>{html.escape(name)}'
+                  f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
+    leer = '<div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div>' if not dateien else ""
     seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
 <style>{CSS}</style></head><body class="{'inline' if o.inline else ''}">
-<h1>{html.escape(projekt)}: {html.escape(o.von)} ← {html.escape(o.bis)}</h1>
-<div class="sub">{len(commits.splitlines())} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</div>
-{leer}<div class="box"><h2>Commits</h2><ul>{cl or '<li class="sub">keine</li>'}</ul></div>{td}
-<div class="box"><h2>Dateien</h2><ul>{fl}</ul></div>
-{"".join(datei_html(n, d) for n, d in enumerate(dateien))}
-<div class="hilfe">j/k Datei · i inline · z zu/auf</div>
+<header id="kopf"><h1>{html.escape(projekt)}: {html.escape(o.von)} ← {html.escape(o.bis)}</h1>
+<span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
+<details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
+<div class="rahmen"><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<main>{leer}{"".join(datei_html(n, d, wurzel, basis, o.bis) for n, d in enumerate(dateien))}</main></div>
+<div class="hilfe">j/k Datei · i inline · z zu/auf · c Commits</div>
 <script>{JS}</script></body></html>"""
     ziel_dir = os.path.expanduser("~/.cache/mr")
     os.makedirs(ziel_dir, exist_ok=True)
