@@ -651,12 +651,20 @@ def server():
                 self.senden(500, json.dumps({"ok": False, "text": f"mr: {e}"}), "application/json")
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    skript = os.path.realpath(__file__)
+    stand = os.path.getmtime(skript)
+    neu = [False]
     def waechter():
         while time.time() - zuletzt[0] < LEERLAUF_S:
-            time.sleep(30)
+            time.sleep(2)
+            if os.path.getmtime(skript) != stand:  # mr wurde geändert: mit neuem Code weitermachen
+                neu[0] = True; break
         srv.shutdown()
     threading.Thread(target=waechter, daemon=True).start()
     srv.serve_forever()
+    srv.server_close()
+    if neu[0]:
+        os.execv(sys.executable, [sys.executable, skript, "--server"])
 
 def einrichten():
     app = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
