@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""mr – Merge-Request-Ansicht reviewed ← claude, sofort im Browser.
+
+Aufruf:
+  mr [ordner] [--von reviewed] [--bis claude] [--meld] [--inline]
+
+Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab:
+Commits, Dateiliste mit +/-, alle Diffs nebeneinander (Taste i: inline),
+und öffnet sie im Browser. Verglichen wird wie in GitLab ab dem
+gemeinsamen Vorgänger (reviewed...claude).
+
+Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf.
+--meld öffnet stattdessen Meld mit dem Ordnervergleich.
+"""
+import argparse, difflib, html, os, re, subprocess, sys, webbrowser
+from datetime import datetime
+
+def git(ordner, *a):
+    return subprocess.run(["git", "-C", ordner, *a], capture_output=True,
+                          text=True, errors="replace", check=True).stdout
+
+def zerlegen(diff):
+    """Unified-Diff in Dateien → Hunks → Zeilen zerlegen."""
+    dateien, d, h = [], None, None
+    for z in diff.splitlines():
+        if z.startswith("diff --git "):
+            m = re.match(r"diff --git a/(.*) b/(.*)", z)
+            d = {"alt": m.group(1), "neu": m.group(2), "hunks": [], "binaer": False,
+                 "status": "geändert", "plus": 0, "minus": 0}
+            dateien.append(d); h = None
+        elif d is None:
+            continue
+        elif z.startswith("new file"): d["status"] = "neu"
+        elif z.startswith("deleted file"): d["status"] = "gelöscht"
+        elif z.startswith("rename from"): d["status"] = "umbenannt"
+        elif z.startswith("Binary files"): d["binaer"] = True
+        elif z.startswith("@@"):
+            m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)", z)
+            h = {"a": int(m.group(1)), "b": int(m.group(2)), "kopf": m.group(3).strip(), "z": []}
+            d["hunks"].append(h)
+        elif h is not None and z[:1] in (" ", "+", "-"):
+            h["z"].append((z[0], z[1:]))
+            if z[0] == "+": d["plus"] += 1
+            if z[0] == "-": d["minus"] += 1
+    return dateien
+
+def markieren(a, b):
+    """Geänderte Teile innerhalb einer Zeile hervorheben."""
+    if len(a) + len(b) > 4000:
+        return html.escape(a), html.escape(b)
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    ra, rb = [], []
+    for op, i1, i2, j1, j2 in sm.get_opcodes():
+        ta, tb = html.escape(a[i1:i2]), html.escape(b[j1:j2])
+        if op == "equal":
+            ra.append(ta); rb.append(tb)
+        else:
+            if ta: ra.append(f"<del>{ta}</del>")
+            if tb: rb.append(f"<ins>{tb}</ins>")
+    return "".join(ra), "".join(rb)
+
+def hunk_zeilen(h):
+    """Zeilen paaren: (typ, nr_a, text_a, nr_b, text_b)."""
+    rows, a, b, i, z = [], h["a"], h["b"], 0, h["z"]
+    while i < len(z):
+        if z[i][0] == " ":
+            t = html.escape(z[i][1]); rows.append(("ctx", a, t, b, t)); a += 1; b += 1; i += 1
+            continue
+        weg, dazu = [], []
+        while i < len(z) and z[i][0] == "-": weg.append(z[i][1]); i += 1
+        while i < len(z) and z[i][0] == "+": dazu.append(z[i][1]); i += 1
+        for k in range(max(len(weg), len(dazu))):
+            ta = weg[k] if k < len(weg) else None
+            tb = dazu[k] if k < len(dazu) else None
+            if ta is not None and tb is not None:
+                ha, hb = markieren(ta, tb)
+            else:
+                ha = html.escape(ta) if ta is not None else None
+                hb = html.escape(tb) if tb is not None else None
+            rows.append(("chg", a if ta is not None else None, ha, b if tb is not None else None, hb))
+            if ta is not None: a += 1
+            if tb is not None: b += 1
+    return rows
+
+def datei_html(n, d):
+    name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
+    kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
+            f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
+            f'<span class="m">−{d["minus"]}</span></summary>')
+    if d["binaer"]:
+        return f'<details open class="datei" id="d{n}">{kopf}<div class="leer">Binärdatei</div></details>'
+    if not d["hunks"]:
+        return f'<details open class="datei" id="d{n}">{kopf}<div class="leer">keine Inhaltsänderung</div></details>'
+    sbs, inl = [], []
+    for h in d["hunks"]:
+        hk = html.escape(f'@@ -{h["a"]} +{h["b"]} @@ {h["kopf"]}')
+        sbs.append(f'<tr class="hk"><td colspan="4">{hk}</td></tr>')
+        inl.append(f'<tr class="hk"><td colspan="3">{hk}</td></tr>')
+        for typ, na, ta, nb, tb in hunk_zeilen(h):
+            if typ == "ctx":
+                sbs.append(f'<tr><td class="n">{na}</td><td class="c">{ta}</td><td class="n">{nb}</td><td class="c">{tb}</td></tr>')
+                continue
+            la = f'<td class="n">{na}</td><td class="c weg">{ta}</td>' if ta is not None else '<td class="n"></td><td class="c nix"></td>'
+            lb = f'<td class="n">{nb}</td><td class="c dazu">{tb}</td>' if tb is not None else '<td class="n"></td><td class="c nix"></td>'
+            sbs.append(f"<tr>{la}{lb}</tr>")
+        inl.extend(inline_bloecke(h))  # inline: je Block erst alle weg, dann alle dazu
+    return (f'<details open class="datei" id="d{n}">{kopf}'
+            f'<table class="sbs">{"".join(sbs)}</table>'
+            f'<table class="inl">{"".join(inl)}</table></details>')
+
+def inline_bloecke(h):
+    rows = hunk_zeilen(h)
+    out, weg, dazu = [], [], []
+    def leeren():
+        for na, ta in weg: out.append(f'<tr><td class="n">{na}</td><td class="n"></td><td class="c weg">{ta}</td></tr>')
+        for nb, tb in dazu: out.append(f'<tr><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{tb}</td></tr>')
+        weg.clear(); dazu.clear()
+    for typ, na, ta, nb, tb in rows:
+        if typ == "ctx":
+            leeren(); out.append(f'<tr><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{ta}</td></tr>')
+        else:
+            if ta is not None: weg.append((na, ta))
+            if tb is not None: dazu.append((nb, tb))
+    leeren()
+    return out
+
+CSS = """
+:root{--bg:#fff;--fg:#1f2328;--muted:#656d76;--rand:#d0d7de;--kopf:#f6f8fa;--weg:#ffebe9;--wegs:#ffc1bc;
+--dazu:#e6ffec;--dazus:#abf2bc;--hk:#ddf4ff;--nix:#f6f8fa;--p:#1a7f37;--m:#cf222e}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8d96a0;--rand:#30363d;--kopf:#161b22;
+--weg:#3b1d22;--wegs:#7d2a33;--dazu:#13291b;--dazus:#1f6b35;--hk:#12263a;--nix:#161b22;--p:#3fb950;--m:#f85149}}
+body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0 auto;max-width:1800px;padding:16px}
+h1{font-size:20px;margin:0 0 4px} .sub{color:var(--muted);margin-bottom:16px}
+code,.c,.hk td{font:12.5px ui-monospace,"JetBrains Mono",monospace}
+.box{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px}
+.box h2{font-size:14px;margin:0;padding:8px 12px;background:var(--kopf);border-bottom:1px solid var(--rand)}
+.box ul{margin:0;padding:8px 12px 8px 30px} .box li{margin:2px 0}
+a{color:inherit} .p{color:var(--p)} .m{color:var(--m)}
+.datei{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;overflow:hidden}
+.datei summary{position:sticky;top:0;z-index:1;background:var(--kopf);padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--rand)}
+.st{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--rand);color:var(--muted)}
+.st-neu{color:var(--p)} .st-gelöscht{color:var(--m)}
+table{border-collapse:collapse;width:100%;table-layout:fixed}
+.sbs td.n{width:48px} .inl td.n{width:48px}
+td.n{color:var(--muted);text-align:right;padding:0 8px;user-select:none;font:12px ui-monospace,monospace;vertical-align:top}
+td.c{white-space:pre-wrap;word-break:break-all;padding:0 8px;vertical-align:top}
+.weg{background:var(--weg)} .dazu{background:var(--dazu)} .nix{background:var(--nix)}
+del{background:var(--wegs);text-decoration:none} ins{background:var(--dazus);text-decoration:none}
+tr.hk td{background:var(--hk);color:var(--muted);padding:4px 8px}
+.sbs td.c+td.n{border-left:1px solid var(--rand)}
+.inl{display:none} body.inline .inl{display:table} body.inline .sbs{display:none}
+.leer{padding:12px;color:var(--muted)}
+.hilfe{position:fixed;right:12px;bottom:8px;color:var(--muted);font-size:12px;background:var(--bg);padding:2px 6px}
+"""
+
+JS = """
+const ds=[...document.querySelectorAll('.datei')];let i=-1;
+function geh(k){if(!ds.length)return;i=Math.max(0,Math.min(ds.length-1,k));ds[i].open=true;ds[i].scrollIntoView({block:'start'});}
+document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey)return;
+ const y=window.scrollY;if(e.key==='j'||e.key==='k'){i=ds.findIndex(d=>d.offsetTop>y+5)-1;if(i<-1)i=ds.length-1;}
+ if(e.key==='j')geh(i+1);else if(e.key==='k')geh(e.key==='k'&&ds[i]&&ds[i].offsetTop<y-5?i:i-1);
+ else if(e.key==='i'){document.body.classList.toggle('inline');try{localStorage.mrInline=document.body.classList.contains('inline')?1:''}catch(_){}}
+ else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu);}});
+try{if(localStorage.mrInline)document.body.classList.add('inline')}catch(_){}
+"""
+
+def main():
+    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht reviewed ← claude")
+    ap.add_argument("ordner", nargs="?", default=".")
+    ap.add_argument("--von", default="reviewed")
+    ap.add_argument("--bis", default="claude")
+    ap.add_argument("--meld", action="store_true", help="Meld-Ordnervergleich statt Browser")
+    ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
+    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
+    o = ap.parse_args()
+    try:
+        wurzel = git(o.ordner, "rev-parse", "--show-toplevel").strip()
+        for b in (o.von, o.bis):
+            git(wurzel, "rev-parse", "--verify", "-q", b)
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"mr: kein Git-Repo oder Branch fehlt ({o.von}/{o.bis}) in {o.ordner}")
+    projekt = os.path.relpath(wurzel, os.path.expanduser("~/Projects")) if wurzel.startswith(os.path.expanduser("~/Projects/")) else os.path.basename(wurzel)
+    bereich = f"{o.von}...{o.bis}"
+
+    if o.meld:
+        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt", bereich],
+                         start_new_session=True)
+        return
+
+    commits = git(wurzel, "log", "--reverse", "--format=%h\x1f%ad\x1f%s", "--date=format:%d.%m. %H:%M", f"{o.von}..{o.bis}")
+    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", bereich)
+    dateien = zerlegen(diff)
+    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
+    todos = sorted(set(re.findall(r"todo:([\w.-]+)", git(wurzel, "log", "--format=%B", f"{o.von}..{o.bis}"))))
+
+    cl = "".join(f'<li><code>{html.escape(h)}</code> {html.escape(s)} <span class="sub">{html.escape(t)}</span></li>'
+                 for h, t, s in (z.split("\x1f") for z in commits.splitlines() if z))
+    fl = "".join(f'<li><a href="#d{n}">{html.escape(d["neu"])}</a> <span class="p">+{d["plus"]}</span> '
+                 f'<span class="m">−{d["minus"]}</span> <span class="sub">{d["status"] if d["status"]!="geändert" else ""}</span></li>'
+                 for n, d in enumerate(dateien))
+    td = (f'<div class="box"><h2>todos</h2><ul>{"".join(f"<li><code>{html.escape(t)}</code></li>" for t in todos)}</ul></div>'
+          if todos else "")
+    leer = '<div class="box"><div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div></div>' if not dateien else ""
+    seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
+<style>{CSS}</style></head><body class="{'inline' if o.inline else ''}">
+<h1>{html.escape(projekt)}: {html.escape(o.von)} ← {html.escape(o.bis)}</h1>
+<div class="sub">{len(commits.splitlines())} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</div>
+{leer}<div class="box"><h2>Commits</h2><ul>{cl or '<li class="sub">keine</li>'}</ul></div>{td}
+<div class="box"><h2>Dateien</h2><ul>{fl}</ul></div>
+{"".join(datei_html(n, d) for n, d in enumerate(dateien))}
+<div class="hilfe">j/k Datei · i inline · z zu/auf</div>
+<script>{JS}</script></body></html>"""
+    ziel_dir = os.path.expanduser("~/.cache/mr")
+    os.makedirs(ziel_dir, exist_ok=True)
+    ziel = os.path.join(ziel_dir, projekt.replace("/", "_") + ".html")
+    with open(ziel, "w") as f:
+        f.write(seite)
+    print(ziel)
+    if not o.nur_datei:
+        subprocess.Popen(["xdg-open", ziel], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+if __name__ == "__main__":
+    main()
