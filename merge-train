@@ -693,12 +693,21 @@ def main():
     ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
     ap.add_argument("--url", help=argparse.SUPPRESS)
     ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--projekte", action="store_true", help=argparse.SUPPRESS)  # für die Shell-Vervollständigung
     ap.add_argument("--einrichten", action="store_true", help="Link-Handler mr:// für den Knopf „fertig“ einrichten")
     o = ap.parse_args()
     if o.url:
         return fertig_url(o.url)
     if o.server:
         return server()
+    if o.projekte:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(8) as ex:
+            st = list(ex.map(statistik, finde_repos()))
+        st.sort(key=lambda w: (not w["dateien"], -(w["plus"] + w["minus"])))
+        for w in st:
+            print(f'{w["p"]}\t+{w["plus"]} −{w["minus"]} · {w["dateien"]} Datei(en)' if w["dateien"] else f'{w["p"]}\taktuell')
+        return
     if o.einrichten:
         return einrichten()
     wurzel = None
