@@ -62,16 +62,35 @@ def zerlegen(diff):
 SONDER = {".razor": "html", ".cshtml": "html", ".vue": "html", ".svelte": "html",
           ".conf": "ini", ".service": "ini", ".desktop": "ini", ".webmanifest": "json"}
 
-def lexer_fuer(pfad):
+SHEBANG = {"python": "python", "bash": "bash", "sh": "bash", "zsh": "bash", "dash": "bash",
+           "fish": "fish", "node": "javascript", "perl": "perl", "ruby": "ruby", "lua": "lua",
+           "php": "php", "awk": "awk", "gawk": "awk", "pwsh": "powershell"}
+
+def lexer_fuer(pfad, text=None):
+    """Lexer nach Dateiname, ohne passende Endung nach der Shebang-Zeile."""
     if not PYGMENTS:
         return None
     ext = os.path.splitext(pfad)[1].lower()
+    kw = dict(stripnl=False, ensurenl=False)
     try:
         if ext in SONDER:
-            return get_lexer_by_name(SONDER[ext], stripnl=False, ensurenl=False)
-        return get_lexer_for_filename(pfad, stripnl=False, ensurenl=False)
+            return get_lexer_by_name(SONDER[ext], **kw)
+        return get_lexer_for_filename(pfad, **kw)
     except ClassNotFound:
-        return None
+        pass
+    erste = (text or "").split("\n", 1)[0]
+    if erste.startswith("#!"):
+        teile = erste[2:].split()
+        if teile and os.path.basename(teile[0]) == "env":  # env [-S …] programm
+            teile = [t for t in teile[1:] if not t.startswith("-")]
+        prog = os.path.basename(teile[0]) if teile else ""
+        prog = re.sub(r"[\d.]+$", "", prog)  # python3.14 → python
+        if prog in SHEBANG:
+            try:
+                return get_lexer_by_name(SHEBANG[prog], **kw)
+            except ClassNotFound:
+                pass
+    return None
 
 def klasse(tt):
     if not PYGMENTS: return ""
@@ -91,7 +110,7 @@ def klasse(tt):
 def zeilen_tokens(text, pfad):
     """Ganze Datei lexen (damit mehrzeilige Kommentare/Strings stimmen),
     Ergebnis: Liste je Zeile von (klasse, text)."""
-    lx = lexer_fuer(pfad)
+    lx = lexer_fuer(pfad, text)
     if lx is None or text is None or len(text) > 2_000_000:
         return None
     zeilen, akt = [], []
