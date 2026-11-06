@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""mr – Merge-Request-Ansicht claude → reviewed, sofort im Browser.
+"""merge-train – Merge-Requests claude → reviewed aller Projekte, sofort im Browser.
 
 Aufruf:
-  mr [ordner] [--von reviewed] [--bis claude] [--meld] [--inline] [--nur-datei]
+  merge-train [projekt] [--von reviewed] [--bis claude] [--meld] [--inline] [--nur-datei]
 
 Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab und öffnet sie:
 oben (schwebend) Commits mit vollen Nachrichten, links (schwebend) die
@@ -367,19 +367,19 @@ if(knopf){
    fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projekt:MR.projekt,sha:MR.sha,k:MR.k})})
     .then(r=>r.json()).then(d=>{if(!d.ok){knopf.disabled=false;meld.textContent=d.text;return}
      ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()})
-    .catch(e=>{knopf.disabled=false;meld.textContent='mr-Server nicht erreichbar – mr erneut aufrufen'});
+    .catch(e=>{knopf.disabled=false;meld.textContent='merge-train-Server nicht erreichbar – merge-train erneut aufrufen'});
    return}
   location.href=`mr://fertig/${encodeURIComponent(MR.projekt)}?sha=${MR.sha}&k=${MR.k}`;
   let n=0;const t=setInterval(()=>{n++;const sc=document.createElement('script');sc.src='zug.js?t='+Date.now();
    sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);ZUG=window.MR_ZUG.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()}};
    document.head.appendChild(sc);
-   if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (mr --einrichten)'}},500)})}
+   if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (merge-train --einrichten)'}},500)})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
  if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
  else if(e.key==='Enter'&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
 """
 
-ORDNER = os.path.expanduser("~/.cache/mr")
+ORDNER = os.path.expanduser("~/.cache/merge-train")
 PROJEKTE = os.path.expanduser("~/Projects")
 RUNDE = os.path.join(ORDNER, "runde.json")
 SCHLUESSEL = os.path.join(ORDNER, "schluessel")
@@ -525,7 +525,7 @@ def oeffnen(pfad):
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def melden(text):
-    subprocess.run(["notify-send", "-a", "mr", "-i", "vcs-merge-request", "mr", text], check=False)
+    subprocess.run(["notify-send", "-a", "merge-train", "-i", "vcs-merge-request", "merge-train", text], check=False)
 
 def fertig(projekt, sha, k):
     """reviewed auf den gesehenen Stand setzen. Rückgabe (ok, text)."""
@@ -599,7 +599,7 @@ def server_sicherstellen():
     return False
 
 def server():
-    """Liefert ~/.cache/mr auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“ an.
+    """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“ an.
     Beendet sich nach LEERLAUF_S ohne Anfrage."""
     import json, time
     from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -657,7 +657,11 @@ def server():
     def waechter():
         while time.time() - zuletzt[0] < LEERLAUF_S:
             time.sleep(2)
-            if os.path.getmtime(skript) != stand:  # mr wurde geändert: mit neuem Code weitermachen
+            try:
+                geaendert = os.path.getmtime(skript) != stand
+            except OSError:  # Skript umbenannt/gelöscht: beenden
+                break
+            if geaendert:  # Skript wurde geändert: mit neuem Code weitermachen
                 neu[0] = True; break
         srv.shutdown()
     threading.Thread(target=waechter, daemon=True).start()
@@ -667,21 +671,24 @@ def server():
         os.execv(sys.executable, [sys.executable, skript, "--server"])
 
 def einrichten():
-    app = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
+    app = os.path.expanduser("~/.local/share/applications/merge-train.desktop")
+    alt = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
+    if os.path.exists(alt):
+        os.remove(alt)
     with open(app, "w") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=mr-Ansicht (Link-Handler)\n"
+        f.write("[Desktop Entry]\nType=Application\nName=merge-train (Link-Handler)\n"
                 f"Exec={os.path.realpath(__file__)} --url %u\nMimeType=x-scheme-handler/mr;\n"
                 "NoDisplay=true\nTerminal=false\n")
-    subprocess.run(["xdg-mime", "default", "mr-ansicht.desktop", "x-scheme-handler/mr"], check=True)
+    subprocess.run(["xdg-mime", "default", "merge-train.desktop", "x-scheme-handler/mr"], check=True)
     subprocess.run(["update-desktop-database", os.path.dirname(app)], check=False)
     print("eingerichtet:", app)
 
 def main():
-    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht claude → reviewed")
-    ap.add_argument("ordner", nargs="?", help="Projekt (Standard: aktuelles Repo, sonst das größte offene)")
+    ap = argparse.ArgumentParser(description="merge-train: Merge-Requests claude → reviewed aller Projekte")
+    ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects); ohne: der ganze Zug, beginnend beim größten")
     ap.add_argument("--von", default="reviewed")
     ap.add_argument("--bis", default="claude")
-    ap.add_argument("--alle", action="store_true", help="mit dem größten offenen Projekt beginnen")
+    ap.add_argument("--alle", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--meld", action="store_true", help="Meld-Ordnervergleich statt Browser")
     ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
     ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
@@ -696,19 +703,19 @@ def main():
     if o.einrichten:
         return einrichten()
     wurzel = None
-    if not o.alle:
+    if o.ordner or o.meld:  # ohne Projekt: immer der ganze Zug
         ordner = o.ordner or "."
         if o.ordner and not os.path.exists(ordner):
             ordner = os.path.join(PROJEKTE, o.ordner)
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
-            sys.exit(f"mr: kein Git-Repo: {o.ordner}")
+            sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")
     if wurzel and o.meld:
         subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt",
                           f"{o.von}...{o.bis}"], start_new_session=True)
         return
     if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False) for b in (o.von, o.bis)):
-        sys.exit(f"mr: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
+        sys.exit(f"merge-train: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
     repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
     if wurzel:
         if projektname(wurzel) not in {w["p"] for w in wagen}:
@@ -717,7 +724,7 @@ def main():
     else:
         offen = [w for w in wagen if w["status"] == "offen"]
         if not offen:
-            print("mr: nichts zu prüfen – überall reviewed = claude"); return
+            print("merge-train: nichts zu prüfen – überall reviewed = claude"); return
         ziel = os.path.join(ORDNER, offen[0]["datei"])
     if o.nur_datei or o.von != "reviewed" or o.bis != "claude" or o.inline:
         print(ziel)
