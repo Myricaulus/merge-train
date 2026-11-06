@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mr – Merge-Request-Ansicht reviewed ← claude, sofort im Browser.
+"""mr – Merge-Request-Ansicht claude → reviewed, sofort im Browser.
 
 Aufruf:
   mr [ordner] [--von reviewed] [--bis claude] [--meld] [--inline] [--nur-datei]
@@ -258,6 +258,7 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}
 #zug .fertig .kasten{fill:var(--dazu);stroke:var(--p)}
 #zug text{fill:var(--fg);font:12px system-ui,sans-serif} #zug .klein{fill:var(--muted);font-size:11px}
+#zug .dampf circle{fill:var(--muted);opacity:.35} #zug .schiene{stroke:var(--muted);stroke-width:2;opacity:.6}
 #zug .tp{fill:var(--p)} #zug .tm{fill:var(--m)} #zug .rad{fill:var(--muted)} #zug .lok{fill:var(--muted)}
 #zug .marke{font-size:11px;font-weight:600} #zug .mo{fill:var(--tb)} #zug .mf{fill:var(--p)}
 .zeile{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -291,23 +292,46 @@ const ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
 function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
  const offen=ZUG.filter(w=>w.status==='offen'&&w.p!==MR.projekt);
  return offen.find(w=>ZUG.indexOf(w)>i)||offen[0]||null}
+function lok(){ // bayerische S 3/6 (Vorbild 3673), Fahrtrichtung rechts; lokale Schiene bei y=70
+ const gr='#2f6b45',dk='#1d4630',sw='#1b1b1b',ms='#d8cfa4';
+ const rad=(cx,cy,r)=>{let t=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${gr}" stroke="#e9e4cf" stroke-width="1.4"/>`;
+  for(let k=0;k<8;k++){const w=k*Math.PI/4;t+=`<line x1="${cx}" y1="${cy}" x2="${(cx+Math.cos(w)*(r-1.5)).toFixed(1)}" y2="${(cy+Math.sin(w)*(r-1.5)).toFixed(1)}" stroke="#e9e4cf" stroke-width=".7"/>`}
+  return t+`<circle cx="${cx}" cy="${cy}" r="2.2" fill="${ms}"/>`};
+ return `<g class="dampf"><circle cx="150" cy="2" r="4"/><circle cx="138" cy="-3" r="5.5"/><circle cx="123" cy="-6" r="7"/></g>
+ <rect x="0" y="27" width="50" height="29" rx="2" fill="${gr}" stroke="${dk}"/><rect x="2" y="21" width="46" height="7" rx="2" fill="${sw}"/>
+ <line x1="6" y1="33" x2="44" y2="33" stroke="${ms}" stroke-width=".8"/><line x1="6" y1="51" x2="44" y2="51" stroke="${ms}" stroke-width=".8"/>
+ <rect x="50" y="49" width="6" height="3" fill="${sw}"/>
+ <rect x="53" y="10" width="30" height="5" rx="2" fill="${dk}"/><rect x="55" y="14" width="26" height="42" fill="${gr}" stroke="${dk}"/>
+ <rect x="60" y="19" width="13" height="12" rx="2" fill="#bcd3df" stroke="${sw}" stroke-width=".8"/>
+ <rect x="80" y="21" width="92" height="25" rx="12" fill="${gr}" stroke="${dk}"/>
+ <rect x="80" y="38" width="22" height="18" fill="${gr}" stroke="${dk}"/>
+ <line x1="102" y1="22" x2="102" y2="45" stroke="${ms}"/><line x1="127" y1="22" x2="127" y2="45" stroke="${ms}"/><line x1="152" y1="22" x2="152" y2="45" stroke="${ms}"/>
+ <rect x="111" y="14" width="13" height="9" rx="4" fill="${gr}" stroke="${dk}"/><rect x="135" y="15" width="11" height="8" rx="4" fill="${gr}" stroke="${dk}"/>
+ <rect x="157" y="9" width="9" height="13" fill="${gr}" stroke="${dk}"/><rect x="155" y="6" width="13" height="4" rx="1" fill="${sw}"/>
+ <rect x="168" y="22" width="11" height="24" fill="${sw}"/><polygon points="179,22 192,34 179,46" fill="${sw}"/>
+ <circle cx="186" cy="20" r="2.5" fill="${ms}"/><rect x="184" y="21" width="4" height="5" fill="${sw}"/>
+ <line x1="78" y1="48" x2="190" y2="48" stroke="${sw}" stroke-width="3"/>
+ <rect x="186" y="49" width="6" height="8" fill="#7a1e1e"/><rect x="192" y="51" width="6" height="3" fill="${sw}"/><rect x="192" y="55" width="6" height="0" fill="${sw}"/>
+ ${rad(12,64,6)}${rad(38,64,6)}${rad(88,63,7)}${rad(106,59,11)}${rad(130,59,11)}${rad(154,59,11)}${rad(174,64,6)}${rad(188,64,6)}
+ <line x1="106" y1="62" x2="154" y2="62" stroke="#c9c9c9" stroke-width="2.2" stroke-linecap="round"/>
+ <line x1="154" y1="62" x2="170" y2="52" stroke="#c9c9c9" stroke-width="1.8"/>`}
 function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)return;
- const W=150,H=50,L=70,G=14,y=6,ns='http://www.w3.org/2000/svg';
- const svg=document.createElementNS(ns,'svg'),breite=L+ZUG.length*(W+G)+4;
- svg.setAttribute('width',breite);svg.setAttribute('height',H+y+14);
- let s=`<g class="lok"><rect x="4" y="${y+14}" width="44" height="${H-14}" rx="4"/><rect x="30" y="${y}" width="18" height="18" rx="2"/>
-  <rect x="10" y="${y+4}" width="8" height="12"/><circle cx="16" cy="${y+H+4}" r="6" class="rad"/><circle cx="38" cy="${y+H+4}" r="6" class="rad"/></g>
-  <line x1="48" y1="${y+H-8}" x2="${L}" y2="${y+H-8}" stroke="currentColor" class="rad" stroke-width="2"/>`;
- ZUG.forEach((w,i)=>{const x=L+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
-  const name=w.p.length>19?w.p.slice(0,18)+'…':w.p,ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
+ const W=170,H=56,G=14,y=22,LW=200,yr=y+H+10,ns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(ns,'svg'),breite=4+ZUG.length*(W+G)+LW+6;
+ svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
+ let s=`<line x1="0" y1="${yr}" x2="${breite}" y2="${yr}" class="schiene"/>`;
+ ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
+  const name=w.p.length>23?w.p.slice(0,22)+'…':w.p,ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
+  const marke=f?'✓ fertig':(w.todos.length?'● todo '+w.todos.length:'● offen');
   s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''}" data-i="${i}"><title>${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${w.todos.length?'\\ntodos: '+w.todos.join(', '):''}</title>
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
-   <text x="${x+10}" y="${y+16}">${name}</text>
-   <text x="${x+10}" y="${y+32}"><tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan></text>
-   <rect x="${x+10}" y="${y+39}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+39}" width="${W-20-bp}" height="4" class="tm"/>
-   <text x="${x+W-8}" y="${y+16}" text-anchor="end" class="marke ${f?'mf':'mo'}">${f?'✓ fertig':(w.todos.length?'● todo '+w.todos.length:'● offen')}</text>
-   <circle cx="${x+22}" cy="${y+H+4}" r="6" class="rad"/><circle cx="${x+W-22}" cy="${y+H+4}" r="6" class="rad"/></g>`;
-  if(i<ZUG.length-1)s+=`<line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
+   <text x="${x+10}" y="${y+17}" font-weight="600">${name}</text>
+   <text x="${x+10}" y="${y+35}"><tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan></text>
+   <text x="${x+W-10}" y="${y+35}" text-anchor="end" class="marke ${f?'mf':'mo'}">${marke}</text>
+   <rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>
+   <circle cx="${x+24}" cy="${y+H+4}" r="6" class="rad"/><circle cx="${x+W-24}" cy="${y+H+4}" r="6" class="rad"/></g>
+   <line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
+ s+=`<g transform="translate(${4+ZUG.length*(W+G)},${yr-70})">${lok()}</g>`;
  svg.innerHTML=s;box.appendChild(svg);
  svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w.status==='offen'&&w.p!==MR.projekt)location.href=w.datei}));
  const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
@@ -437,7 +461,7 @@ def seite_schreiben(wurzel, von, bis, inline=False):
     seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
 <style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
-<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{html.escape(projekt)}: {html.escape(von)} ← {html.escape(bis)}</h1>
+<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}</h1>
 <span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
 <span id="meldung"></span><button id="fertig" title="reviewed auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
 <details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
@@ -517,7 +541,7 @@ def einrichten():
     print("eingerichtet:", app)
 
 def main():
-    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht reviewed ← claude")
+    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht claude → reviewed")
     ap.add_argument("ordner", nargs="?", help="Projekt (Standard: aktuelles Repo, sonst das größte offene)")
     ap.add_argument("--von", default="reviewed")
     ap.add_argument("--bis", default="claude")
