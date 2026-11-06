@@ -2,7 +2,7 @@
 """merge-train – Merge-Requests claude → reviewed aller Projekte, sofort im Browser.
 
 Aufruf:
-  merge-train [projekt] [--von reviewed] [--bis claude] [--meld] [--inline] [--nur-datei]
+  merge-train [projekt] [--von reviewed] [--bis claude] [--inline] [--nur-datei]
 
 Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab und öffnet sie:
 oben (schwebend) Commits mit vollen Nachrichten, links (schwebend) die
@@ -10,7 +10,7 @@ Dateiliste, rechts alle Diffs nebeneinander mit Syntaxhervorhebung.
 Verglichen wird wie in GitLab ab dem gemeinsamen Vorgänger (reviewed...claude).
 
 Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf,
-c Commits ein-/ausklappen.  --meld öffnet stattdessen Meld (Ordnervergleich).
+c Commits ein-/ausklappen, Enter fertig.
 """
 import argparse, difflib, html, os, re, subprocess, sys
 from datetime import datetime
@@ -570,7 +570,7 @@ def fertig_url(url):
     projekt = unquote((u.netloc + u.path).removeprefix("fertig/").removeprefix("fertig").strip("/"))
     ok, text = fertig(projekt, q.get("sha", [""])[0], q.get("k", [""])[0])
     if not ok:
-        melden(text); sys.exit("mr: " + text)
+        melden(text); sys.exit("merge-train: " + text)
 
 # ---------------------------------------------------------------- Server (nur bei Bedarf)
 
@@ -689,7 +689,6 @@ def main():
     ap.add_argument("--von", default="reviewed")
     ap.add_argument("--bis", default="claude")
     ap.add_argument("--alle", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--meld", action="store_true", help="Meld-Ordnervergleich statt Browser")
     ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
     ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
     ap.add_argument("--url", help=argparse.SUPPRESS)
@@ -703,17 +702,13 @@ def main():
     if o.einrichten:
         return einrichten()
     wurzel = None
-    if o.ordner or o.meld:  # ohne Projekt: immer der ganze Zug
-        ordner = o.ordner or "."
+    if o.ordner:  # ohne Projekt: immer der ganze Zug
+        ordner = o.ordner
         if o.ordner and not os.path.exists(ordner):
             ordner = os.path.join(PROJEKTE, o.ordner)
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
             sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")
-    if wurzel and o.meld:
-        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt",
-                          f"{o.von}...{o.bis}"], start_new_session=True)
-        return
     if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False) for b in (o.von, o.bis)):
         sys.exit(f"merge-train: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
     repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
