@@ -357,6 +357,28 @@ function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)ret
 zug();kh();
 const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
 const ich=ZUG.find(w=>w.p===MR.projekt);
+function feier(){ // letzter Waggon fertig: Zug fährt ab, Daumen-Regen, großer Daumen
+ const box=document.getElementById('zug'),svg=box&&box.querySelector('svg');
+ if(svg){box.style.overflow='hidden';const w=svg.getBoundingClientRect().width;
+  svg.animate([{transform:'translateX(0)'},{transform:`translateX(${innerWidth+w}px)`}],{duration:2200,easing:'cubic-bezier(.55,0,.85,.5)',fill:'forwards'})}
+ const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:99;overflow:hidden';document.body.appendChild(o);
+ const W=innerWidth,H=innerHeight,zf=Math.random;
+ for(let i=0;i<110;i++){const e=document.createElement('span');e.textContent='👍';
+  e.style.cssText=`position:absolute;left:0;top:0;font-size:${16+zf()*30}px;line-height:1;will-change:transform`;o.appendChild(e);
+  const seite=i%4,x0=seite===1?W+60:seite===3?-60:zf()*W,y0=seite===0?-60:seite===2?H+60:zf()*H;
+  const x1=W-x0+(zf()-.5)*W*.7,y1=H-y0+(zf()-.5)*H*.7;
+  e.animate([{transform:`translate(${x0}px,${y0}px) rotate(0deg)`},{transform:`translate(${x1}px,${y1}px) rotate(${(zf()-.5)*1080}deg)`}],
+   {duration:1000+zf()*700,delay:zf()*1300,fill:'both'})}
+ const b=document.createElement('div');b.textContent='👍';
+ b.style.cssText='position:absolute;left:50%;top:50%;font-size:80vmin;line-height:1;will-change:transform,filter';o.appendChild(b);
+ const t=(sk,r)=>`translate(-50%,-50%) scale(${sk}) rotate(${r}deg)`,glanz=(px,a)=>`drop-shadow(0 0 ${px}px rgba(255,200,40,${a}))`;
+ b.animate([
+  {transform:t(.02,-1440),filter:glanz(0,0),opacity:1,easing:'cubic-bezier(.2,.6,.3,1)'},
+  {transform:t(1,0),filter:glanz(0,0),opacity:1,offset:.62,easing:'ease-out'},
+  {transform:t(1.14,0),filter:glanz(60,.95),opacity:1,offset:.74,easing:'ease-in-out'},
+  {transform:t(1,0),filter:glanz(20,.4),opacity:1,offset:.86,easing:'ease-in'},
+  {transform:t(1,0),filter:glanz(0,0),opacity:0}],{duration:3400,fill:'forwards'}).onfinish=()=>o.remove()}
+if(location.hash==='#feier')setTimeout(feier,300); // Vorschau: Seite mit #feier aufrufen
 function weiter(){const n=naechster();if(n){meld.textContent='→ weiter zu '+n.p;setTimeout(()=>location.href=n.datei,600)}
  else meld.textContent='Alles durch – kein offener Waggon mehr 🎉'}
 if(knopf){
@@ -366,7 +388,7 @@ if(knopf){
   if(location.protocol.startsWith('http')){
    fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projekt:MR.projekt,sha:MR.sha,k:MR.k})})
     .then(r=>r.json()).then(d=>{if(!d.ok){knopf.disabled=false;meld.textContent=d.text;return}
-     ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()})
+     ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter();if(!naechster())feier()})
     .catch(e=>{knopf.disabled=false;meld.textContent='merge-train-Server nicht erreichbar – merge-train erneut aufrufen'});
    return}
   knopf.disabled=false;meld.textContent='Seite bitte über merge-train öffnen, dann klappt „fertig“.'})}
