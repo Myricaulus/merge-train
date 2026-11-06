@@ -369,11 +369,7 @@ if(knopf){
      ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()})
     .catch(e=>{knopf.disabled=false;meld.textContent='merge-train-Server nicht erreichbar – merge-train erneut aufrufen'});
    return}
-  location.href=`mr://fertig/${encodeURIComponent(MR.projekt)}?sha=${MR.sha}&k=${MR.k}`;
-  let n=0;const t=setInterval(()=>{n++;const sc=document.createElement('script');sc.src='zug.js?t='+Date.now();
-   sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);ZUG=window.MR_ZUG.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter()}};
-   document.head.appendChild(sc);
-   if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (merge-train --einrichten)'}},500)})}
+  knopf.disabled=false;meld.textContent='Seite bitte über merge-train öffnen, dann klappt „fertig“.'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
  if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
  else if(e.key==='Enter'&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
@@ -561,17 +557,6 @@ def fertig(projekt, sha, k):
     melden(text)
     return True, text
 
-def fertig_url(url):
-    """mr://fertig/<projekt>?sha=…&k=… – Rückfallweg für Seiten, die als file:// offen sind."""
-    from urllib.parse import urlparse, parse_qs, unquote
-    u = urlparse(url); q = parse_qs(u.query)
-    if u.scheme != "mr" or not (u.netloc + u.path).startswith("fertig"):
-        sys.exit("mr: unbekannte URL")
-    projekt = unquote((u.netloc + u.path).removeprefix("fertig/").removeprefix("fertig").strip("/"))
-    ok, text = fertig(projekt, q.get("sha", [""])[0], q.get("k", [""])[0])
-    if not ok:
-        melden(text); sys.exit("merge-train: " + text)
-
 # ---------------------------------------------------------------- Server (nur bei Bedarf)
 
 PORT = 8771
@@ -670,19 +655,6 @@ def server():
     if neu[0]:
         os.execv(sys.executable, [sys.executable, skript, "--server"])
 
-def einrichten():
-    app = os.path.expanduser("~/.local/share/applications/merge-train.desktop")
-    alt = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
-    if os.path.exists(alt):
-        os.remove(alt)
-    with open(app, "w") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=merge-train (Link-Handler)\n"
-                f"Exec={os.path.realpath(__file__)} --url %u\nMimeType=x-scheme-handler/mr;\n"
-                "NoDisplay=true\nTerminal=false\n")
-    subprocess.run(["xdg-mime", "default", "merge-train.desktop", "x-scheme-handler/mr"], check=True)
-    subprocess.run(["update-desktop-database", os.path.dirname(app)], check=False)
-    print("eingerichtet:", app)
-
 def main():
     ap = argparse.ArgumentParser(description="merge-train: Merge-Requests claude → reviewed aller Projekte")
     ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects); ohne: der ganze Zug, beginnend beim größten")
@@ -691,13 +663,9 @@ def main():
     ap.add_argument("--alle", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
     ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
-    ap.add_argument("--url", help=argparse.SUPPRESS)
     ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--projekte", action="store_true", help=argparse.SUPPRESS)  # für die Shell-Vervollständigung
-    ap.add_argument("--einrichten", action="store_true", help="Link-Handler mr:// für den Knopf „fertig“ einrichten")
     o = ap.parse_args()
-    if o.url:
-        return fertig_url(o.url)
     if o.server:
         return server()
     if o.projekte:
@@ -708,8 +676,6 @@ def main():
         for w in st:
             print(f'{w["p"]}\t+{w["plus"]} −{w["minus"]} · {w["dateien"]} Datei(en)' if w["dateien"] else f'{w["p"]}\taktuell')
         return
-    if o.einrichten:
-        return einrichten()
     wurzel = None
     if o.ordner:  # ohne Projekt: immer der ganze Zug
         ordner = o.ordner
