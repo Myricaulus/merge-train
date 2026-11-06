@@ -588,7 +588,7 @@ def server_laeuft():
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/ping", timeout=0.5) as r:
-            return r.read() == b"mr"
+            return r.read() == b"merge-train"
     except OSError:
         return False
 
@@ -626,7 +626,7 @@ def server():
             pfad = self.path.split("?", 1)[0].lstrip("/")
             try:
                 if pfad == "ping":
-                    return self.senden(200, "mr", "text/plain")
+                    return self.senden(200, "merge-train", "text/plain")
                 repos = {dateiname(projektname(r)): r for r in finde_repos()}
                 if pfad == "zug.js":
                     zug_schreiben([statistik(r) for r in repos.values()])
@@ -643,7 +643,7 @@ def server():
                     return self.senden(200, open(datei, "rb").read())
                 self.senden(404, "nicht gefunden", "text/plain")
             except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
-                self.senden(500, f"mr: {e}", "text/plain; charset=utf-8")
+                self.senden(500, f"merge-train: {e}", "text/plain; charset=utf-8")
         def do_POST(self):
             zuletzt[0] = time.time()
             if self.path != "/fertig" or self.headers.get("Origin", herkunft) != herkunft:
@@ -655,7 +655,7 @@ def server():
                 self.senden(200 if ok else 400, json.dumps({"ok": ok, "text": text, "wagen": wagen}, ensure_ascii=False),
                             "application/json")
             except Exception as e:
-                self.senden(500, json.dumps({"ok": False, "text": f"mr: {e}"}), "application/json")
+                self.senden(500, json.dumps({"ok": False, "text": f"merge-train: {e}"}), "application/json")
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     skript = os.path.realpath(__file__)
