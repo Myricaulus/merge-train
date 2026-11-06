@@ -585,8 +585,8 @@ def fertig(projekt, sha, k):
 PORT = 8771
 ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><title>merge-train: alles durch</title>
 <style>{CSS}
-.durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1}}
-.durch p{{font-size:20px;margin:12px 0 0}}</style></head>
+.durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1.25;margin-bottom:2vmin}}
+.durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
 <body><main class="durch"><section><div>👍</div><p>Alles durch – überall reviewed = claude</p>
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
 LEERLAUF_S = 3600
