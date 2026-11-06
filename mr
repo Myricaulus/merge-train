@@ -298,8 +298,8 @@ addEventListener('scroll',markiere,{passive:true});markiere();
 function geh(k){if(!ds.length)return;k=Math.max(0,Math.min(ds.length-1,k));ds[k].open=true;ds[k].scrollIntoView({block:'start'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;
  const k=aktuell();
- if(e.key==='j')geh(ds[k]&&ds[k].getBoundingClientRect().top>kopf.offsetHeight+30?k:k+1);
- else if(e.key==='k')geh(ds[k]&&ds[k].getBoundingClientRect().top<kopf.offsetHeight-5?k:k-1);
+ if(e.key==='j'||e.key==='ArrowRight'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top>kopf.offsetHeight+30?k:k+1)}
+ else if(e.key==='k'||e.key==='ArrowLeft'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top<kopf.offsetHeight-5?k:k-1)}
  else if(e.key==='i'){document.body.classList.toggle('inline');try{localStorage.mrInline=document.body.classList.contains('inline')?1:''}catch(_){}}
  else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu)}
  else if(e.key==='c'){const c=document.getElementById('commits');c.open=!c.open}});
@@ -492,7 +492,7 @@ def seite_schreiben(wurzel, von, bis, inline=False):
     leer = '<div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div>' if not dateien else ""
     mr = json.dumps({"projekt": projekt, "sha": sha, "k": schluessel(), "dateien": len(dateien)})
     hilfe = ('<div class="hilfe"><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
-             '<kbd>j</kbd>/<kbd>k</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+             '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
 <style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
