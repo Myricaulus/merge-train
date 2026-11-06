@@ -249,7 +249,21 @@ del{background:var(--wegs);text-decoration:none;border-radius:2px} ins{backgroun
 tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .inl{display:none} body.inline .inl{display:table} body.inline .sbs{display:none}
 .leer{padding:12px;color:var(--muted)}
-.hilfe{position:fixed;right:12px;bottom:8px;color:var(--muted);font-size:12px;background:var(--bg);padding:2px 6px;border:1px solid var(--rand);border-radius:4px}
+.hilfe{border-bottom:1px solid var(--rand);padding:6px 10px;color:var(--muted);font-size:12px;line-height:1.7}
+.hilfe kbd{font:11px ui-monospace,monospace;border:1px solid var(--rand);border-bottom-width:2px;border-radius:3px;padding:0 4px;color:var(--fg);background:var(--bg)}
+#zug{overflow-x:auto;margin:-2px 0 6px} #zug svg{display:block}
+#zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default}
+#zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5}
+#zug .wg:hover .kasten{stroke:var(--muted)}
+#zug .akt .kasten{stroke:var(--tn);stroke-width:3}
+#zug .fertig .kasten{fill:var(--dazu);stroke:var(--p)}
+#zug text{fill:var(--fg);font:12px system-ui,sans-serif} #zug .klein{fill:var(--muted);font-size:11px}
+#zug .tp{fill:var(--p)} #zug .tm{fill:var(--m)} #zug .rad{fill:var(--muted)} #zug .lok{fill:var(--muted)}
+#zug .marke{font-size:11px;font-weight:600} #zug .mo{fill:var(--tb)} #zug .mf{fill:var(--p)}
+.zeile{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#fertig{margin-left:auto;font:600 14px system-ui;padding:6px 16px;border-radius:6px;border:1px solid var(--p);background:var(--p);color:#fff;cursor:pointer}
+#fertig:disabled{opacity:.6;cursor:wait} #fertig.erledigt{background:transparent;color:var(--p);cursor:default}
+#meldung{color:var(--muted);font-size:13px}
 .tk{color:var(--tk)} .ts{color:var(--ts)} .tc{color:var(--tc);font-style:italic} .tn{color:var(--tn)} .tt{color:var(--tt)}
 .ta{color:var(--ta)} .tf{color:var(--tf)} .tb{color:var(--tb)} .tv{color:var(--tv)} .to{color:var(--to)}
 """
@@ -272,38 +286,134 @@ document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPU
 try{if(localStorage.mrInline)document.body.classList.add('inline')}catch(_){}
 """
 
-def main():
-    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht reviewed ← claude")
-    ap.add_argument("ordner", nargs="?", default=".")
-    ap.add_argument("--von", default="reviewed")
-    ap.add_argument("--bis", default="claude")
-    ap.add_argument("--meld", action="store_true", help="Meld-Ordnervergleich statt Browser")
-    ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
-    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
-    o = ap.parse_args()
+JS_ZUG = """
+const ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
+function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
+ const offen=ZUG.filter(w=>w.status==='offen'&&w.p!==MR.projekt);
+ return offen.find(w=>ZUG.indexOf(w)>i)||offen[0]||null}
+function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)return;
+ const W=150,H=50,L=70,G=14,y=6,ns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(ns,'svg'),breite=L+ZUG.length*(W+G)+4;
+ svg.setAttribute('width',breite);svg.setAttribute('height',H+y+14);
+ let s=`<g class="lok"><rect x="4" y="${y+14}" width="44" height="${H-14}" rx="4"/><rect x="30" y="${y}" width="18" height="18" rx="2"/>
+  <rect x="10" y="${y+4}" width="8" height="12"/><circle cx="16" cy="${y+H+4}" r="6" class="rad"/><circle cx="38" cy="${y+H+4}" r="6" class="rad"/></g>
+  <line x1="48" y1="${y+H-8}" x2="${L}" y2="${y+H-8}" stroke="currentColor" class="rad" stroke-width="2"/>`;
+ ZUG.forEach((w,i)=>{const x=L+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
+  const name=w.p.length>19?w.p.slice(0,18)+'…':w.p,ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
+  s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''}" data-i="${i}"><title>${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${w.todos.length?'\\ntodos: '+w.todos.join(', '):''}</title>
+   <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
+   <text x="${x+10}" y="${y+16}">${name}</text>
+   <text x="${x+10}" y="${y+32}"><tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan></text>
+   <rect x="${x+10}" y="${y+39}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+39}" width="${W-20-bp}" height="4" class="tm"/>
+   <text x="${x+W-8}" y="${y+16}" text-anchor="end" class="marke ${f?'mf':'mo'}">${f?'✓ fertig':(w.todos.length?'● todo '+w.todos.length:'● offen')}</text>
+   <circle cx="${x+22}" cy="${y+H+4}" r="6" class="rad"/><circle cx="${x+W-22}" cy="${y+H+4}" r="6" class="rad"/></g>`;
+  if(i<ZUG.length-1)s+=`<line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
+ svg.innerHTML=s;box.appendChild(svg);
+ svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w.status==='offen'&&w.p!==MR.projekt)location.href=w.datei}));
+ const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
+zug();kh();
+const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
+const ich=ZUG.find(w=>w.p===MR.projekt);
+function weiter(){const n=naechster();if(n){meld.textContent='→ weiter zu '+n.p;setTimeout(()=>location.href=n.datei,600)}
+ else meld.textContent='Alles durch – kein offener Waggon mehr 🎉'}
+if(knopf){
+ if(ich&&ich.status==='fertig'){knopf.textContent='✓ fertig';knopf.classList.add('erledigt');knopf.disabled=true;weiter()}
+ else if(!MR.dateien){knopf.style.display='none'}
+ knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
+  location.href=`mr://fertig/${encodeURIComponent(MR.projekt)}?sha=${MR.sha}&k=${MR.k}`;
+  let n=0;const t=setInterval(()=>{n++;const sc=document.createElement('script');sc.src='zug.js?t='+Date.now();
+   sc.onload=()=>{const w=(window.MR_ZUG.wagen||[]).find(w=>w.p===MR.projekt);if(w&&w.status==='fertig'){clearInterval(t);location.reload()}};
+   document.head.appendChild(sc);
+   if(n>60){clearInterval(t);knopf.disabled=false;meld.textContent='keine Rückmeldung von mr:// – Link-Handler eingerichtet? (mr --einrichten)'}},500)})}
+document.addEventListener('keydown',e=>{if(e.key==='n'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){const n=naechster();if(n)location.href=n.datei}});
+"""
+
+ORDNER = os.path.expanduser("~/.cache/mr")
+PROJEKTE = os.path.expanduser("~/Projects")
+RUNDE = os.path.join(ORDNER, "runde.json")
+SCHLUESSEL = os.path.join(ORDNER, "schluessel")
+
+def schluessel():
+    os.makedirs(ORDNER, exist_ok=True)
     try:
-        wurzel = git(o.ordner, "rev-parse", "--show-toplevel").strip()
-        for b in (o.von, o.bis):
-            git(wurzel, "rev-parse", "--verify", "-q", b)
-        basis = git(wurzel, "merge-base", o.von, o.bis).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        sys.exit(f"mr: kein Git-Repo oder Branch fehlt ({o.von}/{o.bis}) in {o.ordner}")
-    proj_dir = os.path.expanduser("~/Projects/")
-    projekt = os.path.relpath(wurzel, proj_dir) if wurzel.startswith(proj_dir) else os.path.basename(wurzel)
+        return open(SCHLUESSEL).read().strip()
+    except FileNotFoundError:
+        import secrets
+        k = secrets.token_hex(16)
+        try:
+            fd = os.open(SCHLUESSEL, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            return open(SCHLUESSEL).read().strip()
+        os.write(fd, k.encode()); os.close(fd)
+        return k
 
-    if o.meld:
-        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt",
-                          f"{o.von}...{o.bis}"], start_new_session=True)
-        return
+def projektname(wurzel):
+    p = PROJEKTE + "/"
+    return os.path.relpath(wurzel, PROJEKTE) if wurzel.startswith(p) else os.path.basename(wurzel)
 
+def dateiname(projekt):
+    return projekt.replace("/", "_") + ".html"
+
+def finde_repos():
+    """Alle Repos unter ~/Projects mit reviewed und claude (auch eine Ebene tiefer, z. B. cachy-patch/*)."""
+    out = []
+    for e in sorted(os.listdir(PROJEKTE)):
+        d = os.path.join(PROJEKTE, e)
+        if not os.path.isdir(d): continue
+        kandidaten = [d] if os.path.isdir(os.path.join(d, ".git")) else \
+            [os.path.join(d, u) for u in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, u, ".git"))]
+        for k in kandidaten:
+            if git(k, "rev-parse", "--verify", "-q", "reviewed", check=False) and \
+               git(k, "rev-parse", "--verify", "-q", "claude", check=False):
+                out.append(k)
+    return out
+
+def statistik(wurzel, von="reviewed", bis="claude"):
+    basis = git(wurzel, "merge-base", von, bis).strip()
+    plus = minus = dateien = 0
+    for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
+        a, b, _ = z.split("\t", 2); dateien += 1
+        if a != "-": plus += int(a); minus += int(b)
+    log = git(wurzel, "log", "--format=%B", f"{von}..{bis}")
+    return {"p": projektname(wurzel), "datei": dateiname(projektname(wurzel)), "plus": plus, "minus": minus,
+            "dateien": dateien, "commits": int(git(wurzel, "rev-list", "--count", f"{von}..{bis}")),
+            "todos": sorted(set(re.findall(r"todo:([\w.-]+)", log))), "status": "offen",
+            "sha": git(wurzel, "rev-parse", bis).strip()}
+
+def runde_laden():
+    import json
+    try:
+        r = json.load(open(RUNDE))
+    except (FileNotFoundError, ValueError):
+        r = {}
+    heute = datetime.now().strftime("%Y-%m-%d")
+    return {p: w for p, w in r.items() if w.get("tag") == heute}
+
+def zug_schreiben(stats):
+    """zug.js: offene Projekte + heute fertig gewordene, absteigend nach Umfang."""
+    import json
+    fertig = runde_laden()
+    wagen = [w for w in stats if w["dateien"] and w["p"] not in fertig]
+    wagen += [dict(w, status="fertig") for w in fertig.values()]
+    wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
+    tmp = os.path.join(ORDNER, "zug.js.tmp")
+    with open(tmp, "w") as f:
+        f.write("window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
+    os.replace(tmp, os.path.join(ORDNER, "zug.js"))
+    return wagen
+
+def seite_schreiben(wurzel, von, bis, inline=False):
+    import json
+    basis = git(wurzel, "merge-base", von, bis).strip()
+    sha = git(wurzel, "rev-parse", bis).strip()
+    projekt = projektname(wurzel)
     roh = git(wurzel, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
-              "--date=format:%d.%m. %H:%M", f"{o.von}..{o.bis}")
+              "--date=format:%d.%m. %H:%M", f"{von}..{bis}")
     commits = [c.strip("\n").split("\x1f") for c in roh.split("\x1e") if c.strip()]
-    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", basis, o.bis)
+    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", basis, bis)
     dateien = zerlegen(diff)
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     todos = sorted(set(re.findall(r"todo:([\w.-]+)", roh)))
-
     def nachricht(b):
         b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
         return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
@@ -321,25 +431,134 @@ def main():
                   f'<span class="m">−{d["minus"]}</span></span>{html.escape(name)}'
                   f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
     leer = '<div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div>' if not dateien else ""
+    mr = json.dumps({"projekt": projekt, "sha": sha, "k": schluessel(), "dateien": len(dateien)})
+    hilfe = ('<div class="hilfe"><kbd>j</kbd>/<kbd>k</kbd> Datei · <kbd>n</kbd> nächstes Projekt<br>'
+             '<kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
-<style>{CSS}</style></head><body class="{'inline' if o.inline else ''}">
-<header id="kopf"><h1>{html.escape(projekt)}: {html.escape(o.von)} ← {html.escape(o.bis)}</h1>
+<style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
+<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{html.escape(projekt)}: {html.escape(von)} ← {html.escape(bis)}</h1>
 <span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
+<span id="meldung"></span><button id="fertig" title="reviewed auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
 <details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
-<div class="rahmen"><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
-<main>{leer}{"".join(datei_html(n, d, wurzel, basis, o.bis) for n, d in enumerate(dateien))}</main></div>
-<div class="hilfe">j/k Datei · i inline · z zu/auf · c Commits</div>
-<script>{JS}</script></body></html>"""
-    ziel_dir = os.path.expanduser("~/.cache/mr")
-    os.makedirs(ziel_dir, exist_ok=True)
-    ziel = os.path.join(ziel_dir, projekt.replace("/", "_") + ".html")
-    with open(ziel, "w") as f:
+<div class="rahmen"><nav id="liste">{hilfe}<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<main>{leer}{"".join(datei_html(n, d, wurzel, basis, bis) for n, d in enumerate(dateien))}</main></div>
+<script>const MR={mr};{JS}{JS_ZUG}</script></body></html>"""
+    ziel = os.path.join(ORDNER, dateiname(projekt))
+    with open(ziel + ".tmp", "w") as f:
         f.write(seite)
+    os.replace(ziel + ".tmp", ziel)
+    return ziel
+
+def alles_erzeugen(von, bis, inline):
+    from concurrent.futures import ThreadPoolExecutor
+    schluessel()  # einmal vorab anlegen, sonst Wettlauf zwischen den Threads
+    repos = finde_repos()
+    with ThreadPoolExecutor(8) as ex:
+        stats = list(ex.map(lambda r: statistik(r, von, bis), repos))
+    wagen = zug_schreiben(stats)
+    offen = {w["p"] for w in wagen if w["status"] == "offen"}
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda r: seite_schreiben(r, von, bis, inline),
+                    [r for r in repos if projektname(r) in offen]))
+    return repos, wagen
+
+def oeffnen(pfad):
+    subprocess.Popen(["xdg-open", pfad], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def melden(text):
+    subprocess.run(["notify-send", "-a", "mr", "-i", "vcs-merge-request", "mr", text], check=False)
+
+def fertig_url(url):
+    """mr://fertig/<projekt>?sha=…&k=… – vom Knopf in der Seite."""
+    import json
+    from urllib.parse import urlparse, parse_qs, unquote
+    u = urlparse(url); q = parse_qs(u.query)
+    projekt = unquote((u.netloc + u.path).removeprefix("fertig/").removeprefix("fertig").strip("/"))
+    if u.scheme != "mr" or not (u.netloc + u.path).startswith("fertig"):
+        sys.exit("mr: unbekannte URL")
+    if q.get("k", [""])[0] != schluessel():
+        melden("Abgelehnt: falscher Schlüssel im Link."); sys.exit("mr: falscher Schlüssel")
+    repos = {projektname(r): r for r in finde_repos()}
+    if projekt not in repos:
+        melden(f"Unbekanntes Projekt: {projekt}"); sys.exit("mr: unbekanntes Projekt")
+    wurzel, sha = repos[projekt], q.get("sha", [""])[0]
+    if not re.fullmatch(r"[0-9a-f]{40}", sha) or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
+        melden("Abgelehnt: unbekannter Stand."); sys.exit("mr: sha fehlt")
+    if git(wurzel, "merge-base", "--is-ancestor", "reviewed", sha, check=False) is None:
+        melden(f"{projekt}: reviewed ist nicht Vorgänger des gesehenen Stands – nichts geändert."); sys.exit(1)
+    st = statistik(wurzel, "reviewed", sha)
+    log = git(wurzel, "log", "--format=%B", f"reviewed..{sha}")
+    schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
+    git(wurzel, "branch", "-f", "reviewed", sha)
+    r = runde_laden()
+    r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
+    with open(RUNDE, "w") as f:
+        json.dump(r, f, ensure_ascii=False, indent=1)
+    zug_schreiben([statistik(w) for w in repos.values()])
+    erledigt = []
+    for t in schliesst:
+        ok = subprocess.run(["todo", "erledigt", t, "-n", f"Merge-Request {projekt} angenommen ({sha[:8]})"],
+                            cwd=wurzel, capture_output=True).returncode == 0
+        erledigt.append(t + ("" if ok else " (Fehler)"))
+    rest = git(wurzel, "rev-list", "--count", f"{sha}..claude").strip()
+    melden(f"{projekt}: reviewed → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
+           + (f"\nAchtung: claude hat {rest} neuere Commit(s)" if rest != "0" else ""))
+
+def einrichten():
+    app = os.path.expanduser("~/.local/share/applications/mr-ansicht.desktop")
+    with open(app, "w") as f:
+        f.write("[Desktop Entry]\nType=Application\nName=mr-Ansicht (Link-Handler)\n"
+                f"Exec={os.path.realpath(__file__)} --url %u\nMimeType=x-scheme-handler/mr;\n"
+                "NoDisplay=true\nTerminal=false\n")
+    subprocess.run(["xdg-mime", "default", "mr-ansicht.desktop", "x-scheme-handler/mr"], check=True)
+    subprocess.run(["update-desktop-database", os.path.dirname(app)], check=False)
+    print("eingerichtet:", app)
+
+def main():
+    ap = argparse.ArgumentParser(description="Merge-Request-Ansicht reviewed ← claude")
+    ap.add_argument("ordner", nargs="?", help="Projekt (Standard: aktuelles Repo, sonst das größte offene)")
+    ap.add_argument("--von", default="reviewed")
+    ap.add_argument("--bis", default="claude")
+    ap.add_argument("--alle", action="store_true", help="mit dem größten offenen Projekt beginnen")
+    ap.add_argument("--meld", action="store_true", help="Meld-Ordnervergleich statt Browser")
+    ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
+    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
+    ap.add_argument("--url", help=argparse.SUPPRESS)
+    ap.add_argument("--einrichten", action="store_true", help="Link-Handler mr:// für den Knopf „fertig“ einrichten")
+    o = ap.parse_args()
+    if o.url:
+        return fertig_url(o.url)
+    if o.einrichten:
+        return einrichten()
+    wurzel = None
+    if not o.alle:
+        ordner = o.ordner or "."
+        if o.ordner and not os.path.exists(ordner):
+            ordner = os.path.join(PROJEKTE, o.ordner)
+        wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
+        if o.ordner and not wurzel:
+            sys.exit(f"mr: kein Git-Repo: {o.ordner}")
+    if wurzel and o.meld:
+        subprocess.Popen(["git", "-C", wurzel, "difftool", "--dir-diff", "--tool=meld", "--no-prompt",
+                          f"{o.von}...{o.bis}"], start_new_session=True)
+        return
+    if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False) for b in (o.von, o.bis)):
+        sys.exit(f"mr: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
+    repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
+    if wurzel:
+        if projektname(wurzel) not in {w["p"] for w in wagen}:
+            seite_schreiben(wurzel, o.von, o.bis, o.inline)
+        ziel = os.path.join(ORDNER, dateiname(projektname(wurzel)))
+    else:
+        offen = [w for w in wagen if w["status"] == "offen"]
+        if not offen:
+            print("mr: nichts zu prüfen – überall reviewed = claude"); return
+        ziel = os.path.join(ORDNER, offen[0]["datei"])
     print(ziel)
     if not o.nur_datei:
-        subprocess.Popen(["xdg-open", ziel], start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        oeffnen(ziel)
 
 if __name__ == "__main__":
     main()
