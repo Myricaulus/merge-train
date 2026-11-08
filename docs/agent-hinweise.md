@@ -58,15 +58,16 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
 {"key": "KEY", "branch": "feature/key-…", "reviewed_commit": "1a2b3c4d", "reviewed_at": "2026-11-09",
  "notes": "Themen außerhalb der Story",
  "markers": [
-   {"finding": "#3", "title": "Stichpunkte zum Thema", "path": "src/A.cs", "needle": "public void Foo(", "text": "#3 English comment for GitLab",
+   {"finding": "#3", "title": "Stichpunkte zum Thema", "path": "src/A.cs", "needle": "public void Foo(", "text": "English comment for GitLab",
     "problem": "deutsche Kurzfassung", "decision": "…", "status": "…",
     "see_also": ["src/B.cs:120", {"path": "src/C.cs", "needle": "Foo(", "label": "Aufrufer"}],
     "rationale": "Belege", "resolved_when": "woran man den Fix erkennt"},
-   {"finding": "#7", "text": "#7 General remark (no path → general MR comment)"}]}
+   {"finding": "#7", "text": "General remark (no path → general MR comment)"}]}
 ```
 
 - `title`: ein paar deutsche Stichpunkte zum Thema für die Kommentarliste links. Ohne `title` zeigt die Liste den Textanfang.
-- `text` ist der fertige englische GitLab-Kommentar und beginnt mit der Finding-ID. Ändert sich `text`, erscheint der
+- `text` ist der fertige englische GitLab-Kommentar, ohne Finding-ID (die steht in `finding` und ist nur lokal).
+  Querverweise per Datei- oder Klassenname ohne Zeile, die genaue Stelle gehört in `see_also`. Ändert sich `text`, erscheint der
   Eintrag als neuer Hinweis. Schon übernommene Kommentare bleiben erhalten.
 - `needle`: Text auf der Zeile im MR-Stand. Mit `=` am Anfang muss er die ganze Zeile treffen. Alternativ `line` (Zahl),
   nur wenn ein needle nicht eindeutig zu machen ist.

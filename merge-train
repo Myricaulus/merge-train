@@ -311,7 +311,7 @@ a{color:inherit;text-decoration:none} .p{color:var(--p)} .m{color:var(--m)} .sub
 #kopf{position:sticky;top:0;z-index:5;background:var(--kopf);border-bottom:1px solid var(--rand);padding:8px 16px}
 #kopf h1{font-size:17px;margin:0;display:inline} #kopf .sub{margin-left:12px}
 #commits{margin-top:6px} #commits summary{cursor:pointer;color:var(--muted);font-size:13px}
-#commits .liste{max-height:32vh;overflow:auto;margin-top:6px}
+#commits .liste{position:absolute;left:16px;right:16px;top:100%;z-index:6;max-height:60vh;overflow:auto;background:var(--kopf);border:1px solid var(--rand);border-top:0;border-radius:0 0 6px 6px;padding:4px 12px 8px;box-shadow:0 8px 20px rgba(0,0,0,.2)} /* Overlay: die Kopfzeile wächst nicht, darunter verschiebt sich nichts */
 .commit{border-left:3px solid var(--rand);padding:2px 0 4px 10px;margin:4px 0}
 .commit b{font-weight:600} .nachricht{white-space:pre-wrap;color:var(--muted);margin-top:2px}
 .todos{margin-top:4px} .todos code{background:var(--akt);padding:1px 5px;border-radius:4px;margin-right:4px}
@@ -365,7 +365,9 @@ function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHe
 kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
 function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(d.getBoundingClientRect().top<=g)k=j});return k}
 let FEST=null;['wheel','touchmove','keydown','mousedown'].forEach(t=>addEventListener(t,()=>{FEST=null},{passive:true,capture:true}));
-function markiere(){const k=FEST!=null&&ds[FEST]?FEST:aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k];if(a){const r=a.getBoundingClientRect(),p=a.parentElement.getBoundingClientRect();if(r.top<p.top||r.bottom>p.bottom)a.scrollIntoView({block:'nearest'})}}
+function markiere(){const k=FEST!=null&&ds[FEST]?FEST:aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k],nav=a&&a.closest('nav');
+ if(nav){const r=a.getBoundingClientRect(),p=nav.getBoundingClientRect(),h=nav.querySelector('h2'),oben=p.top+(h?h.offsetHeight:0);
+  if(r.top<oben)nav.scrollTop-=oben-r.top+4;else if(r.bottom>p.bottom)nav.scrollTop+=r.bottom-p.bottom+4}} // nur die Liste scrollen, nie das Fenster (sonst Rückkopplung mit dem Scroll-Event)
 addEventListener('scroll',markiere,{passive:true});markiere();
 function geh(k){if(!ds.length)return;k=Math.max(0,Math.min(ds.length-1,k));ds[k].open=true;ds[k].scrollIntoView({block:'start'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;
@@ -1259,7 +1261,7 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
                         "alt": bool(head and h.get("reviewed_commit") and not head.startswith(str(h["reviewed_commit"])))})
         for m in h["markers"]:
             text = str(m.get("text") or "").strip()
-            fid = str(m.get("finding") or text.split()[0])
+            fid = str(m.get("finding") or (re.match(r"(#\d+|K\d+)\b", text) or [""])[0])  # ID nur noch lokal, nicht mehr im Text nötig
             path = pfad_norm(m.get("path"))
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
@@ -1704,14 +1706,13 @@ function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/
  if(hin())return;
  (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
 function kliste(){const k=document.getElementById('kliste');if(!k)return;
- const ort=x=>x.path?x.path.split('/').pop()+(x.b||x.a?':'+(x.b||x.a):''):'allgemein';
  const items=[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
   ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))]
   .sort((p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0)));
  k.querySelector('summary').textContent='Kommentare ('+items.length+')';
  const titel=x=>x.title||(x.hinweis&&(RV.hinweise.find(h=>h.key===x.hinweis)||{}).title)||null;
  k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
-  return el('div',{class:'ke '+i.art,title:ort(i.x)+'\n'+t,onclick:()=>springen(i)},
+  return el('div',{class:'ke '+i.art,title:f,onclick:()=>springen(i)},
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
    i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f))}))}
 function ortLink(x){return x.path?el('a',{class:'ortlink',title:'im Code zeigen',onclick:()=>zeigen(x)},ort(x)):el('code',{},ort(x))}
