@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """merge-train – Merge-Requests claude → reviewed aller Projekte, sofort im Browser.
+Dazu: Review von GitLab-Merge-Requests (über glab) mit Kommentaren und Agent-Hinweisen.
 
 Aufruf:
   merge-train [projekt] [--von reviewed] [--bis claude] [--inline] [--nur-datei]
+  merge-train <MR-URL> | '!42' | gruppe/projekt!42      GitLab-MR reviewen
+  merge-train --mrs                                     Zug der MRs, bei denen ich Reviewer bin
+  merge-train agent zeigen|pruefen <hinweise.json>      Agent-Hinweise zu einem MR (siehe docs/agent-hinweise.md)
 
 Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab und öffnet sie:
 oben (schwebend) Commits mit vollen Nachrichten, links (schwebend) die
@@ -11,8 +15,11 @@ Verglichen wird wie in GitLab ab dem gemeinsamen Vorgänger (reviewed...claude).
 
 Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf,
 c Commits ein-/ausklappen, Enter fertig.
+
+Einstellungen: ~/.config/merge-train/config.toml (Vorlage: config.example.toml).
 """
-import argparse, difflib, html, os, re, subprocess, sys
+import argparse, difflib, glob, hashlib, html, json, os, re, shlex, shutil, subprocess, sys, threading
+import urllib.parse
 from datetime import datetime
 
 try:
@@ -187,7 +194,15 @@ def hunk_zeilen(h, ta_tok, tb_tok):
             if tb is not None: b += 1
     return rows
 
-def datei_html(n, d, wurzel, basis, bis):
+def lokale_texte(wurzel, basis, bis, d):
+    """Alter und neuer Dateiinhalt aus dem lokalen Repo (nur wenn es etwas darzustellen gibt)."""
+    if d["binaer"] or not d["hunks"]:
+        return None, None
+    alt = git(wurzel, "show", f"{basis}:{d['alt']}", check=False) if d["status"] != "neu" else ""
+    neu = git(wurzel, "show", f"{bis}:{d['neu']}", check=False) if d["status"] != "gelöscht" else ""
+    return alt, neu
+
+def datei_html(n, d, alt_text, neu_text):
     name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
     kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
             f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
@@ -196,9 +211,7 @@ def datei_html(n, d, wurzel, basis, bis):
     if d["binaer"]:
         return f'{auf}<div class="leer">Binärdatei</div></details>'
     if not d["hunks"]:
-        return f'{auf}<div class="leer">keine Inhaltsänderung</div></details>'
-    alt_text = git(wurzel, "show", f"{basis}:{d['alt']}", check=False) if d["status"] != "neu" else ""
-    neu_text = git(wurzel, "show", f"{bis}:{d['neu']}", check=False) if d["status"] != "gelöscht" else ""
+        return f'{auf}<div class="leer">{html.escape(d.get("leer") or "keine Inhaltsänderung")}</div></details>'
     ta_tok = zeilen_tokens(alt_text, d["alt"])
     tb_tok = zeilen_tokens(neu_text, d["neu"])
     sbs, inl = [], []
@@ -209,18 +222,19 @@ def datei_html(n, d, wurzel, basis, bis):
         rows = hunk_zeilen(h, ta_tok, tb_tok)
         weg, dazu = [], []
         def leeren():
-            for na, x in weg: inl.append(f'<tr><td class="n">{na}</td><td class="n"></td><td class="c weg">{x}</td></tr>')
-            for nb, x in dazu: inl.append(f'<tr><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{x}</td></tr>')
+            for na, x in weg: inl.append(f'<tr data-a="{na}"><td class="n">{na}</td><td class="n"></td><td class="c weg">{x}</td></tr>')
+            for nb, x in dazu: inl.append(f'<tr data-b="{nb}"><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{x}</td></tr>')
             weg.clear(); dazu.clear()
         for typ, na, ha, nb, hb in rows:
             if typ == "ctx":
-                sbs.append(f'<tr><td class="n">{na}</td><td class="c">{ha}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
+                sbs.append(f'<tr data-a="{na}" data-b="{nb}"><td class="n">{na}</td><td class="c">{ha}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
                 leeren()
-                inl.append(f'<tr><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
+                inl.append(f'<tr data-a="{na}" data-b="{nb}"><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
                 continue
             la = f'<td class="n">{na}</td><td class="c weg">{ha}</td>' if ha is not None else '<td class="n"></td><td class="c nix"></td>'
             lb = f'<td class="n">{nb}</td><td class="c dazu">{hb}</td>' if hb is not None else '<td class="n"></td><td class="c nix"></td>'
-            sbs.append(f"<tr>{la}{lb}</tr>")
+            attr = (f' data-a="{na}"' if ha is not None else "") + (f' data-b="{nb}"' if hb is not None else "")
+            sbs.append(f"<tr{attr}>{la}{lb}</tr>")
             if ha is not None: weg.append((na, ha))
             if hb is not None: dazu.append((nb, hb))
         leeren()
@@ -271,7 +285,7 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .hilfe{border-bottom:1px solid var(--rand);padding:6px 10px;color:var(--muted);font-size:12px;line-height:1.7}
 .hilfe kbd{font:11px ui-monospace,monospace;border:1px solid var(--rand);border-bottom-width:2px;border-radius:3px;padding:0 4px;color:var(--fg);background:var(--bg)}
 #zug{overflow-x:auto;margin:-2px 0 6px} #zug svg{display:block}
-#zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default}
+#zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default} body.gl #zug .wg.fertig{cursor:pointer}
 #zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5}
 #zug .wg:hover .kasten{stroke:var(--muted)}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}
@@ -308,6 +322,7 @@ try{if(localStorage.inline)document.body.classList.add('inline')}catch(_){}
 
 JS_ZUG = """
 let ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
+const GL=MR.modus==='gitlab',esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
  const offen=ZUG.filter(w=>w.status==='offen'&&w.p!==MR.projekt);
  return offen.find(w=>ZUG.indexOf(w)>i)||offen[0]||null}
@@ -340,19 +355,23 @@ function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)ret
  svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
  let s=`<line x1="0" y1="${yr}" x2="${breite}" y2="${yr}" class="schiene"/>`;
  ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
-  const name=w.p.length>23?w.p.slice(0,22)+'…':w.p,ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
-  const marke=f?'✓ fertig':(w.todos.length?'● todo '+w.todos.length:'● offen');
-  s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''}" data-i="${i}"><title>${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${w.todos.length?'\\ntodos: '+w.todos.join(', '):''}</title>
+  const nm=w.name||w.p,name=esc(nm.length>23?nm.slice(0,22)+'…':nm),ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
+  const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':(todos.length?'● todo '+todos.length:'● offen')));
+  const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\\ntodos: '+todos.join(', '):''}`);
+  const zmax=Math.max(6,24-marke.length);
+  const z2=w.zeile2!=null?`<tspan class="klein">${esc(w.zeile2.length>zmax?w.zeile2.slice(0,zmax-1)+'…':w.zeile2)}</tspan>`:`<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
+  const balken=w.plus+w.minus>0?`<rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>`:'';
+  s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''}" data-i="${i}"><title>${titel}</title>
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
    <text x="${x+10}" y="${y+17}" font-weight="600">${name}</text>
-   <text x="${x+10}" y="${y+35}"><tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan></text>
+   <text x="${x+10}" y="${y+35}">${z2}</text>
    <text x="${x+W-10}" y="${y+35}" text-anchor="end" class="marke ${f?'mf':'mo'}">${marke}</text>
-   <rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>
+   ${balken}
    <circle cx="${x+24}" cy="${y+H+4}" r="6" class="rad"/><circle cx="${x+W-24}" cy="${y+H+4}" r="6" class="rad"/></g>
    <line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
  s+=`<g transform="translate(${4+ZUG.length*(W+G)},${yr-70})">${lok()}</g>`;
  svg.innerHTML=s;box.appendChild(svg);
- svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w.status==='offen'&&w.p!==MR.projekt)location.href=w.datei}));
+ svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
  const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
 zug();kh();
 const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
@@ -381,7 +400,7 @@ function feier(){ // letzter Waggon fertig: Zug fährt ab, Daumen-Regen, großer
 if(location.hash==='#feier')setTimeout(feier,300); // Vorschau: Seite mit #feier aufrufen
 function weiter(){const n=naechster();if(n){meld.textContent='→ weiter zu '+n.p;setTimeout(()=>location.href=n.datei,600)}
  else meld.textContent='Alles durch – kein offener Waggon mehr 🎉'}
-if(knopf){
+if(knopf&&!GL){
  if(ich&&ich.status==='fertig'){knopf.textContent='✓ fertig';knopf.classList.add('erledigt');knopf.disabled=true;weiter()}
  else if(!MR.dateien){knopf.style.display='none'}
  knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
@@ -394,21 +413,77 @@ if(knopf){
   knopf.disabled=false;meld.textContent='Seite bitte über merge-train öffnen, dann klappt „fertig“.'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
  if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
- else if(e.key==='Enter'&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
+ else if(e.key==='Enter'&&!GL&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
 """
 
-ORDNER = os.path.expanduser("~/.cache/merge-train")
-PROJEKTE = os.path.expanduser("~/Projects")
+# ---------------------------------------------------------------- Einstellungen
+
+def _xdg(var, std):
+    return os.environ.get(var) or os.path.expanduser(std)
+
+KONFIG_DATEI = os.environ.get("MERGE_TRAIN_CONFIG") or \
+    os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "merge-train", "config.toml")
+STANDARD = {
+    "lokal": True,            # lokaler Projekt-Diff (von/bis-Branches aller Repos unter projekte)
+    "projekte": "~/Projects",
+    "von": "reviewed", "bis": "claude",
+    "gitlab": True,           # GitLab-MRs über glab
+    "gitlab_host": "",        # leer: Host aus MR-URL bzw. git-Remote, sonst glab-Standard
+    "glab": "glab",
+    "mr_liste": "reviewer",   # Zug im GitLab-Modus: reviewer | assignee | author | keine
+    "hinweise": [],           # Globs für Agent-Hinweis-Dateien, z. B. "~/src/*/tasks/*-review-markers.json"
+    "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
+    "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"
+    "port": 8771,
+}
+
+def _toml_einfach(text):
+    """Notbehelf ohne tomllib (Python < 3.11): key = wert und [abschnitt], Werte wie in Python."""
+    import ast
+    out, akt = {}, None
+    for z in text.splitlines():
+        z = z.strip()
+        if not z or z.startswith("#"):
+            continue
+        m = re.fullmatch(r"\[([\w.-]+)\]", z)
+        if m:
+            akt = out.setdefault(m.group(1), {}); continue
+        k, _, v = z.partition("=")
+        v = re.sub(r"\s+#[^\"']*$", "", v.strip())
+        v = re.sub(r"\btrue\b", "True", re.sub(r"\bfalse\b", "False", v))
+        (akt if akt is not None else out)[k.strip().strip('"')] = ast.literal_eval(v)
+    return out
+
+def konfig_laden():
+    k = dict(STANDARD)
+    try:
+        text = open(KONFIG_DATEI, encoding="utf-8").read()
+    except FileNotFoundError:
+        return k
+    try:
+        import tomllib
+        k.update(tomllib.loads(text))
+    except ImportError:
+        k.update(_toml_einfach(text))
+    except Exception as e:
+        sys.exit(f"merge-train: {KONFIG_DATEI} fehlerhaft: {e}")
+    return k
+
+KONF = konfig_laden()
+ORDNER = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "merge-train")
+DATEN = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "merge-train")
+PROJEKTE = os.path.expanduser(KONF["projekte"])
+VON, BIS = KONF["von"], KONF["bis"]
 RUNDE = os.path.join(ORDNER, "runde.json")
 SCHLUESSEL = os.path.join(ORDNER, "schluessel")
-import threading
-SPERRE = threading.Lock()
+SPERRE = threading.RLock()
 
 def ersetzen(ziel, inhalt):
     """Atomar schreiben (eigene Temp-Datei je Aufruf, damit parallele Abrufe sich nicht stören)."""
     import tempfile
-    fd, tmp = tempfile.mkstemp(dir=ORDNER, prefix=".tmp-")
-    with os.fdopen(fd, "w") as f:
+    os.makedirs(os.path.dirname(ziel), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(ziel), prefix=".tmp-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(inhalt)
     os.chmod(tmp, 0o644)
     os.replace(tmp, ziel)
@@ -435,7 +510,7 @@ def dateiname(projekt):
     return projekt.replace("/", "_") + ".html"
 
 def finde_repos():
-    """Alle Repos unter ~/Projects mit reviewed und claude (auch eine Ebene tiefer, z. B. cachy-patch/*)."""
+    """Alle Repos unter PROJEKTE mit VON und BIS (auch eine Ebene tiefer, z. B. cachy-patch/*)."""
     out = []
     for e in sorted(os.listdir(PROJEKTE)):
         d = os.path.join(PROJEKTE, e)
@@ -443,12 +518,13 @@ def finde_repos():
         kandidaten = [d] if os.path.isdir(os.path.join(d, ".git")) else \
             [os.path.join(d, u) for u in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, u, ".git"))]
         for k in kandidaten:
-            if git(k, "rev-parse", "--verify", "-q", "reviewed", check=False) and \
-               git(k, "rev-parse", "--verify", "-q", "claude", check=False):
+            if git(k, "rev-parse", "--verify", "-q", VON, check=False) and \
+               git(k, "rev-parse", "--verify", "-q", BIS, check=False):
                 out.append(k)
     return out
 
-def statistik(wurzel, von="reviewed", bis="claude"):
+def statistik(wurzel, von=None, bis=None):
+    von, bis = von or VON, bis or BIS
     basis = git(wurzel, "merge-base", von, bis).strip()
     plus = minus = dateien = 0
     for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
@@ -480,6 +556,26 @@ def zug_schreiben(stats):
     ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
     return wagen
 
+def commits_html(commits):
+    """commits: Liste (kurz-sha, zeit, betreff, rumpf)."""
+    def nachricht(b):
+        b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
+        return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
+    return "".join(f'<div class="commit"><code>{html.escape(h)}</code> <b>{html.escape(s)}</b> '
+                   f'<span class="sub">{html.escape(t)}</span>{nachricht(b)}</div>'
+                   for h, t, s, b in commits) or '<div class="sub">keine Commits</div>'
+
+def dateiliste_html(dateien):
+    fl, letzter = [], None
+    for n, d in enumerate(dateien):
+        ordner, name = os.path.split(d["neu"])
+        if ordner != letzter:
+            fl.append(f'<div class="sub" style="padding:6px 10px 0">{html.escape(ordner or "/")}</div>'); letzter = ordner
+        fl.append(f'<a href="#d{n}" title="{html.escape(d["neu"])}"><span class="zahl"><span class="kz"></span><span class="p">+{d["plus"]}</span> '
+                  f'<span class="m">−{d["minus"]}</span></span>{html.escape(name)}'
+                  f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
+    return fl
+
 def seite_schreiben(wurzel, von, bis, inline=False):
     import json
     basis = git(wurzel, "merge-base", von, bis).strip()
@@ -492,23 +588,11 @@ def seite_schreiben(wurzel, von, bis, inline=False):
     dateien = zerlegen(diff)
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     todos = sorted(set(re.findall(r"todo:([\w.-]+)", roh)))
-    def nachricht(b):
-        b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
-        return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
-    cl = "".join(f'<div class="commit"><code>{html.escape(h)}</code> <b>{html.escape(s)}</b> '
-                 f'<span class="sub">{html.escape(t)}</span>{nachricht(b)}</div>'
-                 for h, t, s, b in commits) or '<div class="sub">keine Commits</div>'
+    cl = commits_html(commits)
     td = ('<div class="todos">todos: ' + "".join(f"<code>{html.escape(t)}</code>" for t in todos) + "</div>"
           if todos else "")
-    fl, letzter = [], None
-    for n, d in enumerate(dateien):
-        ordner, name = os.path.split(d["neu"])
-        if ordner != letzter:
-            fl.append(f'<div class="sub" style="padding:6px 10px 0">{html.escape(ordner or "/")}</div>'); letzter = ordner
-        fl.append(f'<a href="#d{n}" title="{html.escape(d["neu"])}"><span class="zahl"><span class="p">+{d["plus"]}</span> '
-                  f'<span class="m">−{d["minus"]}</span></span>{html.escape(name)}'
-                  f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
-    leer = '<div class="leer">Keine Unterschiede – reviewed ist auf dem Stand von claude.</div>' if not dateien else ""
+    fl = dateiliste_html(dateien)
+    leer = f'<div class="leer">Keine Unterschiede – {VON} ist auf dem Stand von {BIS}.</div>' if not dateien else ""
     mr = json.dumps({"projekt": projekt, "sha": sha, "k": schluessel(), "dateien": len(dateien)})
     hilfe = ('<div class="hilfe"><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
@@ -517,10 +601,10 @@ def seite_schreiben(wurzel, von, bis, inline=False):
 <style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
 <header id="kopf"><div id="zug"></div><div class="zeile"><h1>{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}</h1>
 <span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
-<span id="meldung"></span><button id="fertig" title="reviewed auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
+<span id="meldung"></span><button id="fertig" title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
 <details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
 <div class="rahmen"><nav id="liste">{hilfe}<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
-<main>{leer}{"".join(datei_html(n, d, wurzel, basis, bis) for n, d in enumerate(dateien))}</main></div>
+<main>{leer}{"".join(datei_html(n, d, *lokale_texte(wurzel, basis, bis, d)) for n, d in enumerate(dateien))}</main></div>
 <script>const MR={mr};{JS}{JS_ZUG}</script></body></html>"""
     ziel = os.path.join(ORDNER, dateiname(projekt))
     ersetzen(ziel, seite)
@@ -539,15 +623,24 @@ def alles_erzeugen(von, bis, inline):
                     [r for r in repos if projektname(r) in offen]))
     return repos, wagen
 
-def oeffnen(pfad):
-    subprocess.Popen(["xdg-open", pfad], start_new_session=True,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def oeffnen(ziel):
+    """Im Browser öffnen: browser aus der Einstellung, sonst xdg-open / wslview / explorer.exe (WSL)."""
+    if KONF["browser"]:
+        argv = shlex.split(KONF["browser"])
+    else:
+        prog = next((p for p in ("xdg-open", "wslview", "explorer.exe") if shutil.which(p)), None)
+        if not prog:
+            print(f"merge-train: kein Browser-Befehl gefunden – {ziel} bitte selbst öffnen (browser = … in der Einstellung)")
+            return
+        argv = [prog]
+    subprocess.Popen(argv + [ziel], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def melden(text):
-    subprocess.run(["notify-send", "-a", "merge-train", "-i", "vcs-merge-request", "merge-train", text], check=False)
+    if shutil.which("notify-send"):
+        subprocess.run(["notify-send", "-a", "merge-train", "-i", "vcs-merge-request", "merge-train", text], check=False)
 
 def fertig(projekt, sha, k):
-    """reviewed auf den gesehenen Stand setzen. Rückgabe (ok, text)."""
+    """VON auf den gesehenen Stand setzen. Rückgabe (ok, text)."""
     import json
     if k != schluessel():
         return False, "Abgelehnt: falscher Schlüssel."
@@ -557,12 +650,12 @@ def fertig(projekt, sha, k):
     wurzel = repos[projekt]
     if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
         return False, "Abgelehnt: unbekannter Stand."
-    if git(wurzel, "merge-base", "--is-ancestor", "reviewed", sha, check=False) is None:
-        return False, f"{projekt}: reviewed ist nicht Vorgänger des gesehenen Stands – nichts geändert."
-    st = statistik(wurzel, "reviewed", sha)
-    log = git(wurzel, "log", "--format=%B", f"reviewed..{sha}")
+    if git(wurzel, "merge-base", "--is-ancestor", VON, sha, check=False) is None:
+        return False, f"{projekt}: {VON} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
+    st = statistik(wurzel, VON, sha)
+    log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
-    git(wurzel, "branch", "-f", "reviewed", sha)
+    git(wurzel, "branch", "-f", VON, sha)
     with SPERRE:
         r = runde_laden()
         r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
@@ -574,20 +667,801 @@ def fertig(projekt, sha, k):
         ok = subprocess.run(["todo", "erledigt", t, "-n", f"Merge-Request {projekt} angenommen ({sha[:8]})"],
                             cwd=wurzel, capture_output=True).returncode == 0
         erledigt.append(t + ("" if ok else " (Fehler)"))
-    rest = git(wurzel, "rev-list", "--count", f"{sha}..claude").strip()
-    text = (f"{projekt}: reviewed → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
-            + (f"\nAchtung: claude hat {rest} neuere Commit(s)" if rest != "0" else ""))
+    rest = git(wurzel, "rev-list", "--count", f"{sha}..{BIS}").strip()
+    text = (f"{projekt}: {VON} → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
+            + (f"\nAchtung: {BIS} hat {rest} neuere Commit(s)" if rest != "0" else ""))
     melden(text)
     return True, text
 
+# ---------------------------------------------------------------- GitLab (über glab)
+
+class GitLabFehler(Exception):
+    pass
+
+def enc(t):
+    return urllib.parse.quote(str(t), safe="")
+
+def glab(host, pfad, methode="GET", daten=None, roh=False):
+    """glab api aufrufen. daten → JSON-Body. Rückgabe: geparstes JSON (bzw. Text bei roh)."""
+    argv = shlex.split(KONF["glab"]) + ["api"]
+    if host:
+        argv += ["--hostname", host]
+    if methode != "GET":
+        argv += ["--method", methode]
+    eingabe = None
+    if daten is not None:
+        argv += ["--header", "Content-Type: application/json", "--input", "-"]
+        eingabe = json.dumps(daten)
+    argv.append(pfad)
+    try:
+        r = subprocess.run(argv, input=eingabe, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=90)
+    except FileNotFoundError:
+        raise GitLabFehler(f"glab nicht gefunden ({KONF['glab']}) – installieren und „glab auth login“ ausführen")
+    except subprocess.TimeoutExpired:
+        raise GitLabFehler(f"glab api {pfad}: Zeitüberschreitung")
+    if r.returncode:
+        raise GitLabFehler(f"glab api {methode} {pfad.split('?')[0]}: {(r.stderr or r.stdout).strip()[:500]}")
+    if roh:
+        return r.stdout
+    return json.loads(r.stdout) if r.stdout.strip() else None
+
+def alle(host, pfad, max_seiten=50):
+    """Paginierte Liste vollständig holen."""
+    out, sep = [], "&" if "?" in pfad else "?"
+    for s in range(1, max_seiten + 1):
+        teil = glab(host, f"{pfad}{sep}per_page=100&page={s}")
+        if not isinstance(teil, list):
+            return out or teil
+        out += teil
+        if len(teil) < 100:
+            break
+    return out
+
+URL_MR = re.compile(r"https?://([^/\s]+)/(.+?)/-/merge_requests/(\d+)")
+
+def remote_info(ordner):
+    """(host, projektpfad) aus dem origin-Remote eines Klons."""
+    url = (git(ordner, "remote", "get-url", "origin", check=False) or "").strip()
+    for rx in (r"^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)(?:\.git)?/?$",
+               r"^https?://(?:[^@/]+@)?([^/]+)/(.+?)(?:\.git)?/?$",
+               r"^[\w.-]+@([^:]+):(.+?)(?:\.git)?/?$"):
+        m = re.match(rx, url)
+        if m:
+            return KONF["gitlab_host"] or m.group(1), m.group(2)
+    raise GitLabFehler(f"kein GitLab-Remote „origin“ in {ordner}")
+
+def ist_mr_ref(s):
+    return bool(URL_MR.search(s) or re.fullmatch(r"!\d+", s) or re.fullmatch(r"[\w.\-/]+!\d+", s))
+
+def mr_ref(s, ordner=None):
+    """MR-URL, '!42' (Projekt aus git-Remote von ordner) oder 'gruppe/projekt!42' → {host, projekt, iid}."""
+    s = str(s).strip()
+    m = URL_MR.search(s)
+    if m:
+        return {"host": m.group(1), "projekt": m.group(2), "iid": int(m.group(3))}
+    m = re.fullmatch(r"([\w.\-/]+)!(\d+)", s)
+    if m:
+        host = KONF["gitlab_host"]
+        if not host and ordner:
+            try:
+                host = remote_info(ordner)[0]
+            except GitLabFehler:
+                pass
+        return {"host": host, "projekt": m.group(1), "iid": int(m.group(2))}
+    m = re.fullmatch(r"!?(\d+)", s)
+    if m:
+        host, projekt = remote_info(ordner or os.getcwd())
+        return {"host": host, "projekt": projekt, "iid": int(m.group(1))}
+    raise GitLabFehler(f"kein Merge-Request erkannt: {s}")
+
+def mr_vollstaendig(mr):
+    """Ohne Host (glab-Standardhost): Host und kanonischen Pfad aus der API holen."""
+    if mr["host"]:
+        return mr
+    return mr_normalisieren(glab("", mr_pfad(mr)), mr)
+
+def mr_id(mr):
+    return f'{mr["host"]}/{mr["projekt"]}/{mr["iid"]}'
+
+def mr_aus_id(s):
+    teile = str(s).split("/")
+    if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
+       or any(t in ("", ".", "..") for t in teile[1:-1]):
+        raise GitLabFehler(f"ungültige MR-Kennung: {s}")
+    return {"host": teile[0], "projekt": "/".join(teile[1:-1]), "iid": int(teile[-1])}
+
+def mr_datei(mr):
+    return re.sub(r"[^\w.-]", "_", f'{mr["host"] or "gitlab"}_{mr["projekt"]}_{mr["iid"]}')
+
+def mr_pfad(mr):
+    return f'projects/{enc(mr["projekt"])}/merge_requests/{mr["iid"]}'
+
+def mr_normalisieren(meta, mr):
+    """Kanonischen Projektpfad aus web_url übernehmen (Umbenennungen, Groß/klein)."""
+    m = URL_MR.search(meta.get("web_url") or "")
+    return {"host": mr["host"] or m.group(1), "projekt": m.group(2), "iid": int(m.group(3))} if m else mr
+
+def mr_diffs(host, P):
+    try:
+        return alle(host, f"{P}/diffs")
+    except GitLabFehler as e:
+        if "404" not in str(e):
+            raise
+        return (glab(host, f"{P}/changes") or {}).get("changes", [])  # GitLab < 15.7
+
+INHALT = {}
+
+def inhalt(mr, sha, pfad):
+    """Dateiinhalt an einem Stand: erst lokaler Klon (falls bekannt), sonst über die API. None = gibt es nicht."""
+    k = (mr_id(mr), sha, pfad)
+    if k in INHALT:
+        return INHALT[k]
+    text = None
+    for ordner in lokale_klone(mr):
+        text = git(ordner, "show", f"{sha}:{pfad}", check=False)
+        if text is not None:
+            break
+    if text is None:
+        try:
+            text = glab(mr["host"], f'projects/{enc(mr["projekt"])}/repository/files/{enc(pfad)}/raw?ref={sha}', roh=True)
+        except GitLabFehler:
+            text = None
+    if len(INHALT) > 3000:
+        INHALT.clear()
+    INHALT[k] = text
+    return text
+
+def lokale_klone(mr):
+    out = []
+    for schl in (mr["projekt"], f'{mr["host"]}/{mr["projekt"]}'):
+        if schl in KONF["repos"]:
+            out.append(os.path.expanduser(KONF["repos"][schl]))
+    k = review_laden(mr).get("klon")
+    if k:
+        out.append(k)
+    return [o for o in out if os.path.isdir(o)]
+
+def paare_und_hunks(d):
+    """Je Diffzeile [alt, neu] (None = gibt es auf der Seite nicht) und Hunk-Grenzen [a, b, alen, blen]."""
+    paare, hunks = [], []
+    for h in d["hunks"]:
+        a, b = h["a"], h["b"]
+        al = sum(1 for t, _ in h["z"] if t != "+"); bl = sum(1 for t, _ in h["z"] if t != "-")
+        hunks.append([h["a"], h["b"], al, bl])
+        for t, _ in h["z"]:
+            if t == " ": paare.append([a, b]); a += 1; b += 1
+            elif t == "-": paare.append([a, None]); a += 1
+            else: paare.append([None, b]); b += 1
+    return paare, hunks
+
+def alt_zeile(f, n):
+    """Zeile n (neu) → Zeile im alten Stand; None bei hinzugefügter Zeile."""
+    for a, b in f["paare"]:
+        if b == n:
+            return a
+    delta = 0
+    for a0, b0, al, bl in f["hunks"]:
+        if b0 + bl <= n:
+            delta += bl - al
+    return n - delta
+
+def im_diff(f, a, b):
+    if b is not None:
+        return any(p[1] == b and (a is None or p[0] == a) for p in f["paare"])
+    return any(p[0] == a and p[1] is None for p in f["paare"])
+
+def api_commit(c):
+    msg = (c.get("message") or "").split("\n", 1)
+    zeit = c.get("authored_date") or c.get("created_at") or ""
+    try:
+        zeit = datetime.fromisoformat(zeit.replace("Z", "+00:00")[:25]).astimezone().strftime("%d.%m. %H:%M")
+    except ValueError:
+        zeit = zeit[:16]
+    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "")
+
+MR_ORDNER = os.path.join(ORDNER, "mr")
+VERSION = str(int(os.path.getmtime(os.path.realpath(__file__))))
+
+def mr_seite(mr, meta=None, inline=False):
+    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr)."""
+    from concurrent.futures import ThreadPoolExecutor
+    meta = meta or glab(mr["host"], mr_pfad(mr))
+    mr = mr_normalisieren(meta, mr)
+    host, P = mr["host"], mr_pfad(mr)
+    refs = meta.get("diff_refs") or {}
+    head = refs.get("head_sha") or meta.get("sha") or "leer"
+    stamm = os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{VERSION}")
+    if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
+        struktur = json.load(open(stamm + ".json", encoding="utf-8"))
+    else:
+        eintraege = mr_diffs(host, P) if refs.get("head_sha") else []
+        dateien = []
+        for e in eintraege:
+            kopf = "diff --git a/x b/x\n" + ("new file mode\n" if e.get("new_file") else "") + \
+                   ("deleted file mode\n" if e.get("deleted_file") else "") + \
+                   ("rename from x\n" if e.get("renamed_file") else "")
+            d = zerlegen(kopf + (e.get("diff") or ""))[0]
+            d["alt"], d["neu"] = e.get("old_path") or e.get("new_path"), e.get("new_path") or e.get("old_path")
+            if not d["hunks"] and (e.get("too_large") or e.get("collapsed")):
+                d["leer"] = "Diff zu groß für die API – bitte in GitLab ansehen"
+            dateien.append(d)
+        commits = [api_commit(c) for c in reversed(alle(host, f"{P}/commits"))]
+        def texte(d):
+            if d["binaer"] or not d["hunks"]:
+                return None, None
+            return (inhalt(mr, refs["base_sha"], d["alt"]) if d["status"] != "neu" else "",
+                    inhalt(mr, head, d["neu"]) if d["status"] != "gelöscht" else "")
+        with ThreadPoolExecutor(8) as ex:
+            tx = list(ex.map(texte, dateien))
+        struktur = {"mr": mr, "refs": {k: refs.get(k) for k in ("base_sha", "start_sha", "head_sha")},
+                    "web_url": meta.get("web_url", ""), "dateien": []}
+        for d in dateien:
+            paare, hunks = paare_und_hunks(d)
+            struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
+                                        "paare": paare, "hunks": hunks})
+        ersetzen(stamm + ".html", mr_html(mr, meta, dateien, commits, tx, head))
+        ersetzen(stamm + ".json", json.dumps(struktur, ensure_ascii=False))
+    with SPERRE:
+        st = review_laden(mr)
+        st["mr"] = dict(mr, web_url=meta.get("web_url", ""), titel=meta.get("title", ""),
+                        source_branch=meta.get("source_branch", ""), target_branch=meta.get("target_branch", ""))
+        st["struktur"] = stamm + ".json"
+        review_speichern(mr, st)
+    return stamm + ".html", struktur, mr
+
+def mr_html(mr, meta, dateien, commits, texte, head):
+    slug = mr_id(mr)
+    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
+    web = meta.get("web_url", "")
+    autor = (meta.get("author") or {}).get("name", "")
+    beschr = (meta.get("description") or "").strip()
+    cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
+        + commits_html(commits)
+    fl = dateiliste_html(dateien)
+    leer = '<div class="leer">Keine Änderungen in diesem Merge-Request (oder GitLab berechnet den Diff noch).</div>' \
+        if not dateien else ""
+    daten = json.dumps({"modus": "gitlab", "projekt": slug, "id": slug, "sha": head, "k": schluessel(),
+                        "dateien": len(dateien), "web_url": web})
+    hilfe = ('<div class="hilfe">Klick auf Zeilennummer: Kommentar<br><kbd>n</kbd> nächster MR · '
+             '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    titel = f'{mr["projekt"]}!{mr["iid"]}'
+    entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
+    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>!{mr["iid"]} {html.escape(meta.get("title", ""))}</title>
+<style>{CSS}{CSS_REVIEW}</style><script src="/mrzug.js?akt={enc(slug)}"></script></head><body class="gl">
+<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{entwurf}{html.escape(meta.get("title", ""))}</h1>
+<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>
+<span class="sub">{html.escape(meta.get("source_branch", ""))} → {html.escape(meta.get("target_branch", ""))} · {html.escape(autor)} ·
+{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
+<span id="rvstand" class="sub"></span><span id="meldung"></span>
+<button id="fertig" title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
+<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details></header>
+<div class="rahmen"><nav id="liste">{hilfe}<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<main>{leer}{"".join(datei_html(n, d, *texte[n]) for n, d in enumerate(dateien))}</main></div>
+<script>const MR={daten};{JS}{JS_ZUG}{JS_REVIEW}</script></body></html>"""
+
+# ---------------------------------------------------------------- Review-Zustand
+
+def review_datei(mr):
+    return os.path.join(DATEN, "reviews", mr_datei(mr) + ".json")
+
+def review_laden(mr):
+    try:
+        st = json.load(open(review_datei(mr), encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        st = {}
+    st.setdefault("mr", dict(mr))
+    st.setdefault("kommentare", []); st.setdefault("hinweise", {}); st.setdefault("hinweis_dateien", [])
+    return st
+
+def review_speichern(mr, st):
+    ersetzen(review_datei(mr), json.dumps(st, ensure_ascii=False, indent=1))
+
+STRUKTUR = {}
+
+def struktur_laden(st):
+    p = st.get("struktur")
+    if not p:
+        return None
+    if p not in STRUKTUR:
+        try:
+            STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    return STRUKTUR[p]
+
+def k_status(k):
+    if k.get("geloescht"): return "loeschen"
+    if k.get("gitlab_weg"): return "weg"
+    if not k.get("gitlab_id"): return "neu"
+    return "uebertragen" if k["text"] == k.get("gitlab_text") else "geaendert"
+
+def ausstehend(st):
+    return sum(1 for k in st["kommentare"] if k_status(k) in ("neu", "geaendert", "loeschen"))
+
+def datei_index(struktur, pfad):
+    if struktur and pfad:
+        for i, f in enumerate(struktur["dateien"]):
+            if f["neu"] == pfad and f["status"] != "gelöscht":
+                return i
+        for i, f in enumerate(struktur["dateien"]):
+            if f["alt"] == pfad:
+                return i
+    return None
+
+# ---------------------------------------------------------------- Agent-Hinweise (review-markers.json)
+
+HINWEIS_FELDER = {"finding", "path", "needle", "text", "rationale", "resolved_when", "line"}
+_HW_CACHE = {}
+
+def hinweise_lesen(pfad):
+    """Hinweis-Datei lesen und vereinheitlichen (auch Altformat: nur das markers-Array)."""
+    st = os.stat(pfad)
+    k = (pfad, st.st_mtime_ns, st.st_size)
+    if k in _HW_CACHE:
+        return _HW_CACHE[k]
+    daten = json.load(open(pfad, encoding="utf-8-sig"))
+    if isinstance(daten, list):
+        daten = {"markers": daten}
+    if not isinstance(daten, dict) or not isinstance(daten.get("markers", []), list):
+        raise ValueError("erwartet ein Objekt mit „markers“-Liste (oder nur die Liste)")
+    for i, m in enumerate(daten.get("markers") or []):
+        if not isinstance(m, dict):
+            raise ValueError(f"markers[{i}] ist kein Objekt")
+        if not str(m.get("text") or "").strip():
+            raise ValueError(f"markers[{i}]: „text“ fehlt")
+    daten.setdefault("markers", [])
+    _HW_CACHE[k] = daten
+    return daten
+
+def hinweis_passt(pfad, info):
+    try:
+        h = hinweise_lesen(pfad)
+    except (OSError, ValueError):
+        return False
+    if h.get("mr"):
+        try:
+            ref = mr_ref(h["mr"], os.path.dirname(pfad))
+        except GitLabFehler:
+            return False
+        return ref["iid"] == info.get("iid") and (ref["projekt"] or "").lower() == (info.get("projekt") or "").lower()
+    return bool(h.get("branch")) and h["branch"] == info.get("source_branch")
+
+def hinweis_dateien(mr, st):
+    dateien = [p for p in st["hinweis_dateien"] if os.path.exists(p)]
+    for muster in KONF["hinweise"]:
+        for p in sorted(glob.glob(os.path.expanduser(muster))):
+            p = os.path.abspath(p)
+            if p not in dateien and hinweis_passt(p, st["mr"]):
+                dateien.append(p)
+    return dateien
+
+def needle_zeilen(text, needle, tag):
+    rx = re.compile(r"\s*(//|<!--) " + re.escape(tag) + r"(?![0-9A-Za-z]).*$") if tag else None
+    out = []
+    for nr, z in enumerate(text.split("\n"), 1):
+        if rx:
+            z = rx.sub("", z)
+        if (z.strip() == needle[1:].strip()) if needle.startswith("=") else (needle in z):
+            out.append(nr)
+    return out
+
+def hinweise_aufloesen(mr, st, struktur, nur=None):
+    """Hinweise aller Dateien auf Zeilen des MR-Stands abbilden. Rückgabe (hinweise, quellen)."""
+    hinweise, quellen = [], []
+    head = (struktur or {}).get("refs", {}).get("head_sha")
+    for pfad in (nur if nur is not None else hinweis_dateien(mr, st)):
+        try:
+            h = hinweise_lesen(pfad)
+        except (OSError, ValueError) as e:
+            quellen.append({"datei": pfad, "fehler": f"nicht lesbar: {e}", "anzahl": 0}); continue
+        tag = str(h.get("tag") or "")
+        name = h.get("key") or os.path.basename(pfad)
+        quellen.append({"datei": pfad, "key": h.get("key"), "notes": h.get("notes"), "anzahl": len(h["markers"]),
+                        "reviewed_commit": h.get("reviewed_commit"), "reviewed_at": h.get("reviewed_at"),
+                        "failing_tests": h.get("failing_tests"),
+                        "alt": bool(head and h.get("reviewed_commit") and not head.startswith(str(h["reviewed_commit"])))})
+        for m in h["markers"]:
+            text = str(m.get("text") or "").strip()
+            fid = str(m.get("finding") or text.split()[0])
+            path = str(m.get("path") or "").strip().replace("\\", "/")
+            if path.startswith("./"):
+                path = path[2:]
+            needle = str(m.get("needle") or "")
+            basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
+                     "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name}
+            zeilen, problem = [], None
+            if isinstance(m.get("line"), int) and m["line"] > 0:
+                zeilen = [m["line"]]
+            elif not path:
+                problem = "kein Pfad"
+            elif not head:
+                problem = "MR-Stand unbekannt"
+            else:
+                t = inhalt(mr, head, path)
+                if t is None:
+                    problem = "Datei nicht im MR-Stand"
+                elif not needle:
+                    problem = "kein needle"
+                else:
+                    zeilen = needle_zeilen(t, needle, tag)
+                    if not zeilen:
+                        problem = "needle nicht gefunden"
+            i = datei_index(struktur, path)
+            f = struktur["dateien"][i] if i is not None else None
+            for j, z in enumerate(zeilen or [None]):
+                key = hashlib.sha1(f"{name}|{fid}|{path}|{needle}|{text}|{j}".encode()).hexdigest()[:12]
+                a = alt_zeile(f, z) if f and z else None
+                imd = bool(f and z and im_diff(f, a, z))
+                pr = problem or (None if imd else ("Zeile außerhalb des Diffs" if f else "Datei nicht im Diff") if z else None)
+                hinweise.append(dict(basis, key=key, zeile=z, datei=i, a=a, b=z, im_diff=imd, problem=pr,
+                                     mehrfach=len(zeilen) if len(zeilen) > 1 else None,
+                                     status=st["hinweise"].get(key, "offen")))
+    return hinweise, quellen
+
+def stand(mr, st):
+    teile = [st.get("struktur") or ""]
+    for p in [review_datei(mr)] + hinweis_dateien(mr, st):
+        try:
+            s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
+        except OSError:
+            teile.append(p + ":-")
+    return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
+
+def review_daten(mr):
+    with SPERRE:
+        st = review_laden(mr)
+    struktur = struktur_laden(st)
+    if struktur is None:
+        _, struktur, mr = mr_seite(mr)
+        st = review_laden(mr)
+    hinweise, quellen = hinweise_aufloesen(mr, st, struktur)
+    kom = []
+    for k in st["kommentare"]:
+        i = datei_index(struktur, k.get("path"))
+        f = struktur["dateien"][i] if i is not None else None
+        kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
+                    "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
+                    "finding": k.get("finding"), "status": k_status(k)})
+    return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st)}
+
+def kommentar_aktion(mr, d):
+    """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
+    aktion = d.get("aktion")
+    with SPERRE:
+        st = review_laden(mr)
+        struktur = struktur_laden(st)
+        if aktion == "neu":
+            text = str(d.get("text") or "").strip()
+            k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
+                 "erstellt": datetime.now().isoformat(timespec="seconds")}
+            if d.get("hinweis"):
+                h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
+                if not h:
+                    return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
+                i = h["datei"]
+                k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
+                         hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
+                st["hinweise"][h["key"]] = "uebernommen"
+            elif d.get("datei") is not None:
+                if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
+                    return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."
+                try:
+                    f = struktur["dateien"][int(d["datei"])]
+                except (ValueError, IndexError):
+                    return False, "unbekannte Datei"
+                a = int(d["a"]) if d.get("a") is not None else None
+                b = int(d["b"]) if d.get("b") is not None else None
+                if (a is None and b is None) or not im_diff(f, a, b):
+                    return False, "Zeile nicht im Diff"
+                k.update(text=text, path=f["neu"], old_path=f["alt"], a=a, b=b)
+            else:
+                k.update(text=text, path=None, a=None, b=None)
+            if not k["text"]:
+                return False, "leerer Kommentar"
+            st["kommentare"].append(k)
+        else:
+            k = next((k for k in st["kommentare"] if k["id"] == d.get("id")), None)
+            if not k:
+                return False, "Kommentar nicht gefunden"
+            if aktion == "aendern":
+                text = str(d.get("text") or "").strip()
+                if not text:
+                    return False, "leerer Kommentar"
+                k["text"] = text
+            elif aktion == "loeschen":
+                if k.get("hinweis"):
+                    st["hinweise"][k["hinweis"]] = "verworfen"
+                if k.get("gitlab_id") and not k.get("gitlab_weg"):
+                    k["geloescht"] = True  # Entwurf in GitLab wird beim Abschließen gelöscht
+                else:
+                    st["kommentare"].remove(k)
+            elif aktion == "wiederherstellen":
+                k.pop("geloescht", None)
+            else:
+                return False, "unbekannte Aktion"
+        review_speichern(mr, st)
+    return True, ""
+
+def hinweis_aktion(mr, d):
+    with SPERRE:
+        st = review_laden(mr)
+        key = str(d.get("key") or "")
+        if d.get("aktion") == "verwerfen":
+            st["hinweise"][key] = "verworfen"
+        elif d.get("aktion") == "zurueck":
+            st["hinweise"].pop(key, None)
+        else:
+            return False, "unbekannte Aktion"
+        review_speichern(mr, st)
+    return True, ""
+
+def entwurf_anlegen(mr, k, head, proj_url):
+    """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
+    host, P = mr["host"], mr_pfad(mr)
+    refs = k.get("refs") or {}
+    if k.get("path") and (k.get("a") or k.get("b")) and refs.get("head_sha"):
+        pos = {"position_type": "text", "base_sha": refs.get("base_sha"), "start_sha": refs.get("start_sha"),
+               "head_sha": refs["head_sha"], "old_path": k.get("old_path") or k["path"], "new_path": k["path"]}
+        if k.get("a"): pos["old_line"] = k["a"]
+        if k.get("b"): pos["new_line"] = k["b"]
+        try:
+            return glab(host, f"{P}/draft_notes", "POST", {"note": k["text"], "position": pos}), "position"
+        except GitLabFehler as e:
+            fehler = str(e)
+            if re.search(r"\b(401|403|404)\b", fehler):
+                raise
+    text = k["text"]
+    if k.get("path"):
+        z = k.get("b") or k.get("a")
+        ref = refs.get("head_sha") or head
+        ort = f'{k["path"]}:{z}' if z else k["path"]
+        link = f'{proj_url}/-/blob/{ref}/{k["path"]}' + (f"#L{z}" if z else "")
+        text = f"**[`{ort}`]({link})**\n\n{text}"
+    return glab(host, f"{P}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
+
+def abschliessen(mr):
+    """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
+    host, P = mr["host"], mr_pfad(mr)
+    with SPERRE:
+        st = review_laden(mr)
+        web = st["mr"].get("web_url", "")
+        proj_url = web.split("/-/merge_requests/")[0]
+        head = ((struktur_laden(st) or {}).get("refs") or {}).get("head_sha")
+        try:
+            vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
+        except GitLabFehler as e:
+            return False, f"Entwürfe nicht abrufbar: {e}", web
+        z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "verschwunden": 0}
+        fehler = []
+        for k in list(st["kommentare"]):
+            try:
+                if k.get("geloescht"):
+                    if k.get("gitlab_id") in vorhanden:
+                        glab(host, f'{P}/draft_notes/{k["gitlab_id"]}', "DELETE"); z["weg"] += 1
+                    st["kommentare"].remove(k)
+                elif k.get("gitlab_weg"):
+                    pass
+                elif k.get("gitlab_id"):
+                    if k["gitlab_id"] not in vorhanden:
+                        k["gitlab_weg"] = True; z["verschwunden"] += 1  # in GitLab veröffentlicht oder gelöscht
+                    elif k["text"] != k.get("gitlab_text"):
+                        glab(host, f'{P}/draft_notes/{k["gitlab_id"]}', "PUT", {"note": k["text"]})
+                        k["gitlab_text"] = k["text"]; z["akt"] += 1
+                else:
+                    r, art = entwurf_anlegen(mr, k, head, proj_url)
+                    k.update(gitlab_id=(r or {}).get("id"), gitlab_text=k["text"], gitlab_art=art)
+                    z["neu"] += 1; z["allg"] += art == "allgemein"
+            except GitLabFehler as e:
+                fehler.append(f'{k.get("path") or "allgemein"}{":" + str(k.get("b") or k.get("a")) if k.get("b") or k.get("a") else ""}: {e}')
+            review_speichern(mr, st)
+        if not fehler:
+            st["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
+            review_speichern(mr, st)
+    teile = []
+    if z["neu"]: teile.append(f'{z["neu"]} neu' + (f' ({z["allg"]} als allgemeiner Kommentar mit Link)' if z["allg"] else ""))
+    if z["akt"]: teile.append(f'{z["akt"]} aktualisiert')
+    if z["weg"]: teile.append(f'{z["weg"]} gelöscht')
+    text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
+            if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
+    if z["verschwunden"]:
+        text += f' {z["verschwunden"]} Entwurf/Entwürfe gibt es in GitLab nicht mehr (veröffentlicht oder dort gelöscht).'
+    if fehler:
+        text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
+    return not fehler, text, web
+
+# ---------------------------------------------------------------- MR-Zug (MRs zum Review)
+
+_MR_LISTE = {"t": 0, "items": [], "fehler": None}
+
+def mr_liste(neu=False):
+    import time
+    art = KONF["mr_liste"]
+    if art == "keine" or not KONF["gitlab"]:
+        return [], None
+    if not neu and time.time() - _MR_LISTE["t"] < 60:
+        return _MR_LISTE["items"], _MR_LISTE["fehler"]
+    host = KONF["gitlab_host"]
+    try:
+        ich = glab(host, "user")["username"]
+        param = {"reviewer": "reviewer_username", "assignee": "assignee_username", "author": "author_username"}.get(art, "reviewer_username")
+        items, fehler = glab(host, f"merge_requests?scope=all&state=opened&{param}={enc(ich)}&per_page=50") or [], None
+    except (GitLabFehler, KeyError, TypeError) as e:
+        items, fehler = [], str(e)
+    _MR_LISTE.update(t=time.time(), items=items, fehler=fehler)
+    return items, fehler
+
+def mr_wagen(akt=None):
+    items, _ = mr_liste()
+    wagen, gesehen = [], set()
+    def wagen_fuer(mr, titel, aenderungen):
+        st = review_laden(mr)
+        n = sum(1 for k in st["kommentare"] if not k.get("geloescht"))
+        fertig = bool(st.get("abgeschlossen")) and not ausstehend(st)
+        kurz = mr["projekt"].rsplit("/", 1)[-1]
+        return {"p": mr_id(mr), "name": f'!{mr["iid"]} {kurz}', "titel": f'{mr["projekt"]}!{mr["iid"]}: {titel}',
+                "zeile2": titel, "datei": "/mr/" + mr_id(mr), "plus": 0, "minus": 0, "dateien": aenderungen,
+                "commits": 0, "todos": [], "status": "fertig" if fertig else "offen",
+                "marke": "✓ in GitLab" if fertig else (f"● {n} Komm." if n else "● offen")}
+    for it in items:
+        try:
+            mr = mr_ref(it.get("web_url", ""))
+        except GitLabFehler:
+            continue
+        gesehen.add(mr_id(mr))
+        wagen.append(wagen_fuer(mr, it.get("title", ""), it.get("changes_count") or 0))
+    if akt and akt not in gesehen:
+        try:
+            mr = mr_aus_id(akt)
+            wagen.insert(0, wagen_fuer(mr, review_laden(mr)["mr"].get("titel", ""), 0))
+        except GitLabFehler:
+            pass
+    return wagen
+
+def mr_uebersicht():
+    items, fehler = mr_liste(neu=True)
+    zeilen = "".join(
+        f'<li><a href="/mr/{html.escape(mr_id(mr_ref(it["web_url"])))}"><b>{html.escape(it.get("references", {}).get("full") or "")}</b> '
+        f'{html.escape(it.get("title", ""))}</a> <span class="sub">{html.escape((it.get("author") or {}).get("name", ""))}</span></li>'
+        for it in items if URL_MR.search(it.get("web_url", "")))
+    art = {"reviewer": "bei denen du Reviewer bist", "assignee": "die dir zugewiesen sind",
+           "author": "die du erstellt hast"}.get(KONF["mr_liste"], "")
+    liste = (f"<ul>{zeilen}</ul>" if zeilen else f'<p class="sub">Keine offenen Merge-Requests {art}.</p>') \
+        if KONF["mr_liste"] != "keine" else ""
+    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><title>merge-train: Merge-Requests</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>{CSS}{CSS_REVIEW}.uebersicht{{max-width:900px;margin:40px auto;padding:0 16px}} .uebersicht li{{margin:6px 0}}
+.uebersicht input{{width:100%;font:14px ui-monospace,monospace;padding:6px 8px;border:1px solid var(--rand);border-radius:6px;background:var(--bg);color:var(--fg)}}</style></head>
+<body><main class="uebersicht"><h1>Merge-Requests {art}</h1>
+{f'<p class="warn">GitLab nicht erreichbar: {html.escape(fehler)}</p>' if fehler else ""}{liste}
+<form action="/mr-oeffnen"><p><label>MR öffnen (URL oder gruppe/projekt!42):<br><input name="u" autofocus placeholder="https://gitlab…/-/merge_requests/42"></label></p></form>
+</main></body></html>"""
+
+# ---------------------------------------------------------------- Review-Oberfläche
+
+CSS_REVIEW = """
+.gl-link{color:var(--tn);font-size:13px} .gl-link:hover{text-decoration:underline}
+#rvstand{font-size:13px}
+tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
+.kbox{border:1px solid var(--rand);border-left-width:4px;border-radius:6px;background:var(--kopf);padding:6px 10px;margin:3px 0;max-width:960px;font:13px system-ui,sans-serif}
+.kbox.km{border-left-color:var(--tn)} .kbox.hw{border-left-color:var(--tf)} .kbox.weg{opacity:.55}
+.kbox .kk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:3px}
+.kbox .kt{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg)}
+.knoepfe{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+.kbox button,#allgemein button{font:12px system-ui,sans-serif;padding:2px 8px;border-radius:5px;border:1px solid var(--rand);background:var(--bg);color:var(--fg);cursor:pointer}
+.kbox button:hover,#allgemein button:hover{border-color:var(--muted)}
+.kbox button.haupt{background:var(--tn);border-color:var(--tn);color:var(--bg)}
+.kbox textarea{display:block;width:100%;min-height:90px;font:13px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--rand);border-radius:5px;padding:6px;resize:vertical;margin-bottom:4px}
+.badge{font-size:11px;padding:0 6px;border-radius:9px;border:1px solid var(--rand);white-space:nowrap}
+.b-neu,.b-geaendert{color:var(--tb)} .b-ok{color:var(--p)} .b-loeschen{color:var(--m)} .b-agent{color:var(--tf)}
+.kbox details,.quelle{margin-top:4px;color:var(--muted);font-size:12px} .kbox details div,.quelle div{white-space:pre-wrap;margin:2px 0}
+.kbox summary,.quelle summary{cursor:pointer}
+.warn{color:var(--m)}
+body.gl td.n:not(:empty){cursor:pointer} body.gl td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
+#allgemein{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;padding:8px 12px}
+#allgemein>.kk{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#liste .kz{color:var(--tf);margin-right:6px}
+#meldung a{color:var(--tn)}
+"""
+
+JS_REVIEW = r"""
+const RV={kommentare:[],hinweise:[],quellen:[],stand:null,zeigVerworfen:false};let wartet=false;
+function el(tag,attrs,...kinder){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){
+ if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!=null)e.setAttribute(k,v)}
+ for(const k of kinder){if(k==null||k===false)continue;e.append(k instanceof Node?k:String(k))}return e}
+const qs=()=>'mr='+encodeURIComponent(MR.id)+'&k='+MR.k;
+function post(pfad,d){return fetch(pfad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({mr:MR.id,k:MR.k,sha:MR.sha},d))})
+ .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar – merge-train erneut aufrufen'}))}
+function antwort(d){if(!d.ok){meld.textContent=d.text||'Fehler';return d}meld.textContent='';if(d.review){Object.assign(RV,d.review);zeichnen()}return d}
+function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen()})
+ .catch(()=>{meld.textContent='merge-train-Server nicht erreichbar'})}
+const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)','b-ok'],geaendert:['geändert – wird aktualisiert','b-geaendert'],
+ loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok']};
+const ort=x=>x.path?x.path+(x.b?':'+x.b:(x.a?':'+x.a+' (alt)':'')):'allgemein';
+function bearbeiten(box,text,speichern,abbruch){
+ const ta=el('textarea',{}),alt=[...box.childNodes];ta.value=text||'';
+ const zu=()=>{if(abbruch)abbruch();else box.replaceChildren(...alt);nachholen()};
+ const ok=()=>{const t=ta.value.trim();if(!t){ta.focus();return}speichern(t).then(d=>{if(!d||!d.ok)return;if(abbruch)abbruch();else box.replaceChildren();zeichnen()})};
+ ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();ok()}else if(e.key==='Escape'){e.preventDefault();zu()}});
+ box.replaceChildren(ta,el('div',{class:'kk'},el('span',{},'Strg+Enter speichern · Esc abbrechen'),
+  el('span',{class:'knoepfe'},el('button',{onclick:zu},'abbrechen'),el('button',{class:'haupt',onclick:ok},'speichern'))));
+ ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}
+function speichernAls(d){return post('/api/kommentar',d).then(r=>{const x=antwort(r);return x})}
+function kommentarBox(k,mitOrt){
+ const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':'')}),kn=el('span',{class:'knoepfe'});
+ if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
+ else kn.append(k.status==='weg'?null:el('button',{onclick:()=>bearbeiten(box,k.text,t=>speichernAls({aktion:'aendern',id:k.id,text:t}))},'✎ bearbeiten'),
+  el('button',{onclick:()=>{if(k.status==='neu'&&!confirm('Kommentar löschen?'))return;speichernAls({aktion:'loeschen',id:k.id})}},'🗑 löschen'));
+ box.append(el('div',{class:'kk'},el('span',{class:'badge '+cl},st),k.finding?el('span',{class:'badge b-agent'},'aus Agent '+k.finding):null,
+  mitOrt?el('code',{},ort(k)):null,kn),el('div',{class:'kt'},k.text));
+ return box}
+function hinweisBox(h,mitOrt){
+ const box=el('div',{class:'kbox hw'+(h.status==='verworfen'?' weg':'')}),kn=el('span',{class:'knoepfe'});
+ if(h.status==='verworfen')kn.append(el('button',{onclick:()=>post('/api/hinweis',{aktion:'zurueck',key:h.key}).then(antwort)},'zurückholen'));
+ else kn.append(el('button',{class:'haupt',title:'als Review-Kommentar übernehmen',onclick:()=>speichernAls({aktion:'neu',hinweis:h.key})},'übernehmen'),
+  el('button',{onclick:()=>bearbeiten(box,h.text,t=>speichernAls({aktion:'neu',hinweis:h.key,text:t}))},'✎ anpassen & übernehmen'),
+  el('button',{onclick:()=>post('/api/hinweis',{aktion:'verwerfen',key:h.key}).then(antwort)},'verwerfen'));
+ const NAMEN={problem:'Problem',decision:'Entscheidung',status:'Status',placement:'Platzierung'},ex=h.extra||{};
+ const det=[['Problem',ex.problem],['Entscheidung',ex.decision],['Begründung',h.rationale],['Behoben, wenn',h.resolved_when],
+  ...Object.entries(ex).filter(([k])=>k!=='problem'&&k!=='decision').map(([k,v])=>[NAMEN[k]||k,v])].filter(x=>x[1]!=null&&x[1]!=='');
+ box.append(el('div',{class:'kk'},el('span',{class:'badge b-agent'},'🤖 Agent '+(h.finding||'')),el('span',{},h.quelle||''),
+  mitOrt?el('code',{},ort(h)):null,h.mehrfach?el('span',{},'(passt auf '+h.mehrfach+' Zeilen)'):null,h.problem?el('span',{class:'warn'},h.problem):null,ex.status?el('span',{class:'badge'},'Status: '+ex.status):null,kn),
+  el('div',{class:'kt'},h.text));
+ if(det.length){const d=el('details',{},el('summary',{},'Details'));det.forEach(([k,v])=>d.append(el('div',{},el('b',{},k+': '),typeof v==='string'?v:JSON.stringify(v,null,1))));box.append(d)}
+ return box}
+function zeileFinden(tab,a,b){for(const r of tab.querySelectorAll('tr[data-a],tr[data-b]')){if(b!=null?r.dataset.b==String(b):(r.dataset.a==String(a)&&r.dataset.b==null||tab.classList.contains('sbs')&&r.dataset.a==String(a)))return r}return null}
+function einfuegen(r,inhalt,tab){let z=r;while(z.nextElementSibling&&z.nextElementSibling.classList.contains('kr'))z=z.nextElementSibling;
+ const tr=el('tr',{class:'kr'},el('td',{colspan:tab.classList.contains('sbs')?4:3},inhalt));z.after(tr);return tr}
+function nachholen(){if(wartet)setTimeout(zeichnen,0)}
+function zeichnen(){
+ if(document.querySelector('.kbox textarea')){wartet=true;return}wartet=false;
+ document.querySelectorAll('tr.kr').forEach(r=>r.remove());
+ const allg=[],zahl={};
+ const platz=(x,mach)=>{if(x.datei==null||!x.im_diff||!ds[x.datei])return false;let ok=false;
+  ds[x.datei].querySelectorAll('table').forEach(tab=>{const r=zeileFinden(tab,x.a,x.b);if(r){einfuegen(r,mach(),tab);ok=true}});
+  if(ok)zahl[x.datei]=(zahl[x.datei]||0)+1;return ok};
+ RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
+ RV.hinweise.filter(h=>h.status==='offen'||(RV.zeigVerworfen&&h.status==='verworfen'))
+  .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
+ allgemein(allg);ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
+ const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
+ document.getElementById('rvstand').textContent=n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':'');kh()}
+function allgemein(allg){
+ let s=document.getElementById('allgemein');if(!s){s=el('section',{id:'allgemein'});document.querySelector('main').prepend(s)}
+ const verw=RV.hinweise.filter(h=>h.status==='verworfen').length;
+ s.replaceChildren(el('div',{class:'kk'},el('b',{},'Review'),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
+  el('span',{class:'knoepfe'},verw?el('button',{onclick:()=>{RV.zeigVerworfen=!RV.zeigVerworfen;zeichnen()}},RV.zeigVerworfen?'verworfene ausblenden':verw+' verworfene Hinweise zeigen'):null,
+   el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'neu',text:t}),()=>b.remove())}},'＋ allgemeiner Kommentar'))));
+ RV.quellen.forEach(q=>{const d=el('details',{class:'quelle'},el('summary',{},'🤖 '+(q.key||q.datei)+(q.reviewed_commit?' · geprüft '+q.reviewed_commit:'')+(q.reviewed_at?' am '+q.reviewed_at:'')+' · '+q.anzahl+' Hinweis(e)'),
+  q.fehler?el('div',{class:'warn'},q.fehler):null,q.alt?el('div',{class:'warn'},'geprüft auf Stand '+q.reviewed_commit+', der MR steht auf '+MR.sha.slice(0,8)+' – Hinweise evtl. veraltet'):null,el('div',{},q.datei),q.notes?el('div',{class:'kt'},q.notes):null,
+  q.failing_tests?el('div',{},el('b',{},'failing_tests: '),JSON.stringify(q.failing_tests,null,1)):null);
+  if(q.fehler)d.open=true;s.append(d)});
+ allg.forEach(f=>s.append(f()))}
+document.querySelector('main').addEventListener('click',e=>{const td=e.target.closest('td.n');if(!td||!td.textContent.trim())return;
+ const tr=td.closest('tr');if(!tr||!(tr.dataset.a||tr.dataset.b))return;
+ const tab=tr.closest('table'),n=ds.indexOf(tr.closest('.datei'));let a=tr.dataset.a?+tr.dataset.a:null,b=tr.dataset.b?+tr.dataset.b:null;
+ if(tab.classList.contains('sbs')&&tr.querySelector('.weg,.dazu,.nix')){if(td.cellIndex===0)b=null;else a=null}
+ const box=el('div',{class:'kbox km'}),zr=einfuegen(tr,box,tab);
+ bearbeiten(box,'',t=>speichernAls({aktion:'neu',datei:n,a,b,text:t}),()=>zr.remove())});
+knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
+ post('/api/abschliessen',{}).then(d=>{knopf.disabled=false;
+  meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
+  if(d.review){Object.assign(RV,d.review);zeichnen()}
+  fetch('/api/mrzug?akt='+encodeURIComponent(MR.id)).then(r=>r.json()).then(z=>{ZUG=z.wagen||[];zug();kh()}).catch(()=>{})})});
+setInterval(()=>{if(document.hidden)return;fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&d.stand!==RV.stand)laden()}).catch(()=>{})},4000);
+laden();
+"""
+
 # ---------------------------------------------------------------- Server (nur bei Bedarf)
 
-PORT = 8771
+PORT = int(KONF["port"])
 ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><title>merge-train: alles durch</title>
 <style>{CSS}
 .durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1.25;margin-bottom:2vmin}}
 .durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
-<body><main class="durch"><section><div>👍</div><p>Alles durch – überall reviewed = claude</p>
+<body><main class="durch"><section><div>👍</div><p>Alles durch – überall {VON} = {BIS}</p>
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
 LEERLAUF_S = 3600
 
@@ -613,13 +1487,13 @@ def server_sicherstellen():
     return False
 
 def server():
-    """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“ an.
-    Beendet sich nach LEERLAUF_S ohne Anfrage."""
-    import json, time
+    """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
+    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage."""
+    import time
     from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
     schluessel()
     zuletzt = [time.time()]
-    herkunft = f"http://127.0.0.1:{PORT}"
+    herkunft = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
@@ -628,76 +1502,221 @@ def server():
             self.send_response(code); self.send_header("Content-Type", typ)
             self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
+        def json_senden(self, code, d):
+            self.senden(code, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
+        def weiterleiten(self, ziel):
+            self.send_response(302); self.send_header("Location", ziel); self.end_headers()
         def do_GET(self):
             zuletzt[0] = time.time()
-            pfad = self.path.split("?", 1)[0].lstrip("/")
+            pfad, _, abfrage = self.path.partition("?")
+            pfad = urllib.parse.unquote(pfad).lstrip("/")
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(abfrage).items()}
             try:
                 if pfad == "ping":
                     return self.senden(200, "merge-train", "text/plain")
-                repos = {dateiname(projektname(r)): r for r in finde_repos()}
-                if pfad == "zug.js":
-                    zug_schreiben([statistik(r) for r in repos.values()])
-                    return self.senden(200, open(os.path.join(ORDNER, "zug.js"), "rb").read(),
-                                       "text/javascript; charset=utf-8")
-                if pfad == "":
-                    wagen = zug_schreiben([statistik(r) for r in repos.values()])
-                    offen = [w for w in wagen if w["status"] == "offen"]
-                    if not offen:
-                        return self.senden(200, ALLES_DURCH)
-                    self.send_response(302); self.send_header("Location", "/" + offen[0]["datei"]); self.end_headers(); return
-                if pfad in repos:
-                    datei = seite_schreiben(repos[pfad], "reviewed", "claude")
-                    return self.senden(200, open(datei, "rb").read())
+                if pfad == "favicon.ico":
+                    return self.senden(204, b"", "image/x-icon")
+                if KONF["gitlab"]:
+                    if pfad in ("mrs", "") and not KONF["lokal"]:
+                        return self.senden(200, mr_uebersicht())
+                    if pfad == "mr-oeffnen":
+                        return self.weiterleiten("/mr/" + mr_id(mr_vollstaendig(mr_ref(q.get("u", "")))))
+                    if pfad.startswith("mr/"):
+                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False)
+                        if mr_id(mr) != pfad[3:]:
+                            return self.weiterleiten("/mr/" + mr_id(mr))
+                        return self.senden(200, open(datei, "rb").read())
+                    if pfad in ("mrzug.js", "api/mrzug"):
+                        try:
+                            wagen = mr_wagen(q.get("akt"))
+                        except GitLabFehler:
+                            wagen = []
+                        if pfad == "api/mrzug":
+                            return self.json_senden(200, {"wagen": wagen})
+                        return self.senden(200, "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";",
+                                           "text/javascript; charset=utf-8")
+                    if pfad in ("api/review", "api/stand"):
+                        if q.get("k") != schluessel():
+                            return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
+                        mr = mr_aus_id(q.get("mr", ""))
+                        if pfad == "api/stand":
+                            return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
+                        return self.json_senden(200, review_daten(mr))
+                if KONF["lokal"]:
+                    repos = {dateiname(projektname(r)): r for r in finde_repos()}
+                    if pfad == "zug.js":
+                        zug_schreiben([statistik(r) for r in repos.values()])
+                        return self.senden(200, open(os.path.join(ORDNER, "zug.js"), "rb").read(),
+                                           "text/javascript; charset=utf-8")
+                    if pfad == "":
+                        wagen = zug_schreiben([statistik(r) for r in repos.values()])
+                        offen = [w for w in wagen if w["status"] == "offen"]
+                        if not offen:
+                            return self.senden(200, ALLES_DURCH)
+                        return self.weiterleiten("/" + offen[0]["datei"])
+                    if pfad in repos:
+                        datei = seite_schreiben(repos[pfad], VON, BIS)
+                        return self.senden(200, open(datei, "rb").read())
                 self.senden(404, "nicht gefunden", "text/plain")
+            except GitLabFehler as e:
+                self.senden(502, f"merge-train: {e}", "text/plain; charset=utf-8")
             except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
-                self.senden(500, f"merge-train: {e}", "text/plain; charset=utf-8")
+                self.senden(500, f"merge-train: {type(e).__name__}: {e}", "text/plain; charset=utf-8")
         def do_POST(self):
             zuletzt[0] = time.time()
-            if self.path != "/fertig" or self.headers.get("Origin", herkunft) != herkunft:
+            if self.headers.get("Origin", f"http://127.0.0.1:{PORT}") not in herkunft:
                 return self.senden(403, "verboten", "text/plain")
             try:
-                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-                ok, text = fertig(str(d.get("projekt", "")), str(d.get("sha", "")), str(d.get("k", "")))
-                wagen = json.loads(open(os.path.join(ORDNER, "zug.js")).read()[len("window.MR_ZUG="):-1])["wagen"]
-                self.senden(200 if ok else 400, json.dumps({"ok": ok, "text": text, "wagen": wagen}, ensure_ascii=False),
-                            "application/json")
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if self.path == "/fertig" and KONF["lokal"]:
+                    ok, text = fertig(str(d.get("projekt", "")), str(d.get("sha", "")), str(d.get("k", "")))
+                    wagen = json.loads(open(os.path.join(ORDNER, "zug.js")).read()[len("window.MR_ZUG="):-1])["wagen"]
+                    return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": wagen})
+                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen") or not KONF["gitlab"]:
+                    return self.senden(404, "nicht gefunden", "text/plain")
+                if str(d.get("k", "")) != schluessel():
+                    return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
+                mr = mr_aus_id(d.get("mr", ""))
+                if self.path == "/api/abschliessen":
+                    ok, text, web = abschliessen(mr)
+                    return self.json_senden(200, {"ok": ok, "text": text, "web_url": web, "review": review_daten(mr)})
+                ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(mr, d)
+                self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr) if ok else None})
+            except GitLabFehler as e:
+                self.json_senden(502, {"ok": False, "text": str(e)})
             except Exception as e:
-                self.senden(500, json.dumps({"ok": False, "text": f"merge-train: {e}"}), "application/json")
+                self.json_senden(500, {"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"})
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
-    skript = os.path.realpath(__file__)
-    stand = os.path.getmtime(skript)
+    beobachtet = [os.path.realpath(__file__), KONFIG_DATEI]
+    def mtimes():
+        out = []
+        for p in beobachtet:
+            try: out.append(os.path.getmtime(p))
+            except OSError: out.append(None)
+        return out
+    anfang = mtimes()
     neu = [False]
     def waechter():
         while time.time() - zuletzt[0] < LEERLAUF_S:
             time.sleep(2)
-            try:
-                geaendert = os.path.getmtime(skript) != stand
-            except OSError:  # Skript umbenannt/gelöscht: beenden
+            jetzt = mtimes()
+            if jetzt[0] is None:  # Skript umbenannt/gelöscht: beenden
                 break
-            if geaendert:  # Skript wurde geändert: mit neuem Code weitermachen
+            if jetzt != anfang:  # Skript oder Einstellung geändert: mit neuem Stand weitermachen
                 neu[0] = True; break
         srv.shutdown()
     threading.Thread(target=waechter, daemon=True).start()
     srv.serve_forever()
     srv.server_close()
     if neu[0]:
-        os.execv(sys.executable, [sys.executable, skript, "--server"])
+        os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
+
+def im_browser(pfad, nur_url=False):
+    if not server_sicherstellen():
+        sys.exit(f"merge-train: Server startet nicht – siehe {os.path.join(ORDNER, 'server.log')}")
+    url = f"http://127.0.0.1:{PORT}{pfad}"
+    print(url)
+    if not nur_url:
+        oeffnen(url)
+
+# ---------------------------------------------------------------- CLI für Agenten
+
+def mr_fuer_hinweise(pfad, daten, ref=None):
+    """Zu welchem MR gehört die Hinweis-Datei? --mr, sonst Feld „mr“, sonst offener MR des Branches."""
+    ordner = (git(os.path.dirname(pfad), "rev-parse", "--show-toplevel", check=False) or "").strip() \
+        or os.path.dirname(pfad)
+    ref = ref or daten.get("mr")
+    if ref:
+        mr = mr_vollstaendig(mr_ref(str(ref), ordner))
+    else:
+        branch = daten.get("branch")
+        if not branch:
+            raise GitLabFehler("kein MR zuzuordnen: --mr angeben oder „branch“/„mr“ in die JSON schreiben")
+        host, projekt = remote_info(ordner)
+        lst = glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}")
+        if not lst:
+            raise GitLabFehler(f"kein offener MR für Branch {branch} in {projekt} – --mr angeben")
+        mr = mr_ref(lst[0]["web_url"])
+        mr["host"] = mr["host"] or host
+    return mr, ordner
+
+def agent_main(argv):
+    ap = argparse.ArgumentParser(prog="merge-train agent",
+                                 description="Agent-Hinweise (tasks/<KEY>-review-markers.json) einem GitLab-MR zuordnen und anzeigen")
+    sub = ap.add_subparsers(dest="befehl")
+    for name, hilfe in (("zeigen", "Datei beim MR anmelden, Zuordnung ausgeben und den MR im Browser öffnen"),
+                        ("pruefen", "nur prüfen: auf welche Zeilen des MR-Stands die Hinweise fallen (Exit 1 bei Problemen)")):
+        p = sub.add_parser(name, help=hilfe, description=hilfe)
+        p.add_argument("datei", help="Hinweis-Datei (JSON)")
+        p.add_argument("--mr", help="MR-URL, '!42' oder gruppe/projekt!42 (sonst Feld „mr“ oder der offene MR zu „branch“)")
+        if name == "zeigen":
+            p.add_argument("--nicht-oeffnen", action="store_true", help="Browser nicht öffnen, nur URL ausgeben")
+    o = ap.parse_args(argv)
+    if not o.befehl:
+        ap.print_help(); return 2
+    pfad = os.path.abspath(o.datei)
+    try:
+        daten = hinweise_lesen(pfad)
+    except (OSError, ValueError) as e:
+        print(f"merge-train: {o.datei} nicht lesbar: {e}", file=sys.stderr); return 2
+    try:
+        mr, ordner = mr_fuer_hinweise(pfad, daten, o.mr)
+        _, struktur, mr = mr_seite(mr)
+    except GitLabFehler as e:
+        print(f"merge-train: {e}", file=sys.stderr); return 2
+    with SPERRE:
+        st = review_laden(mr)
+        if o.befehl == "zeigen":
+            if pfad not in st["hinweis_dateien"]:
+                st["hinweis_dateien"].append(pfad)
+            try:
+                if remote_info(ordner)[1].lower() == mr["projekt"].lower():
+                    st["klon"] = ordner  # Dateiinhalte künftig lokal lesen
+            except GitLabFehler:
+                pass
+            review_speichern(mr, st)
+    hinweise, _ = hinweise_aufloesen(mr, st, struktur, nur=[pfad])
+    print(f'{mr["projekt"]}!{mr["iid"]} · Stand {struktur["refs"].get("head_sha", "")[:8]} · {len(daten["markers"])} Einträge')
+    schlecht = 0
+    for h in hinweise:
+        ort = f'{h["path"]}:{h["zeile"]}' if h["zeile"] else (h["path"] or "-")
+        if h["im_diff"]:
+            zustand = "im Diff"
+        elif h["zeile"]:
+            zustand = f'{h["problem"]} → wird allgemeiner Kommentar mit Link'
+        else:
+            zustand = f'FEHLT: {h["problem"]}'; schlecht += 1
+        if h["mehrfach"]:
+            zustand += f' (needle passt {h["mehrfach"]}×)'
+        if h["status"] != "offen":
+            zustand += f' [{h["status"]}]'
+        print(f'{h["finding"]:<5} {ort:<60} {zustand}')
+    if o.befehl == "zeigen":
+        im_browser("/mr/" + mr_id(mr), nur_url=o.nicht_oeffnen)
+    return 1 if schlecht else 0
 
 def main():
-    ap = argparse.ArgumentParser(description="merge-train: Merge-Requests claude → reviewed aller Projekte")
-    ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects); ohne: der ganze Zug, beginnend beim größten")
-    ap.add_argument("--von", default="reviewed")
-    ap.add_argument("--bis", default="claude")
+    if len(sys.argv) > 1 and sys.argv[1] == "agent":
+        sys.exit(agent_main(sys.argv[2:]))
+    ap = argparse.ArgumentParser(description=f"merge-train: Merge-Requests {BIS} → {VON} aller Projekte, GitLab-MRs reviewen "
+                                             "(„merge-train agent -h“ für Agent-Hinweise)")
+    ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects), oder ein GitLab-MR "
+                                              "(URL, '!42', gruppe/projekt!42); ohne: der ganze Zug, beginnend beim größten")
+    ap.add_argument("--von", default=VON)
+    ap.add_argument("--bis", default=BIS)
+    ap.add_argument("--mrs", action="store_true", help="GitLab-MRs zum Review (Reviewer = ich) zeigen")
     ap.add_argument("--alle", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
-    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen, nicht öffnen")
+    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen bzw. URL ausgeben, nicht öffnen")
     ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--projekte", action="store_true", help=argparse.SUPPRESS)  # für die Shell-Vervollständigung
     o = ap.parse_args()
     if o.server:
         return server()
     if o.projekte:
+        if not KONF["lokal"]:
+            return
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(8) as ex:
             st = list(ex.map(statistik, finde_repos()))
@@ -705,6 +1724,21 @@ def main():
         for w in st:
             print(f'{w["p"]}\t+{w["plus"]} −{w["minus"]} · {w["dateien"]} Datei(en)' if w["dateien"] else f'{w["p"]}\taktuell')
         return
+    if o.ordner and ist_mr_ref(o.ordner) and not os.path.exists(o.ordner):
+        if not KONF["gitlab"]:
+            sys.exit("merge-train: GitLab ist abgeschaltet (gitlab = false in der Einstellung)")
+        try:
+            mr = mr_vollstaendig(mr_ref(o.ordner, os.getcwd()))
+        except GitLabFehler as e:
+            sys.exit(f"merge-train: {e}")
+        return im_browser("/mr/" + mr_id(mr), o.nur_datei)
+    if o.mrs or (not o.ordner and not KONF["lokal"]):
+        if not KONF["gitlab"]:
+            sys.exit("merge-train: lokal und gitlab sind beide abgeschaltet – siehe " + KONFIG_DATEI)
+        return im_browser("/mrs" if KONF["lokal"] else "/", o.nur_datei)
+    if not KONF["lokal"]:
+        sys.exit(f"merge-train: lokaler Projekt-Diff ist abgeschaltet (lokal = false in {KONFIG_DATEI}) – "
+                 "MR-URL, '!42' oder --mrs angeben")
     wurzel = None
     if o.ordner:  # ohne Projekt: immer der ganze Zug
         ordner = o.ordner
@@ -723,9 +1757,9 @@ def main():
     else:
         offen = [w for w in wagen if w["status"] == "offen"]
         if not offen:
-            print("merge-train: nichts zu prüfen – überall reviewed = claude"); return
+            print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
         ziel = os.path.join(ORDNER, offen[0]["datei"])
-    if o.nur_datei or o.von != "reviewed" or o.bis != "claude" or o.inline:
+    if o.nur_datei or o.von != VON or o.bis != BIS or o.inline:
         print(ziel)
         if not o.nur_datei:
             oeffnen(ziel)

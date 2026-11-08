@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Ende-zu-Ende-Test des GitLab-Modus mit tests/fake-glab (kein echtes GitLab nötig).
+
+Aufruf:  python3 tests/test_gitlab.py [--behalten]
+Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, Port 8799), startet einen eigenen Server.
+"""
+import json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+
+HIER = os.path.dirname(os.path.abspath(__file__))
+SKRIPT = os.path.join(HIER, "..", "merge-train")
+PORT = 8799
+T = tempfile.mkdtemp(prefix="merge-train-test-")
+REPO = os.path.join(T, "repo")
+ENV = dict(os.environ, XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
+           MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/config.toml",
+           FAKE_GLAB_REPO=REPO, FAKE_GLAB_STATE=f"{T}/glab")
+fehler = []
+
+def pruefe(bed, text):
+    print(("ok   " if bed else "FEHL ") + text)
+    if not bed:
+        fehler.append(text)
+
+def sh(*a, cwd=None, check=True, env=None):
+    r = subprocess.run(a, cwd=cwd, capture_output=True, text=True, env=env or ENV)
+    if check and r.returncode:
+        raise SystemExit(f"{a}: {r.stderr}{r.stdout}")
+    return r
+
+def repo_anlegen():
+    os.makedirs(REPO)
+    g = lambda *a: sh("git", "-C", REPO, *a)
+    g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    g("remote", "add", "origin", "git@gitlab.example.com:gruppe/demo.git")
+    zeilen = [f"    // Zeile {i}" for i in range(1, 61)]
+    zeilen[4] = "    public void Alt() {}"
+    zeilen[49] = "    public void WeitWeg() {}"
+    open(f"{REPO}/App.cs", "w").write("class App {\n" + "\n".join(zeilen) + "\n}\n")
+    open(f"{REPO}/seite.html", "w").write("<p>Hallo</p>\n")
+    g("add", "-A"); g("commit", "-qm", "Start")
+    g("checkout", "-qb", "feature")
+    zeilen[9] = "    public void Neu(int x) { Bar(x); }"
+    del zeilen[19]
+    open(f"{REPO}/App.cs", "w").write("class App {\n" + "\n".join(zeilen) + "\n}\n")
+    open(f"{REPO}/seite.html", "w").write("<p>Hallo Welt</p>\n<p>Bar(x)</p>\n")
+    open(f"{REPO}/Neu.cs", "w").write("// neu\nclass Neu { void Bar(int x) {} }\n")
+    g("add", "-A"); g("commit", "-qm", "Neu und Bar\n\nMit Rumpf.")
+    os.makedirs(f"{REPO}/tasks")
+
+def get(pfad):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}{pfad}", timeout=60) as r:
+            return r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.read().decode()
+
+def post(pfad, d):
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}{pfad}", json.dumps(d).encode(),
+                                 {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read())
+
+def drafts():
+    try:
+        return json.load(open(f"{T}/glab/drafts.json"))
+    except FileNotFoundError:
+        return []
+
+def main():
+    repo_anlegen()
+    os.makedirs(f"{T}/config/merge-train")
+    open(ENV["MERGE_TRAIN_CONFIG"], "w").write(
+        f'lokal = false\nglab = "{sys.executable} {HIER}/fake-glab"\nport = {PORT}\nbrowser = "true"\n'
+        f'hinweise = ["{REPO}/tasks/*-review-markers.json"]\n')
+    hw = f"{REPO}/tasks/DEMO-1-review-markers.json"
+    json.dump({"key": "DEMO-1", "branch": "feature", "reviewed_commit": "abc", "tag": "TODO REVIEW DEMO-1",
+               "notes": "Team-Thema: Logging", "failing_tests": {"#1": "AppTest.Neu"},
+               "markers": [
+                   {"finding": "#1", "path": "App.cs", "needle": "public void Neu(", "text": "#1 Missing null check",
+                    "rationale": "siehe Ticket", "resolved_when": "Test grün", "status": "open (GitLab comment)"},
+                   {"path": "App.cs", "needle": "=public void WeitWeg() {}", "text": "K2 Rename method"},
+                   {"finding": "#3", "path": "App.cs", "needle": "GibtEsNicht", "text": "#3 Weg"},
+                   {"finding": "#4", "path": "seite.html", "needle": "Bar(x)", "text": "#4 Escape output",
+                    "placement": None},
+                   {"finding": "#5", "path": "Neu.cs", "needle": "Bar(", "text": "#5 Also here"},
+                   {"finding": "#6", "path": "App.cs", "needle": "=// Zeile 9", "text": "#6 Context line"},
+               ]}, open(hw, "w"))
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=ENV)
+    try:
+        for _ in range(50):
+            try:
+                get("/ping"); break
+            except OSError:
+                time.sleep(0.1)
+        # Agent-CLI
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, check=False)
+        print(r.stdout, r.stderr)
+        pruefe(r.returncode == 1, "pruefen meldet fehlenden needle mit Exit 1")
+        pruefe("App.cs:11" in r.stdout and "im Diff" in r.stdout, "#1 auf App.cs:11 im Diff")
+        pruefe("App.cs:50" in r.stdout and "allgemeiner Kommentar" in r.stdout, "K2 außerhalb des Diffs erkannt")
+        pruefe("needle nicht gefunden" in r.stdout, "#3 needle nicht gefunden")
+        r = sh(sys.executable, SKRIPT, "agent", "zeigen", hw, "--nicht-oeffnen", check=False)
+        pruefe("http://127.0.0.1:8799/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
+        # Seite + Review-Daten
+        seite = get("/mr/gitlab.example.com/gruppe/demo/1")
+        pruefe("Demo-Änderung &lt;b&gt;fett&lt;/b&gt;" in seite and 'data-b="10"' in seite, "MR-Seite mit Diff und escaptem Titel")
+        k = open(f"{T}/cache/merge-train/schluessel").read().strip()
+        mr = "gitlab.example.com/gruppe/demo/1"
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        hs = {h["finding"]: h for h in rv["hinweise"]}
+        pruefe(hs["#1"]["im_diff"] and hs["#1"]["b"] == 11 and hs["#1"]["a"] is None, "#1: neue Zeile 11")
+        pruefe(not hs["K2"]["im_diff"] and hs["K2"]["b"] == 50 and hs["K2"]["a"] == 51, "K2: außerhalb, alt 51 (eine Zeile gelöscht)")
+        pruefe(hs["#6"]["im_diff"] and hs["#6"]["a"] == 10 and hs["#6"]["b"] == 10, "#6: Kontextzeile alt 10 / neu 10")
+        pruefe(hs["#4"]["datei"] is not None and hs["#4"]["im_diff"], "#4 in seite.html")
+        pruefe(rv["quellen"][0]["notes"] == "Team-Thema: Logging" and rv["quellen"][0]["alt"], "Notizen und veralteter Stand")
+        pruefe(json.loads(get(f"/api/review?mr={mr}&k=falsch"))["ok"] is False, "falscher Schlüssel abgelehnt")
+        sha = rv["hinweise"][0] and json.load(open(rv and f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+        struktur = json.load(open(sha["struktur"]))
+        head = struktur["refs"]["head_sha"]
+        basis = dict(mr=mr, k=k, sha=head)
+        # übernehmen, anpassen, eigener Kommentar, allgemeiner Kommentar
+        pruefe(post("/api/kommentar", dict(basis, aktion="neu", hinweis=hs["#1"]["key"]))["ok"], "#1 übernommen")
+        pruefe(post("/api/kommentar", dict(basis, aktion="neu", hinweis=hs["K2"]["key"], text="K2 Please rename"))["ok"], "K2 angepasst übernommen")
+        pruefe(post("/api/hinweis", dict(basis, aktion="verwerfen", key=hs["#5"]["key"]))["ok"], "#5 verworfen")
+        i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
+        r = post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=21, b=None, text="Warum gelöscht?"))
+        pruefe(r["ok"], "Kommentar an gelöschter Zeile 21 (alt)")
+        pruefe(not post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=None, b=40, text="x"))["ok"], "Zeile außerhalb des Diffs per Klick abgelehnt")
+        pruefe(not post("/api/kommentar", dict(basis, sha="alt", aktion="neu", datei=i_app, a=21, b=None, text="x"))["ok"], "veralteter Stand abgelehnt")
+        r = post("/api/kommentar", dict(basis, aktion="neu", text="Insgesamt gut."))
+        ks = {x["text"]: x for x in r["review"]["kommentare"]}
+        pruefe(len(ks) == 4 and ks["#1 Missing null check"]["finding"] == "#1", "4 Kommentare, einer aus Agent #1")
+        st = {h["finding"]: h["status"] for h in r["review"]["hinweise"]}
+        pruefe(st["#1"] == "uebernommen" and st["#5"] == "verworfen" and st["#4"] == "offen", "Hinweis-Status")
+        # Abschließen
+        r = post("/api/abschliessen", basis)
+        print(r["text"])
+        d = drafts()
+        pruefe(r["ok"] and len(d) == 4, "4 Draft-Notes angelegt")
+        pos = {x["note"]: x["position"] for x in d}
+        pruefe(pos["#1 Missing null check"]["new_line"] == 11 and "old_line" not in pos["#1 Missing null check"]
+               and pos["#1 Missing null check"]["head_sha"] == head, "Position #1 (hinzugefügte Zeile: nur neu)")
+        pruefe(pos["Warum gelöscht?"].get("old_line") == 21 and "new_line" not in pos["Warum gelöscht?"], "Position gelöschte Zeile")
+        pruefe(pos["Insgesamt gut."] is None, "allgemeiner Kommentar ohne Position")
+        pruefe(pos["K2 Please rename"]["new_line"] == 50, "außerhalb des Diffs: zuerst mit Position versucht")
+        pruefe(not any(l.startswith("POST") and "bulk_publish" in l for l in open(f"{T}/glab/aufrufe.log")), "nichts veröffentlicht")
+        # zweites Abschließen: nichts doppelt
+        r = post("/api/abschliessen", basis)
+        pruefe(r["ok"] and len(drafts()) == 4 and "Nichts zu übertragen" in r["text"], "erneutes Abschließen ohne Duplikate")
+        # ändern + löschen → PUT + DELETE
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        ks = {x["text"]: x for x in rv["kommentare"]}
+        post("/api/kommentar", dict(basis, aktion="aendern", id=ks["Insgesamt gut."]["id"], text="Insgesamt sehr gut."))
+        r = post("/api/kommentar", dict(basis, aktion="loeschen", id=ks["Warum gelöscht?"]["id"]))
+        sts = {x["text"]: x["status"] for x in r["review"]["kommentare"]}
+        pruefe(sts.get("Insgesamt sehr gut.") == "geaendert" and sts.get("Warum gelöscht?") == "loeschen", "Status geändert/wird gelöscht")
+        r = post("/api/abschliessen", basis)
+        notes = sorted(x["note"] for x in drafts())
+        pruefe(r["ok"] and len(notes) == 3 and "Insgesamt sehr gut." in notes and "Warum gelöscht?" not in notes, "PUT und DELETE in GitLab")
+        # in GitLab veröffentlicht (Draft weg) → nicht erneut senden
+        json.dump([x for x in drafts() if x["note"] != "Insgesamt sehr gut."], open(f"{T}/glab/drafts.json", "w"))
+        r = post("/api/abschliessen", basis)
+        pruefe(len(drafts()) == 2 and "gibt es in GitLab nicht mehr" in r["text"], "veröffentlichte Entwürfe werden nicht doppelt angelegt")
+        # Fallback: GitLab lehnt Position ab → allgemeiner Kommentar mit Link
+        os.environ["FAKE_GLAB_FEHLER_POSITION"] = "1"
+        srv.terminate(); srv.wait()
+        srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=dict(ENV, FAKE_GLAB_FEHLER_POSITION="1"))
+        for _ in range(50):
+            try:
+                get("/ping"); break
+            except OSError:
+                time.sleep(0.1)
+        post("/api/kommentar", dict(basis, aktion="neu", hinweis=hs["#4"]["key"]))
+        r = post("/api/abschliessen", basis)
+        neu = [x for x in drafts() if "#4" in x["note"]]
+        pruefe(r["ok"] and neu and neu[0]["position"] is None and "seite.html:2" in neu[0]["note"]
+               and "/-/blob/" in neu[0]["note"], "abgelehnte Position → allgemeiner Kommentar mit Link")
+        # Übersicht, Zug, lokal=false
+        pruefe("Demo-Änderung" in get("/"), "Startseite zeigt MR-Liste (lokal = false)")
+        pruefe('"name": "!1 demo"' in get("/mrzug.js?akt=" + mr), "MR-Zug")
+        r = sh(sys.executable, SKRIPT, "irgendwas", check=False)
+        pruefe(r.returncode and "abgeschaltet" in r.stderr, "lokaler Modus abgeschaltet")
+        r = sh(sys.executable, SKRIPT, "--projekte", check=False)
+        pruefe(r.stdout == "", "keine lokalen Projekte für die Vervollständigung")
+        # Altformat (nur Array)
+        alt = f"{T}/alt.json"
+        json.dump([{"path": "Neu.cs", "needle": "class Neu", "text": "#9 Old format"}], open(alt, "w"))
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", alt, "--mr", "https://gitlab.example.com/gruppe/demo/-/merge_requests/1", check=False)
+        pruefe(r.returncode == 0 and "#9" in r.stdout and "Neu.cs:2" in r.stdout, "Altformat und --mr")
+    finally:
+        srv.terminate()
+        if "--behalten" in sys.argv:
+            print("Testordner:", T)
+        else:
+            shutil.rmtree(T, ignore_errors=True)
+    print(f"\n{len(fehler)} Fehler" if fehler else "\nalles ok")
+    return 1 if fehler else 0
+
+sys.exit(main())

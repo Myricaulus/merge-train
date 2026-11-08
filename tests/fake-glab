@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Nachgebautes „glab api“ für Tests ohne GitLab.
+
+Ein lokales Git-Repo spielt das GitLab-Projekt: MR !1 = Branch FAKE_MR_BRANCH (Standard: feature)
+gegen FAKE_MR_ZIEL (Standard: main). Draft-Notes landen in $FAKE_GLAB_STATE/drafts.json,
+jeder Aufruf wird in $FAKE_GLAB_STATE/aufrufe.log protokolliert.
+
+Umgebung: FAKE_GLAB_REPO (Pfad), FAKE_GLAB_STATE (Ordner), FAKE_GLAB_PROJEKT (Standard: gruppe/demo),
+FAKE_GLAB_FEHLER_POSITION=1 → Draft-Notes mit Position werden abgelehnt (wie bei ungültiger Zeile).
+"""
+import json, os, re, subprocess, sys, urllib.parse
+
+REPO = os.environ["FAKE_GLAB_REPO"]
+STATE = os.environ["FAKE_GLAB_STATE"]
+PROJEKT = os.environ.get("FAKE_GLAB_PROJEKT", "gruppe/demo")
+BRANCH = os.environ.get("FAKE_MR_BRANCH", "feature")
+ZIEL = os.environ.get("FAKE_MR_ZIEL", "main")
+HOST = "gitlab.example.com"
+WEB = f"https://{HOST}/{PROJEKT}/-/merge_requests/1"
+
+def git(*a):
+    r = subprocess.run(["git", "-C", REPO, *a], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit(f"glab: 404 Not Found (git {' '.join(a)})")
+    return r.stdout
+
+def raus(obj):
+    print(json.dumps(obj))
+
+def drafts():
+    try:
+        return json.load(open(os.path.join(STATE, "drafts.json")))
+    except FileNotFoundError:
+        return []
+
+def drafts_speichern(d):
+    json.dump(d, open(os.path.join(STATE, "drafts.json"), "w"), indent=1)
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] != "api":
+        raise SystemExit("fake-glab kann nur „api“")
+    a = a[1:]
+    methode, eingabe, pfad, host = "GET", None, None, None
+    i = 0
+    while i < len(a):
+        if a[i] in ("--method", "-X"): methode = a[i + 1]; i += 2
+        elif a[i] in ("--header", "-H"): i += 2
+        elif a[i] == "--hostname": host = a[i + 1]; i += 2
+        elif a[i] == "--input": eingabe = sys.stdin.read() if a[i + 1] == "-" else open(a[i + 1]).read(); i += 2
+        else: pfad = a[i]; i += 1
+    os.makedirs(STATE, exist_ok=True)
+    with open(os.path.join(STATE, "aufrufe.log"), "a") as f:
+        f.write(f"{methode} {host} {pfad} {eingabe or ''}\n")
+    weg, _, abfrage = pfad.partition("?")
+    q = {k: v[0] for k, v in urllib.parse.parse_qs(abfrage).items()}
+    seite = int(q.get("page", 1))
+    p_enc = urllib.parse.quote(PROJEKT, safe="")
+    basis = git("merge-base", ZIEL, BRANCH).strip()
+    head = git("rev-parse", BRANCH).strip()
+    if weg == "user":
+        return raus({"id": 1, "username": "tester", "name": "Test Er"})
+    if weg == "merge_requests":
+        return raus([{"iid": 1, "title": "Demo-Änderung <b>fett</b>", "web_url": WEB, "references": {"full": PROJEKT + "!1"},
+                      "author": {"name": "Agentin"}, "changes_count": "3"}] if seite == 1 else [])
+    m = re.fullmatch(r"projects/([^/]+)/merge_requests", weg)
+    if m:
+        return raus([{"iid": 1, "web_url": WEB}] if q.get("source_branch") == BRANCH else [])
+    m = re.fullmatch(r"projects/([^/]+)/repository/files/([^/]+)/raw", weg)
+    if m:
+        sys.stdout.write(git("show", f'{q["ref"]}:{urllib.parse.unquote(m.group(2))}')); return
+    m = re.fullmatch(r"projects/([^/]+)/merge_requests/1(/.*)?", weg)
+    if not m or urllib.parse.unquote(m.group(1)) not in (PROJEKT, p_enc):
+        raise SystemExit(f"glab: 404 Not Found {weg}")
+    rest = m.group(2) or ""
+    if rest == "":
+        return raus({"iid": 1, "title": "Demo-Änderung <b>fett</b>", "description": "Beschreibung\nmit zwei Zeilen",
+                     "web_url": WEB, "source_branch": BRANCH, "target_branch": ZIEL, "author": {"name": "Agentin"},
+                     "sha": head, "diff_refs": {"base_sha": basis, "start_sha": git("rev-parse", ZIEL).strip(), "head_sha": head}})
+    if rest == "/diffs":
+        if seite > 1:
+            return raus([])
+        out = []
+        for z in git("diff", "--name-status", "-M", basis, head).splitlines():
+            teile = z.split("\t"); st = teile[0]
+            alt, neu = (teile[1], teile[2]) if st.startswith("R") else (teile[1], teile[1])
+            d = git("diff", "-M", "-U3", basis, head, "--", *({alt, neu}))
+            d = d[d.index("@@"):] if "@@" in d else ("Binary files differ\n" if "Binary" in d else "")
+            out.append({"old_path": alt, "new_path": neu, "new_file": st == "A", "deleted_file": st == "D",
+                        "renamed_file": st.startswith("R"), "diff": d})
+        return raus(out)
+    if rest == "/commits":
+        if seite > 1:
+            return raus([])
+        out = []
+        for c in git("log", "--format=%H%x1f%h%x1f%s%x1f%B%x1f%aI%x1e", f"{basis}..{head}").split("\x1e"):
+            if c.strip():
+                h, kurz, s, b, t = c.strip("\n").split("\x1f")
+                out.append({"id": h, "short_id": kurz, "title": s, "message": b, "authored_date": t})
+        return raus(out)
+    if rest == "/draft_notes":
+        d = drafts()
+        if methode == "GET":
+            return raus(d if seite == 1 else [])
+        body = json.loads(eingabe)
+        if body.get("position") and os.environ.get("FAKE_GLAB_FEHLER_POSITION"):
+            raise SystemExit('glab: 400 Bad Request {"message":"line_code can\'t be blank"}')
+        neu = {"id": max([x["id"] for x in d] + [100]) + 1, "note": body["note"], "position": body.get("position")}
+        d.append(neu); drafts_speichern(d)
+        return raus(neu)
+    m = re.fullmatch(r"/draft_notes/(\d+)", rest)
+    if m:
+        d = drafts(); n = int(m.group(1))
+        x = next((x for x in d if x["id"] == n), None)
+        if not x:
+            raise SystemExit("glab: 404 Not Found")
+        if methode == "DELETE":
+            drafts_speichern([y for y in d if y["id"] != n]); return
+        if methode == "PUT":
+            x["note"] = json.loads(eingabe)["note"]; drafts_speichern(d); return raus(x)
+    raise SystemExit(f"glab: 404 Not Found {weg}")
+
+main()
