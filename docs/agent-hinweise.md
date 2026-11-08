@@ -91,5 +91,7 @@ Gibt es zum Branch mehrere offene MRs oder heißt der Branch anders: Feld `"mr"`
   Ein Klick auf den Ort klappt den Kontext auf und springt hin. Liegt die Datei nicht im Diff, öffnet sich ein Popup.
 - Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). An diesen Zeilen kann man auch kommentieren.
 - „übernehmen“ / „anpassen & übernehmen“ macht aus einem Hinweis einen eigenen Review-Kommentar, „verwerfen“ blendet ihn aus.
+- In den Commit-Ansichten („nur dieser“ / „seit diesem“ in der Commit-Liste) stehen die Hinweise an der zurückgerechneten
+  Zeile, sonst unter dem Dateinamen. „nur dieser“ ist nur zum Lesen da.
 - „Review abschließen → GitLab“ legt alle Kommentare als **Entwürfe** (Draft-Notes) im MR an.
   Veröffentlicht wird erst in GitLab von Hand.

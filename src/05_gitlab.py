@@ -239,13 +239,18 @@ def api_commit(c):
         zeit = datetime.fromisoformat(zeit.replace("Z", "+00:00")[:25]).astimezone().strftime("%d.%m. %H:%M")
     except ValueError:
         zeit = zeit[:16]
-    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "")
+    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "", c.get("id", ""))
 
 MR_ORDNER = os.path.join(ORDNER, "mr")
 VERSION = str(int(os.path.getmtime(os.path.realpath(__file__))))
 
-def mr_seite(mr, meta=None, inline=False):
-    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr)."""
+def seiten_stamm(mr, head, quelle, ans=None):
+    teil = f'-{ans["art"]}{ans["sha"][:12]}' if ans else ""
+    return os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}{teil}-{VERSION}")
+
+def mr_seite(mr, meta=None, inline=False, ansicht=None):
+    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr).
+    ansicht = ("commit"|"seit", sha): nur ein Commit bzw. alles nach einem Commit (nur mit lokalem Klon)."""
     from concurrent.futures import ThreadPoolExecutor
     meta = meta or glab(mr["host"], mr_pfad(mr))
     mr = mr_normalisieren(meta, mr)
@@ -253,14 +258,21 @@ def mr_seite(mr, meta=None, inline=False):
     refs = meta.get("diff_refs") or {}
     head = refs.get("head_sha") or meta.get("sha") or "leer"
     lokal, grund = lokal_pruefen(mr, refs, meta.get("source_branch", ""))
+    ans = None
+    if ansicht:
+        if not lokal:
+            raise GitLabFehler("Commit-Ansichten brauchen den lokalen Klon auf dem MR-Stand – "
+                               + (grund or "kein Klon unter [repos] eingetragen"))
+        ans = ansicht_aufloesen(lokal, refs, *ansicht)
     quelle = "lokal" if lokal else "api" + (hashlib.sha1(grund.encode()).hexdigest()[:6] if grund else "")
-    stamm = os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}-{VERSION}")
+    stamm = seiten_stamm(mr, head, quelle, ans)
+    von, bis = (ans["von"], ans["bis"]) if ans else (refs.get("base_sha"), head)
     if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
         struktur = json.load(open(stamm + ".json", encoding="utf-8"))
     else:
         if lokal:
             dateien = zerlegen(git(lokal, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
-                                   "-M", "-U3", refs["base_sha"], head))
+                                   "-M", "-U3", von, bis))
         else:
             dateien = []
             for e in (mr_diffs(host, P) if refs.get("head_sha") else []):
@@ -277,8 +289,8 @@ def mr_seite(mr, meta=None, inline=False):
         def benoetigt(d):
             if d["binaer"] or not d["hunks"]:
                 return None, None
-            return (f'{refs["base_sha"]}:{d["alt"]}' if d["status"] != "neu" else None,
-                    f'{head}:{d["neu"]}' if d["status"] != "gelöscht" else None)
+            return (f'{von}:{d["alt"]}' if d["status"] != "neu" else None,
+                    f'{bis}:{d["neu"]}' if d["status"] != "gelöscht" else None)
         if lokal:  # alle Inhalte auf einmal in den Cache
             for spec, text in blobs(lokal, [s for d in dateien for s in benoetigt(d) if s]).items():
                 sha, _, pfad = spec.partition(":")
@@ -292,7 +304,7 @@ def mr_seite(mr, meta=None, inline=False):
             tx = list(ex.map(texte, dateien))
         struktur = {"mr": mr, "refs": {k: refs.get(k) for k in ("base_sha", "start_sha", "head_sha")},
                     "web_url": meta.get("web_url", ""), "quelle": "lokal" if lokal else "api",
-                    "ordner": lokal, "grund": grund, "dateien": []}
+                    "ordner": lokal, "grund": grund, "ansicht": ans, "dateien": []}
         for d, (_, neu_text) in zip(dateien, tx):
             paare, hunks = paare_und_hunks(d)
             struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
@@ -303,7 +315,8 @@ def mr_seite(mr, meta=None, inline=False):
         st = review_laden(mr)
         st["mr"] = dict(mr, web_url=meta.get("web_url", ""), titel=meta.get("title", ""),
                         source_branch=meta.get("source_branch", ""), target_branch=meta.get("target_branch", ""))
-        st["struktur"] = stamm + ".json"
+        if not ans:  # Kommentare und Hinweise beziehen sich immer auf den ganzen MR
+            st["struktur"] = stamm + ".json"
         review_speichern(mr, st)
     return stamm + ".html", struktur, mr
 
@@ -325,15 +338,32 @@ def mr_html(mr, meta, dateien, commits, texte, head, struktur):
     web = meta.get("web_url", "")
     autor = (meta.get("author") or {}).get("name", "")
     beschr = (meta.get("description") or "").strip()
+    ans = struktur.get("ansicht")
+    def knoepfe(i, c):  # je Commit: nur dieser / seit diesem (brauchen den lokalen Klon)
+        sha = c[4] if len(c) > 4 else ""
+        if not lokal or not sha:
+            return ""
+        akt = ans and ans["sha"] == sha
+        out = (f'<a class="ck{" akt" if akt and ans["art"] == "commit" else ""}" href="/mr/{html.escape(slug)}?commit={sha}" '
+               f'title="nur die Änderungen dieses Commits (nur lesen)">nur dieser</a>')
+        if i < len(commits) - 1:
+            out += (f'<a class="ck{" akt" if akt and ans["art"] == "seit" else ""}" href="/mr/{html.escape(slug)}?seit={sha}" '
+                    f'title="alle Änderungen nach diesem Commit bis zum MR-Stand">seit diesem</a>')
+        return f'<span class="cks">{out}</span>'
     cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
-        + commits_html(commits)
+        + commits_html(commits, knoepfe)
     fl = dateiliste_html(dateien)
     leer = '<div class="leer">Keine Änderungen in diesem Merge-Request (oder GitLab berechnet den Diff noch).</div>' \
         if not dateien else ""
+    lesen = bool(ans and ans["art"] == "commit")
     daten = json.dumps({"modus": "gitlab", "projekt": slug, "id": slug, "sha": head, "k": schluessel(),
-                        "dateien": len(dateien), "web_url": web})
-    hilfe = ('<div class="hilfe">Klick auf Zeilennummer: Kommentar<br><kbd>n</kbd> nächster MR · '
+                        "dateien": len(dateien), "web_url": web,
+                        "ansicht": f'{ans["art"]}:{ans["sha"]}' if ans else "", "lesen": lesen})
+    klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
+             else "Klick auf Zeilennummer: Kommentar")
+    hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    ah = ansicht_html(slug, ans) if ans else ""
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
@@ -344,8 +374,8 @@ def mr_html(mr, meta, dateien, commits, texte, head, struktur):
 <span class="sub">{html.escape(meta.get("source_branch", ""))} → {html.escape(meta.get("target_branch", ""))} · {html.escape(autor)} ·
 {len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{"" if band else qh}
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
-<button id="fertig" title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
-<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}</header>
+<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
+<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}{ah}</header>
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
 <main>{leer}{"".join(datei_html(n, d, *texte[n], luecken=True, spaeter=lokal and spaeter_grund(d)) for n, d in enumerate(dateien))}</main></div>

@@ -40,3 +40,7 @@ body.gl #zug{min-height:92px}
 .ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ke .ki{flex:none;font-size:11px}
 .kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}
+.cks{margin-left:8px} .ck{font-size:12px;color:var(--tn);border:1px solid var(--rand);border-radius:4px;padding:0 5px;margin-left:4px;cursor:pointer}
+.ck:hover{background:var(--akt)} .ck.akt{background:var(--akt);font-weight:600}
+.ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
+.kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}

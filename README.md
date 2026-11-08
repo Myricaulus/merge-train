@@ -38,6 +38,13 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
 - **Kommentarliste** links über den Dateien: alle offenen Agent-Hinweise (🤖) und eigenen bzw. übernommenen Kommentare (💬)
   in Datei-Reihenfolge. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
+- **Commit-Ansichten** (nur mit lokalem Klon): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
+  - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
+    Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des MR, außerhalb
+    der Änderungen), stehen sie unter dem Dateinamen mit dem Grund.
+  - *seit diesem*: alles nach dem Commit bis zum MR-Stand. Rechts steht der MR-Stand, dort wird normal kommentiert und
+    übernommen. Links (Stand des Commits) lässt sich nicht kommentieren.
+  - Einträge in Dateien, die die Ansicht nicht ändert, werden nur gezählt. Kommentare gehören immer zum ganzen MR.
 - **Kommentar schreiben**: Auf eine Zeilennummer klicken (links = alte Zeile, rechts = neue). Speichern mit Strg+Enter, abbrechen mit Esc.
   Allgemeine Kommentare über „＋ allgemeiner Kommentar“.
 - **Agent-Hinweise** (lila) stehen an ihrer Zeile. Liegt die Zeile außerhalb des Diffs, stehen sie oben unter „Review“.

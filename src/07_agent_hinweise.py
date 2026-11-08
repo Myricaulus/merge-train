@@ -151,7 +151,7 @@ def stand(mr, st):
             teile.append(p + ":-")
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
 
-def review_daten(mr):
+def review_daten(mr, ansicht=None):
     with SPERRE:
         st = review_laden(mr)
     struktur = struktur_laden(st)
@@ -166,14 +166,28 @@ def review_daten(mr):
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
+    ausserhalb = 0
+    if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
+        ans_st = ansicht_struktur(mr, struktur, ansicht)
+        vorher = len(kom) + sum(1 for h in hinweise if h["status"] == "offen")
+        kom = ansicht_zuordnen(struktur, ans_st, kom)
+        hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
+        ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st)}
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
 
-def datei_nachladen(mr, i):
-    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
+def seiten_struktur(mr, ansicht=None):
+    """Struktur der Seite: ganzer MR oder eine Commit-Ansicht."""
     with SPERRE:
         st = review_laden(mr)
     struktur = struktur_laden(st)
+    if ansicht and struktur:
+        struktur = ansicht_struktur(mr, struktur, ansicht)
+    return struktur
+
+def datei_nachladen(mr, i, ansicht=None):
+    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
+    struktur = seiten_struktur(mr, ansicht)
     try:
         if i < 0:
             raise IndexError
@@ -182,30 +196,28 @@ def datei_nachladen(mr, i):
         return {"ok": False, "text": "unbekannte Datei – Seite neu laden"}
     if struktur.get("quelle") != "lokal" or not struktur.get("ordner"):
         return {"ok": False, "text": "nur im lokalen Modus möglich"}
-    refs = struktur["refs"]
+    von, bis = diff_enden(struktur)
     out = git(struktur["ordner"], "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U3",
-              refs["base_sha"], refs["head_sha"], "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
+              von, bis, "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
     d = next((x for x in zerlegen(out or "") if x["neu"] == f["neu"]), None)
     if d is None:
         return {"ok": False, "text": "Diff nicht gefunden"}
-    alt = inhalt(mr, refs["base_sha"], d["alt"]) if d["status"] != "neu" else ""
-    neu = inhalt(mr, refs["head_sha"], d["neu"]) if d["status"] != "gelöscht" else ""
+    alt = inhalt(mr, von, d["alt"]) if d["status"] != "neu" else ""
+    neu = inhalt(mr, bis, d["neu"]) if d["status"] != "gelöscht" else ""
     return {"ok": True, "html": datei_tabelle(d, alt, neu, luecken=True)}
 
 _TOKENS = {}
 
-def zeilen_daten(mr, pfad, von, bis):
-    """Zeilen von..bis (neue Seite, MR-Stand) als HTML – zum Nachladen von Kontext und fürs Popup."""
-    with SPERRE:
-        st = review_laden(mr)
-    struktur = struktur_laden(st)
-    head = ((struktur or {}).get("refs") or {}).get("head_sha")
+def zeilen_daten(mr, pfad, von, bis, ansicht=None):
+    """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht) als HTML – zum Nachladen von Kontext und fürs Popup."""
+    struktur = seiten_struktur(mr, ansicht)
+    head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
     pfad = pfad_norm(pfad)
     text = inhalt(mr, head, pfad)
     if text is None:
-        return {"ok": False, "text": f"{pfad} gibt es im MR-Stand {head[:8]} nicht"}
+        return {"ok": False, "text": f"{pfad} gibt es im Stand {head[:8]} nicht"}
     zeilen = text.replace("\r\n", "\n").split("\n")
     if zeilen and zeilen[-1] == "":
         zeilen.pop()
@@ -220,9 +232,14 @@ def zeilen_daten(mr, pfad, von, bis):
             "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
                        for i in range(von, bis + 1)]}
 
+NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
+
 def kommentar_aktion(mr, d):
     """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
     aktion = d.get("aktion")
+    ansicht = ansicht_lesen(d.get("ansicht"))
+    if ansicht and ansicht[0] == "commit":
+        return False, NUR_LESEN
     with SPERRE:
         st = review_laden(mr)
         struktur = struktur_laden(st)
@@ -234,6 +251,8 @@ def kommentar_aktion(mr, d):
                 h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
                 if not h:
                     return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
+                if ansicht and h["path"] and not h["b"]:
+                    return False, "Der Hinweis lässt sich hier keiner Zeile zuordnen – im ganzen MR übernehmen."
                 i = h["datei"]
                 k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                          hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
@@ -241,14 +260,23 @@ def kommentar_aktion(mr, d):
             elif d.get("datei") is not None:
                 if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
                     return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."
+                seite = ansicht_struktur(mr, struktur, ansicht) if ansicht else struktur
                 try:
-                    f = struktur["dateien"][int(d["datei"])]
+                    f = seite["dateien"][int(d["datei"])]
                 except (ValueError, IndexError):
                     return False, "unbekannte Datei"
                 a = int(d["a"]) if d.get("a") is not None else None
                 b = int(d["b"]) if d.get("b") is not None else None
                 if (a is None and b is None) or not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
                     return False, "Zeile nicht im Diff"
+                if ansicht:  # „seit“: rechts ist der MR-Stand → Zeile im MR-Diff bestimmen
+                    i = datei_index(struktur, f["neu"])
+                    if b is None or i is None:
+                        return False, "Hier nur auf der rechten Seite (MR-Stand) kommentierbar"
+                    f = struktur["dateien"][i]
+                    a = alt_zeile(f, b)
+                    if not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
+                        return False, "Zeile lässt sich im MR nicht zuordnen"
                 k.update(text=text, path=f["neu"], old_path=f["alt"], a=a, b=b)
             else:
                 k.update(text=text, path=None, a=None, b=None)
@@ -279,6 +307,9 @@ def kommentar_aktion(mr, d):
     return True, ""
 
 def hinweis_aktion(mr, d):
+    ansicht = ansicht_lesen(d.get("ansicht"))
+    if ansicht and ansicht[0] == "commit":
+        return False, NUR_LESEN
     with SPERRE:
         st = review_laden(mr)
         key = str(d.get("key") or "")

@@ -634,14 +634,14 @@ def zug_schreiben(stats):
     ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
     return wagen
 
-def commits_html(commits):
-    """commits: Liste (kurz-sha, zeit, betreff, rumpf)."""
+def commits_html(commits, knoepfe=None):
+    """commits: Liste (kurz-sha, zeit, betreff, rumpf[, sha]). knoepfe(i, commit) → HTML hinter dem Betreff."""
     def nachricht(b):
         b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
         return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
-    return "".join(f'<div class="commit"><code>{html.escape(h)}</code> <b>{html.escape(s)}</b> '
-                   f'<span class="sub">{html.escape(t)}</span>{nachricht(b)}</div>'
-                   for h, t, s, b in commits) or '<div class="sub">keine Commits</div>'
+    return "".join(f'<div class="commit"><code>{html.escape(c[0])}</code> <b>{html.escape(c[2])}</b> '
+                   f'<span class="sub">{html.escape(c[1])}</span>{knoepfe(i, c) if knoepfe else ""}{nachricht(c[3])}</div>'
+                   for i, c in enumerate(commits)) or '<div class="sub">keine Commits</div>'
 
 def dateiliste_html(dateien):
     fl, letzter = [], None
@@ -992,13 +992,18 @@ def api_commit(c):
         zeit = datetime.fromisoformat(zeit.replace("Z", "+00:00")[:25]).astimezone().strftime("%d.%m. %H:%M")
     except ValueError:
         zeit = zeit[:16]
-    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "")
+    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "", c.get("id", ""))
 
 MR_ORDNER = os.path.join(ORDNER, "mr")
 VERSION = str(int(os.path.getmtime(os.path.realpath(__file__))))
 
-def mr_seite(mr, meta=None, inline=False):
-    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr)."""
+def seiten_stamm(mr, head, quelle, ans=None):
+    teil = f'-{ans["art"]}{ans["sha"][:12]}' if ans else ""
+    return os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}{teil}-{VERSION}")
+
+def mr_seite(mr, meta=None, inline=False, ansicht=None):
+    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr).
+    ansicht = ("commit"|"seit", sha): nur ein Commit bzw. alles nach einem Commit (nur mit lokalem Klon)."""
     from concurrent.futures import ThreadPoolExecutor
     meta = meta or glab(mr["host"], mr_pfad(mr))
     mr = mr_normalisieren(meta, mr)
@@ -1006,14 +1011,21 @@ def mr_seite(mr, meta=None, inline=False):
     refs = meta.get("diff_refs") or {}
     head = refs.get("head_sha") or meta.get("sha") or "leer"
     lokal, grund = lokal_pruefen(mr, refs, meta.get("source_branch", ""))
+    ans = None
+    if ansicht:
+        if not lokal:
+            raise GitLabFehler("Commit-Ansichten brauchen den lokalen Klon auf dem MR-Stand – "
+                               + (grund or "kein Klon unter [repos] eingetragen"))
+        ans = ansicht_aufloesen(lokal, refs, *ansicht)
     quelle = "lokal" if lokal else "api" + (hashlib.sha1(grund.encode()).hexdigest()[:6] if grund else "")
-    stamm = os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}-{VERSION}")
+    stamm = seiten_stamm(mr, head, quelle, ans)
+    von, bis = (ans["von"], ans["bis"]) if ans else (refs.get("base_sha"), head)
     if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
         struktur = json.load(open(stamm + ".json", encoding="utf-8"))
     else:
         if lokal:
             dateien = zerlegen(git(lokal, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
-                                   "-M", "-U3", refs["base_sha"], head))
+                                   "-M", "-U3", von, bis))
         else:
             dateien = []
             for e in (mr_diffs(host, P) if refs.get("head_sha") else []):
@@ -1030,8 +1042,8 @@ def mr_seite(mr, meta=None, inline=False):
         def benoetigt(d):
             if d["binaer"] or not d["hunks"]:
                 return None, None
-            return (f'{refs["base_sha"]}:{d["alt"]}' if d["status"] != "neu" else None,
-                    f'{head}:{d["neu"]}' if d["status"] != "gelöscht" else None)
+            return (f'{von}:{d["alt"]}' if d["status"] != "neu" else None,
+                    f'{bis}:{d["neu"]}' if d["status"] != "gelöscht" else None)
         if lokal:  # alle Inhalte auf einmal in den Cache
             for spec, text in blobs(lokal, [s for d in dateien for s in benoetigt(d) if s]).items():
                 sha, _, pfad = spec.partition(":")
@@ -1045,7 +1057,7 @@ def mr_seite(mr, meta=None, inline=False):
             tx = list(ex.map(texte, dateien))
         struktur = {"mr": mr, "refs": {k: refs.get(k) for k in ("base_sha", "start_sha", "head_sha")},
                     "web_url": meta.get("web_url", ""), "quelle": "lokal" if lokal else "api",
-                    "ordner": lokal, "grund": grund, "dateien": []}
+                    "ordner": lokal, "grund": grund, "ansicht": ans, "dateien": []}
         for d, (_, neu_text) in zip(dateien, tx):
             paare, hunks = paare_und_hunks(d)
             struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
@@ -1056,7 +1068,8 @@ def mr_seite(mr, meta=None, inline=False):
         st = review_laden(mr)
         st["mr"] = dict(mr, web_url=meta.get("web_url", ""), titel=meta.get("title", ""),
                         source_branch=meta.get("source_branch", ""), target_branch=meta.get("target_branch", ""))
-        st["struktur"] = stamm + ".json"
+        if not ans:  # Kommentare und Hinweise beziehen sich immer auf den ganzen MR
+            st["struktur"] = stamm + ".json"
         review_speichern(mr, st)
     return stamm + ".html", struktur, mr
 
@@ -1078,15 +1091,32 @@ def mr_html(mr, meta, dateien, commits, texte, head, struktur):
     web = meta.get("web_url", "")
     autor = (meta.get("author") or {}).get("name", "")
     beschr = (meta.get("description") or "").strip()
+    ans = struktur.get("ansicht")
+    def knoepfe(i, c):  # je Commit: nur dieser / seit diesem (brauchen den lokalen Klon)
+        sha = c[4] if len(c) > 4 else ""
+        if not lokal or not sha:
+            return ""
+        akt = ans and ans["sha"] == sha
+        out = (f'<a class="ck{" akt" if akt and ans["art"] == "commit" else ""}" href="/mr/{html.escape(slug)}?commit={sha}" '
+               f'title="nur die Änderungen dieses Commits (nur lesen)">nur dieser</a>')
+        if i < len(commits) - 1:
+            out += (f'<a class="ck{" akt" if akt and ans["art"] == "seit" else ""}" href="/mr/{html.escape(slug)}?seit={sha}" '
+                    f'title="alle Änderungen nach diesem Commit bis zum MR-Stand">seit diesem</a>')
+        return f'<span class="cks">{out}</span>'
     cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
-        + commits_html(commits)
+        + commits_html(commits, knoepfe)
     fl = dateiliste_html(dateien)
     leer = '<div class="leer">Keine Änderungen in diesem Merge-Request (oder GitLab berechnet den Diff noch).</div>' \
         if not dateien else ""
+    lesen = bool(ans and ans["art"] == "commit")
     daten = json.dumps({"modus": "gitlab", "projekt": slug, "id": slug, "sha": head, "k": schluessel(),
-                        "dateien": len(dateien), "web_url": web})
-    hilfe = ('<div class="hilfe">Klick auf Zeilennummer: Kommentar<br><kbd>n</kbd> nächster MR · '
+                        "dateien": len(dateien), "web_url": web,
+                        "ansicht": f'{ans["art"]}:{ans["sha"]}' if ans else "", "lesen": lesen})
+    klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
+             else "Klick auf Zeilennummer: Kommentar")
+    hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    ah = ansicht_html(slug, ans) if ans else ""
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
@@ -1097,8 +1127,8 @@ def mr_html(mr, meta, dateien, commits, texte, head, struktur):
 <span class="sub">{html.escape(meta.get("source_branch", ""))} → {html.escape(meta.get("target_branch", ""))} · {html.escape(autor)} ·
 {len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{"" if band else qh}
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
-<button id="fertig" title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
-<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}</header>
+<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
+<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}{ah}</header>
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
 <main>{leer}{"".join(datei_html(n, d, *texte[n], luecken=True, spaeter=lokal and spaeter_grund(d)) for n, d in enumerate(dateien))}</main></div>
@@ -1306,7 +1336,7 @@ def stand(mr, st):
             teile.append(p + ":-")
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
 
-def review_daten(mr):
+def review_daten(mr, ansicht=None):
     with SPERRE:
         st = review_laden(mr)
     struktur = struktur_laden(st)
@@ -1321,14 +1351,28 @@ def review_daten(mr):
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
+    ausserhalb = 0
+    if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
+        ans_st = ansicht_struktur(mr, struktur, ansicht)
+        vorher = len(kom) + sum(1 for h in hinweise if h["status"] == "offen")
+        kom = ansicht_zuordnen(struktur, ans_st, kom)
+        hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
+        ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st)}
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
 
-def datei_nachladen(mr, i):
-    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
+def seiten_struktur(mr, ansicht=None):
+    """Struktur der Seite: ganzer MR oder eine Commit-Ansicht."""
     with SPERRE:
         st = review_laden(mr)
     struktur = struktur_laden(st)
+    if ansicht and struktur:
+        struktur = ansicht_struktur(mr, struktur, ansicht)
+    return struktur
+
+def datei_nachladen(mr, i, ansicht=None):
+    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
+    struktur = seiten_struktur(mr, ansicht)
     try:
         if i < 0:
             raise IndexError
@@ -1337,30 +1381,28 @@ def datei_nachladen(mr, i):
         return {"ok": False, "text": "unbekannte Datei – Seite neu laden"}
     if struktur.get("quelle") != "lokal" or not struktur.get("ordner"):
         return {"ok": False, "text": "nur im lokalen Modus möglich"}
-    refs = struktur["refs"]
+    von, bis = diff_enden(struktur)
     out = git(struktur["ordner"], "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U3",
-              refs["base_sha"], refs["head_sha"], "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
+              von, bis, "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
     d = next((x for x in zerlegen(out or "") if x["neu"] == f["neu"]), None)
     if d is None:
         return {"ok": False, "text": "Diff nicht gefunden"}
-    alt = inhalt(mr, refs["base_sha"], d["alt"]) if d["status"] != "neu" else ""
-    neu = inhalt(mr, refs["head_sha"], d["neu"]) if d["status"] != "gelöscht" else ""
+    alt = inhalt(mr, von, d["alt"]) if d["status"] != "neu" else ""
+    neu = inhalt(mr, bis, d["neu"]) if d["status"] != "gelöscht" else ""
     return {"ok": True, "html": datei_tabelle(d, alt, neu, luecken=True)}
 
 _TOKENS = {}
 
-def zeilen_daten(mr, pfad, von, bis):
-    """Zeilen von..bis (neue Seite, MR-Stand) als HTML – zum Nachladen von Kontext und fürs Popup."""
-    with SPERRE:
-        st = review_laden(mr)
-    struktur = struktur_laden(st)
-    head = ((struktur or {}).get("refs") or {}).get("head_sha")
+def zeilen_daten(mr, pfad, von, bis, ansicht=None):
+    """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht) als HTML – zum Nachladen von Kontext und fürs Popup."""
+    struktur = seiten_struktur(mr, ansicht)
+    head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
     pfad = pfad_norm(pfad)
     text = inhalt(mr, head, pfad)
     if text is None:
-        return {"ok": False, "text": f"{pfad} gibt es im MR-Stand {head[:8]} nicht"}
+        return {"ok": False, "text": f"{pfad} gibt es im Stand {head[:8]} nicht"}
     zeilen = text.replace("\r\n", "\n").split("\n")
     if zeilen and zeilen[-1] == "":
         zeilen.pop()
@@ -1375,9 +1417,14 @@ def zeilen_daten(mr, pfad, von, bis):
             "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
                        for i in range(von, bis + 1)]}
 
+NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
+
 def kommentar_aktion(mr, d):
     """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
     aktion = d.get("aktion")
+    ansicht = ansicht_lesen(d.get("ansicht"))
+    if ansicht and ansicht[0] == "commit":
+        return False, NUR_LESEN
     with SPERRE:
         st = review_laden(mr)
         struktur = struktur_laden(st)
@@ -1389,6 +1436,8 @@ def kommentar_aktion(mr, d):
                 h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
                 if not h:
                     return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
+                if ansicht and h["path"] and not h["b"]:
+                    return False, "Der Hinweis lässt sich hier keiner Zeile zuordnen – im ganzen MR übernehmen."
                 i = h["datei"]
                 k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                          hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
@@ -1396,14 +1445,23 @@ def kommentar_aktion(mr, d):
             elif d.get("datei") is not None:
                 if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
                     return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."
+                seite = ansicht_struktur(mr, struktur, ansicht) if ansicht else struktur
                 try:
-                    f = struktur["dateien"][int(d["datei"])]
+                    f = seite["dateien"][int(d["datei"])]
                 except (ValueError, IndexError):
                     return False, "unbekannte Datei"
                 a = int(d["a"]) if d.get("a") is not None else None
                 b = int(d["b"]) if d.get("b") is not None else None
                 if (a is None and b is None) or not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
                     return False, "Zeile nicht im Diff"
+                if ansicht:  # „seit“: rechts ist der MR-Stand → Zeile im MR-Diff bestimmen
+                    i = datei_index(struktur, f["neu"])
+                    if b is None or i is None:
+                        return False, "Hier nur auf der rechten Seite (MR-Stand) kommentierbar"
+                    f = struktur["dateien"][i]
+                    a = alt_zeile(f, b)
+                    if not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
+                        return False, "Zeile lässt sich im MR nicht zuordnen"
                 k.update(text=text, path=f["neu"], old_path=f["alt"], a=a, b=b)
             else:
                 k.update(text=text, path=None, a=None, b=None)
@@ -1434,6 +1492,9 @@ def kommentar_aktion(mr, d):
     return True, ""
 
 def hinweis_aktion(mr, d):
+    ansicht = ansicht_lesen(d.get("ansicht"))
+    if ansicht and ansicht[0] == "commit":
+        return False, NUR_LESEN
     with SPERRE:
         st = review_laden(mr)
         key = str(d.get("key") or "")
@@ -1520,6 +1581,117 @@ def abschliessen(mr):
         text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
     return not fehler, text, web
 
+# ---------------------------------------------------------------- Commit-Ansichten (nur dieser Commit / seit einem Commit)
+# Kommentare und Hinweise gehören immer zum ganzen MR (Zeilen im MR-Stand). Eine Ansicht zeigt sie nur an:
+# „seit“ hat rechts den MR-Stand, dort lässt sich alles direkt zuordnen und auch kommentieren.
+# „commit“ zeigt den Stand nach dem Commit, Zeilen werden über den Diff Commit → MR-Stand zurückgerechnet. Nur lesen.
+
+LEERER_BAUM = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+def ansicht_lesen(s):
+    """'commit:<sha>' / 'seit:<sha>' → (art, sha), sonst None."""
+    m = re.fullmatch(r"(commit|seit):([0-9a-f]{7,40})", str(s or ""))
+    return (m.group(1), m.group(2)) if m else None
+
+def ansicht_aufloesen(ordner, refs, art, sha):
+    """Commit prüfen (muss zum MR gehören) → {art, sha, von, bis, titel, kurz, anzahl, merge}."""
+    voll = (git(ordner, "rev-parse", "--verify", "-q", sha + "^{commit}", check=False) or "").strip()
+    if not voll:
+        raise GitLabFehler(f"Commit {sha[:12]} gibt es im lokalen Klon nicht")
+    im_mr = (git(ordner, "rev-list", f'{refs["base_sha"]}..{refs["head_sha"]}', check=False) or "").split()
+    if voll not in im_mr:
+        raise GitLabFehler(f"Commit {sha[:12]} gehört nicht zu diesem MR")
+    titel = (git(ordner, "log", "-1", "--format=%s", voll, check=False) or "").strip()
+    eltern = (git(ordner, "rev-list", "--parents", "-n1", voll, check=False) or "").split()[1:]
+    if art == "commit":
+        von, bis, anzahl = (eltern[0] if eltern else LEERER_BAUM), voll, 1
+    else:
+        von, bis, anzahl = voll, refs["head_sha"], im_mr.index(voll)  # rev-list: neueste zuerst
+    return {"art": art, "sha": voll, "von": von, "bis": bis, "titel": titel, "kurz": voll[:8],
+            "anzahl": anzahl, "merge": len(eltern) > 1}
+
+def ansicht_html(slug, ans):
+    zurueck = f'<a href="/mr/{html.escape(slug)}">ganzer MR</a>'
+    t = f'<code>{html.escape(ans["kurz"])}</code> „{html.escape(ans["titel"])}“'
+    if ans["art"] == "commit":
+        merge = " · Merge-Commit: Diff gegen den ersten Vorgänger" if ans["merge"] else ""
+        text = (f'Nur Commit {t}{merge} · <b>nur lesen</b>: Kommentare und Hinweise stehen an ihrer Zeile, '
+                f'wenn sie sich zuordnen lassen, sonst unter dem Dateinamen')
+    else:
+        text = (f'Änderungen seit {t} ({ans["anzahl"]} Commit(s) danach) · kommentieren rechts (MR-Stand)')
+    return f'<div id="ansicht" class="ansicht">{text} · {zurueck}</div>'
+
+def diff_enden(struktur):
+    """(von, bis) des Diffs einer Seite: Ansicht oder ganzer MR."""
+    a = struktur.get("ansicht")
+    return (a["von"], a["bis"]) if a else (struktur["refs"]["base_sha"], struktur["refs"]["head_sha"])
+
+def ansicht_struktur(mr, haupt, ansicht):
+    """Struktur der Ansichts-Seite (erzeugt sie bei Bedarf)."""
+    p = seiten_stamm(mr, haupt["refs"]["head_sha"], "lokal", {"art": ansicht[0], "sha": ansicht[1]}) + ".json"
+    if p not in STRUKTUR:
+        if not os.path.exists(p):
+            return mr_seite(mr, ansicht=ansicht)[1]
+        STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
+    return STRUKTUR[p]
+
+_ZURUECK = {}
+
+def zurueck_diffs(ordner, bis, head, pfade):
+    """Diff bis → head für die Pfade: {pfad im MR-Stand: datei (paare/hunks/alt)}; fehlt = seitdem unverändert."""
+    k = (ordner, bis, head, tuple(sorted(pfade)))
+    if k not in _ZURUECK:
+        out = git(ordner, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U3",
+                  bis, head, "--", *sorted(pfade), check=False) if pfade else ""
+        r = {}
+        for d in zerlegen(out or ""):
+            paare, hunks = paare_und_hunks(d)
+            r[d["neu"]] = {"alt": d["alt"], "status": d["status"], "paare": paare, "hunks": hunks}
+        if len(_ZURUECK) > 50:
+            _ZURUECK.clear()
+        _ZURUECK[k] = r
+    return _ZURUECK[k]
+
+def ansicht_zuordnen(haupt, ans_st, eintraege):
+    """Kommentare/Hinweise (Zeilen im MR-Stand) in die Ansicht übertragen. Ändert die Einträge:
+    datei/a/b/im_diff in Ansichts-Zeilen, „unter“ = Hinweistext, wenn sie unter dem Dateinamen stehen,
+    „lesen“ = nicht änderbar, „mr_b“/„mr_a“ = Zeile im MR-Stand. Rückgabe: Einträge in Dateien der Ansicht."""
+    ans = ans_st["ansicht"]
+    commit = ans["art"] == "commit"
+    zurueck = zurueck_diffs(ans_st["ordner"], ans["bis"], haupt["refs"]["head_sha"],
+                            {x["path"] for x in eintraege if x.get("path")}) if commit else {}
+    out = []
+    for x in eintraege:
+        x["mr_a"], x["mr_b"] = x.get("a"), x.get("b")
+        x["lesen"] = commit
+        if not x.get("path"):  # allgemein
+            out.append(x); continue
+        z = zurueck.get(x["path"])
+        if z and z["status"] == "neu":
+            continue  # Datei gab es nach dem Commit an diesem Pfad noch nicht
+        i = datei_index(ans_st, z["alt"] if z else x["path"])
+        if i is None:
+            continue  # Datei ist in dieser Ansicht nicht geändert
+        f = ans_st["dateien"][i]
+        b, unter = x.get("b"), None
+        if b and z:
+            b = alt_zeile(z, b)  # Zeile im MR-Stand → Zeile nach dem Commit (None = später geändert)
+            if b is None:
+                unter = f'Zeile {x["mr_b"]} wurde nach diesem Commit noch geändert'
+        elif not b:
+            unter = ("Kommentar zur alten Seite des MR – hier nicht zuzuordnen" if x.get("a")
+                     else x.get("problem") or "ohne Zeile")
+            if not commit:
+                x["lesen"] = True
+        a = alt_zeile(f, b) if b else None
+        imd = bool(b and im_diff(f, a, b))
+        if b and not imd:
+            unter = f"Zeile {b} liegt außerhalb der Änderungen" + (" dieses Commits" if commit else "")
+        x.update(datei=i, a=a, b=b, im_diff=imd, unter=unter)
+        if b and "problem" in x:
+            x["problem"] = None
+        out.append(x)
+    return out
 # ---------------------------------------------------------------- MR-Zug (MRs zum Review)
 
 _MR_LISTE = {"t": 0, "items": [], "fehler": None}
@@ -1632,6 +1804,10 @@ body.gl #zug{min-height:92px}
 .ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ke .ki{flex:none;font-size:11px}
 .kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}
+.cks{margin-left:8px} .ck{font-size:12px;color:var(--tn);border:1px solid var(--rand);border-radius:4px;padding:0 5px;margin-left:4px;cursor:pointer}
+.ck:hover{background:var(--akt)} .ck.akt{background:var(--akt);font-weight:600}
+.ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
+.kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
 """
 
 JS_REVIEW = r"""
@@ -1639,8 +1815,10 @@ const RV={kommentare:[],hinweise:[],quellen:[],stand:null,zeigVerworfen:false};l
 function el(tag,attrs,...kinder){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){
  if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!=null)e.setAttribute(k,v)}
  for(const k of kinder){if(k==null||k===false)continue;e.append(k instanceof Node?k:String(k))}return e}
-const qs=()=>'mr='+encodeURIComponent(MR.id)+'&k='+MR.k;
-function post(pfad,d){return fetch(pfad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({mr:MR.id,k:MR.k,sha:MR.sha},d))})
+// Commit-Ansicht (MR.ansicht = 'commit:<sha>' nur lesen, 'seit:<sha>' rechts = MR-Stand): Server rechnet die Zeilen um
+const qs=(mrStand)=>'mr='+encodeURIComponent(MR.id)+'&k='+MR.k+(MR.ansicht&&!mrStand?'&ansicht='+MR.ansicht:'');
+const LESEN=!!MR.lesen,SEIT=(MR.ansicht||'').startsWith('seit:');
+function post(pfad,d){return fetch(pfad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({mr:MR.id,k:MR.k,sha:MR.sha,ansicht:MR.ansicht||''},d))})
  .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar – merge-train erneut aufrufen'}))}
 function antwort(d){if(!d.ok){meld.textContent=d.text||'Fehler';return d}meld.textContent='';if(d.review){Object.assign(RV,d.review);zeichnen()}return d}
 function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
@@ -1659,7 +1837,7 @@ function bearbeiten(box,text,speichern,abbruch){
 function speichernAls(d){return post('/api/kommentar',d).then(r=>{const x=antwort(r);return x})}
 // ---- Kontext nachladen, Zeile zeigen, Popup
 const PROJ=(MR.web_url||'').split('/-/merge_requests/')[0];
-function zeilenHolen(pfad,von,bis){return fetch('/api/zeilen?'+qs()+'&pfad='+encodeURIComponent(pfad)+'&von='+von+'&bis='+bis)
+function zeilenHolen(pfad,von,bis,mrStand){return fetch('/api/zeilen?'+qs(mrStand)+'&pfad='+encodeURIComponent(pfad)+'&von='+von+'&bis='+bis)
  .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar'}))}
 function trAus(h){const t=document.createElement('tbody');t.innerHTML=h;return t.firstElementChild}
 function luKnoepfe(tr){const v=+tr.dataset.von,b=+tr.dataset.bis,n=b-v+1,kn=[el('span',{},'⋯ '+n+' Zeile(n) ausgeblendet')];
@@ -1729,10 +1907,10 @@ function popup(pfad,zeile,label){schliessen();
  pb.append(el('table',{},el('colgroup',{},el('col',{class:'cn'}),el('col',{})),tb));
  document.body.append(el('div',{id:'schleier',onclick:schliessen}),el('div',{id:'popup'},el('div',{class:'pk'},
   el('b',{},(label?label+' – ':'')+pfad+(zeile?':'+zeile:'')),info,el('span',{class:'knoepfe'},hoch,runter,
-   di>=0&&zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,
+   di>=0&&zeile&&!LESEN?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,
    el('button',{title:'schließen (Esc)',onclick:schliessen},'✕'))),pb));
  function lade(wie){const rest=pb.scrollHeight-pb.scrollTop;
-  zeilenHolen(pfad,st.von,st.bis).then(r=>{if(!r.ok){tb.replaceChildren(el('tr',{},el('td',{},''),el('td',{class:'warn'},r.text)));return}
+  zeilenHolen(pfad,st.von,st.bis,true).then(r=>{if(!r.ok){tb.replaceChildren(el('tr',{},el('td',{},''),el('td',{class:'warn'},r.text)));return}
    Object.assign(st,{von:r.von,bis:r.bis});
    tb.replaceChildren(...r.zeilen.map((h,i)=>{const nr=r.von+i;return trAus(`<tr${nr===zeile?' class="ziel"':''}><td class="n">${nr}</td><td class="c">${h}</td></tr>`)}));
    hoch.disabled=st.von<=1;runter.disabled=st.bis>=r.n;info.textContent=r.n+' Zeilen · Stand '+r.sha.slice(0,8);
@@ -1743,7 +1921,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElement
 document.querySelectorAll('tr.lu').forEach(luKnoepfe);
 function kommentarBox(k,mitOrt){
  const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
- if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
+ if(LESEN||k.lesen);
+ else if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
  else kn.append(k.status==='weg'?null:el('button',{onclick:()=>bearbeiten(box,k.text,t=>speichernAls({aktion:'aendern',id:k.id,text:t}))},'✎ bearbeiten'),
   el('button',{onclick:()=>{if(k.status==='neu'&&!confirm('Kommentar löschen?'))return;speichernAls({aktion:'loeschen',id:k.id})}},'🗑 löschen'));
  box.append(el('div',{class:'kk'},el('span',{class:'badge '+cl},st),k.finding?el('span',{class:'badge b-agent'},'aus Agent '+k.finding):null,
@@ -1752,7 +1931,8 @@ function kommentarBox(k,mitOrt){
  return box}
 function hinweisBox(h,mitOrt){
  const box=el('div',{class:'kbox hw'+(h.status==='verworfen'?' weg':''),'data-id':h.key}),kn=el('span',{class:'knoepfe'});
- if(h.status==='verworfen')kn.append(el('button',{onclick:()=>post('/api/hinweis',{aktion:'zurueck',key:h.key}).then(antwort)},'zurückholen'));
+ if(LESEN||h.lesen);
+ else if(h.status==='verworfen')kn.append(el('button',{onclick:()=>post('/api/hinweis',{aktion:'zurueck',key:h.key}).then(antwort)},'zurückholen'));
  else kn.append(el('button',{class:'haupt',title:'als Review-Kommentar übernehmen',onclick:()=>speichernAls({aktion:'neu',hinweis:h.key})},'übernehmen'),
   el('button',{onclick:()=>bearbeiten(box,h.text,t=>speichernAls({aktion:'neu',hinweis:h.key,text:t}))},'✎ anpassen & übernehmen'),
   el('button',{onclick:()=>post('/api/hinweis',{aktion:'verwerfen',key:h.key}).then(antwort)},'verwerfen'));
@@ -1769,16 +1949,23 @@ function zeileFinden(tab,a,b){for(const r of tab.querySelectorAll('tr[data-a],tr
 function einfuegen(r,inhalt,tab){let z=r;while(z.nextElementSibling&&z.nextElementSibling.classList.contains('kr'))z=z.nextElementSibling;
  const tr=el('tr',{class:'kr'},el('td',{colspan:tab.classList.contains('sbs')?4:3},inhalt));z.after(tr);return tr}
 function nachholen(){if(wartet)setTimeout(zeichnen,0)}
+function unterDatei(x,box){ // Ansicht: Eintrag lässt sich keiner sichtbaren Zeile zuordnen → unter den Dateinamen, mit Grund
+ const d=ds[x.datei];let c=d.querySelector(':scope>.kunter');
+ if(!c){c=el('div',{class:'kunter'});d.querySelector('summary').after(c)}
+ const mrOrt=x.mr_b||x.mr_a,wo=mrOrt?el('a',{class:'ortlink',title:'im MR-Stand zeigen',onclick:()=>popup(x.path,x.mr_b||null)},'MR-Stand: Zeile '+mrOrt+(x.mr_b?'':' (alt)')):null;
+ const zur=x.b?el('a',{class:'ortlink',title:'Kontext aufklappen',onclick:()=>zeigen(x)},'aufklappen'):null;
+ c.append(el('div',{class:'unter'},el('span',{class:'warn'},x.unter),zur?' · ':null,zur,wo?' · ':null,wo),box)}
 function zeichnen(){
  if(document.querySelector('.kbox textarea')){wartet=true;return}wartet=false;
- document.querySelectorAll('tr.kr').forEach(r=>r.remove());
+ document.querySelectorAll('tr.kr,.kunter').forEach(r=>r.remove());
  const allg=[],zahl={};
  const platz=(x,mach)=>{if(x.datei==null||!ds[x.datei]||!(x.a||x.b))return false;let ok=false;
   ds[x.datei].querySelectorAll('table').forEach(tab=>{const r=zeileFinden(tab,x.a,x.b);if(r){einfuegen(r,mach(),tab);ok=true}});
   if(ok)zahl[x.datei]=(zahl[x.datei]||0)+1;return ok};
- RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
+ const unter=(x,mach)=>{if(x.unter==null||x.datei==null||!ds[x.datei])return false;unterDatei(x,mach());zahl[x.datei]=(zahl[x.datei]||0)+1;return true};
+ RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false))&&!unter(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
  RV.hinweise.filter(h=>h.status==='offen'||(RV.zeigVerworfen&&h.status==='verworfen'))
-  .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
+  .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false))&&!unter(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
  allgemein(allg);kliste();ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
  const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
  document.getElementById('rvstand').textContent=n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':'');kh()}
@@ -1787,16 +1974,19 @@ function allgemein(allg){
  const verw=RV.hinweise.filter(h=>h.status==='verworfen').length;
  s.replaceChildren(el('div',{class:'kk'},el('b',{},'Review'),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
   el('span',{class:'knoepfe'},verw?el('button',{onclick:()=>{RV.zeigVerworfen=!RV.zeigVerworfen;zeichnen()}},RV.zeigVerworfen?'verworfene ausblenden':verw+' verworfene Hinweise zeigen'):null,
-   el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'neu',text:t}),()=>b.remove())}},'＋ allgemeiner Kommentar'))));
+   LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'neu',text:t}),()=>b.remove())}},'＋ allgemeiner Kommentar'))),
+  RV.ausserhalb?el('div',{class:'sub'},RV.ausserhalb+' weitere(r) Kommentar(e)/Hinweis(e) in Dateien, die diese Ansicht nicht ändert – siehe ganzer MR'):null);
  RV.quellen.forEach(q=>{const d=el('details',{class:'quelle'},el('summary',{},'🤖 '+(q.key||q.datei)+(q.reviewed_commit?' · geprüft '+q.reviewed_commit:'')+(q.reviewed_at?' am '+q.reviewed_at:'')+' · '+q.anzahl+' Hinweis(e)'),
   q.fehler?el('div',{class:'warn'},q.fehler):null,q.alt?el('div',{class:'warn'},'geprüft auf Stand '+q.reviewed_commit+', der MR steht auf '+MR.sha.slice(0,8)+' – Hinweise evtl. veraltet'):null,el('div',{},q.datei),q.notes?el('div',{class:'kt'},q.notes):null,
   q.failing_tests?el('div',{},el('b',{},'failing_tests: '),JSON.stringify(q.failing_tests,null,1)):null);
   if(q.fehler)d.open=true;s.append(d)});
  allg.forEach(f=>s.append(f()))}
 document.querySelector('main').addEventListener('click',e=>{const td=e.target.closest('td.n');if(!td||!td.textContent.trim())return;
+ if(LESEN){meld.textContent='Nur-Lese-Ansicht: kommentieren im ganzen MR oder in „seit diesem“';return}
  const tr=td.closest('tr');if(!tr||!(tr.dataset.a||tr.dataset.b))return;
  const tab=tr.closest('table'),n=ds.indexOf(tr.closest('.datei'));let a=tr.dataset.a?+tr.dataset.a:null,b=tr.dataset.b?+tr.dataset.b:null;
  if(tab.classList.contains('sbs')&&tr.querySelector('.weg,.dazu,.nix')){if(td.cellIndex===0)b=null;else a=null}
+ if(SEIT&&b==null){meld.textContent='In dieser Ansicht nur rechts (MR-Stand) kommentierbar';return}
  const box=el('div',{class:'kbox km'}),zr=einfuegen(tr,box,tab);
  bearbeiten(box,'',t=>speichernAls({aktion:'neu',datei:n,a,b,text:t}),()=>zr.remove())});
 knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
@@ -1881,9 +2071,13 @@ def server():
                     if pfad == "mr-oeffnen":
                         return self.weiterleiten("/mr/" + mr_id(mr_vollstaendig(mr_ref(q.get("u", "")))))
                     if pfad.startswith("mr/"):
-                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False)
+                        ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else
+                                                f'seit:{q["seit"]}' if q.get("seit") else "")
+                        if (q.get("commit") or q.get("seit")) and not ansicht:
+                            return self.senden(400, "merge-train: ungültiger Commit", "text/plain; charset=utf-8")
+                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False, ansicht=ansicht)
                         if mr_id(mr) != pfad[3:]:
-                            return self.weiterleiten("/mr/" + mr_id(mr))
+                            return self.weiterleiten("/mr/" + mr_id(mr) + (f"?{abfrage}" if abfrage else ""))
                         return self.senden(200, open(datei, "rb").read())
                     if pfad in ("mrzug.js", "api/mrzug"):
                         try:
@@ -1898,9 +2092,10 @@ def server():
                         if q.get("k") != schluessel():
                             return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                         mr = mr_aus_id(q.get("mr", ""))
+                        ansicht = ansicht_lesen(q.get("ansicht"))
                         if pfad == "api/datei":
                             try:
-                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1))))
+                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1)), ansicht))
                             except ValueError:
                                 return self.json_senden(400, {"ok": False, "text": "i ungültig"})
                         if pfad == "api/zeilen":
@@ -1908,10 +2103,10 @@ def server():
                                 von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
                             except ValueError:
                                 return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
-                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis))
+                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis, ansicht))
                         if pfad == "api/stand":
                             return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
-                        return self.json_senden(200, review_daten(mr))
+                        return self.json_senden(200, review_daten(mr, ansicht))
                 if KONF["lokal"]:
                     repos = {dateiname(projektname(r)): r for r in finde_repos()}
                     if pfad == "zug.js":
@@ -1947,11 +2142,14 @@ def server():
                 if str(d.get("k", "")) != schluessel():
                     return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
                 mr = mr_aus_id(d.get("mr", ""))
+                ansicht = ansicht_lesen(d.get("ansicht"))
                 if self.path == "/api/abschliessen":
+                    if ansicht and ansicht[0] == "commit":
+                        return self.json_senden(200, {"ok": False, "text": NUR_LESEN})
                     ok, text, web = abschliessen(mr)
-                    return self.json_senden(200, {"ok": ok, "text": text, "web_url": web, "review": review_daten(mr)})
+                    return self.json_senden(200, {"ok": ok, "text": text, "web_url": web, "review": review_daten(mr, ansicht)})
                 ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(mr, d)
-                self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr) if ok else None})
+                self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr, ansicht) if ok else None})
             except GitLabFehler as e:
                 self.json_senden(502, {"ok": False, "text": str(e)})
             except Exception as e:

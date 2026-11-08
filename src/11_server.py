@@ -66,9 +66,13 @@ def server():
                     if pfad == "mr-oeffnen":
                         return self.weiterleiten("/mr/" + mr_id(mr_vollstaendig(mr_ref(q.get("u", "")))))
                     if pfad.startswith("mr/"):
-                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False)
+                        ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else
+                                                f'seit:{q["seit"]}' if q.get("seit") else "")
+                        if (q.get("commit") or q.get("seit")) and not ansicht:
+                            return self.senden(400, "merge-train: ungültiger Commit", "text/plain; charset=utf-8")
+                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False, ansicht=ansicht)
                         if mr_id(mr) != pfad[3:]:
-                            return self.weiterleiten("/mr/" + mr_id(mr))
+                            return self.weiterleiten("/mr/" + mr_id(mr) + (f"?{abfrage}" if abfrage else ""))
                         return self.senden(200, open(datei, "rb").read())
                     if pfad in ("mrzug.js", "api/mrzug"):
                         try:
@@ -83,9 +87,10 @@ def server():
                         if q.get("k") != schluessel():
                             return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                         mr = mr_aus_id(q.get("mr", ""))
+                        ansicht = ansicht_lesen(q.get("ansicht"))
                         if pfad == "api/datei":
                             try:
-                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1))))
+                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1)), ansicht))
                             except ValueError:
                                 return self.json_senden(400, {"ok": False, "text": "i ungültig"})
                         if pfad == "api/zeilen":
@@ -93,10 +98,10 @@ def server():
                                 von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
                             except ValueError:
                                 return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
-                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis))
+                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis, ansicht))
                         if pfad == "api/stand":
                             return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
-                        return self.json_senden(200, review_daten(mr))
+                        return self.json_senden(200, review_daten(mr, ansicht))
                 if KONF["lokal"]:
                     repos = {dateiname(projektname(r)): r for r in finde_repos()}
                     if pfad == "zug.js":
@@ -132,11 +137,14 @@ def server():
                 if str(d.get("k", "")) != schluessel():
                     return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
                 mr = mr_aus_id(d.get("mr", ""))
+                ansicht = ansicht_lesen(d.get("ansicht"))
                 if self.path == "/api/abschliessen":
+                    if ansicht and ansicht[0] == "commit":
+                        return self.json_senden(200, {"ok": False, "text": NUR_LESEN})
                     ok, text, web = abschliessen(mr)
-                    return self.json_senden(200, {"ok": ok, "text": text, "web_url": web, "review": review_daten(mr)})
+                    return self.json_senden(200, {"ok": ok, "text": text, "web_url": web, "review": review_daten(mr, ansicht)})
                 ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(mr, d)
-                self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr) if ok else None})
+                self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr, ansicht) if ok else None})
             except GitLabFehler as e:
                 self.json_senden(502, {"ok": False, "text": str(e)})
             except Exception as e:

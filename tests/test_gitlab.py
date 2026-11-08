@@ -226,6 +226,56 @@ def main():
         neu = [x for x in drafts() if "#4" in x["note"]]
         pruefe(r["ok"] and neu and neu[0]["position"] is None and "seite.html:2" in neu[0]["note"]
                and "/-/blob/" in neu[0]["note"], "abgelehnte Position → allgemeiner Kommentar mit Link")
+        # Commit-Ansichten: zweiter Commit verschiebt App.cs um eine Zeile und ändert Neu.cs
+        c1 = head
+        app = open(f"{REPO}/App.cs").read().split("\n")
+        app.insert(3, "    // eingefügt")
+        open(f"{REPO}/App.cs", "w").write("\n".join(app))
+        open(f"{REPO}/Neu.cs", "w").write("// neu\nclass Neu { void Bar(int y) {} }\n")
+        sh("git", "-C", REPO, "commit", "-qam", "Zweiter Schritt")
+        c2 = sh("git", "-C", REPO, "rev-parse", "HEAD").stdout.strip()
+        seite = get(f"/mr/{mr}")
+        pruefe(f"?commit={c1}" in seite and f"?seit={c1}" in seite and f"?commit={c2}" in seite
+               and f"?seit={c2}" not in seite, "Commit-Liste: „nur dieser“ je Commit, „seit diesem“ außer beim letzten")
+        basis2 = dict(basis, sha=c2)
+        ca = f"commit:{c1}"
+        s1 = get(f"/mr/{mr}?commit={c1}")
+        pruefe('id="ansicht"' in s1 and "nur lesen" in s1 and '"lesen": true' in s1, "Einzel-Commit-Seite: Band, nur lesen")
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}&ansicht={ca}"))
+        hs = {h["finding"]: h for h in rv["hinweise"]}
+        pruefe(hs["#1"]["b"] == 11 and hs["#1"]["mr_b"] == 12 and hs["#1"]["im_diff"] and hs["#1"]["lesen"] and not hs["#1"]["unter"],
+               "Commit-Ansicht: #1 von MR-Zeile 12 auf Zeile 11 nach dem Commit zurückgerechnet")
+        pruefe(hs["#5"]["b"] is None and "nach diesem Commit noch geändert" in hs["#5"]["unter"],
+               "Commit-Ansicht: später geänderte Zeile steht unter dem Dateinamen")
+        pruefe(hs["K2"]["b"] == 50 and "außerhalb der Änderungen dieses Commits" in hs["K2"]["unter"], "Commit-Ansicht: Zeile außerhalb mit Hinweis")
+        pruefe(all(x["lesen"] for x in rv["kommentare"] + rv["hinweise"]), "Commit-Ansicht: alles nur lesen")
+        z1 = json.loads(get(f"/api/zeilen?mr={mr}&k={k}&pfad=App.cs&von=1&bis=99&ansicht={ca}"))
+        z2 = json.loads(get(f"/api/zeilen?mr={mr}&k={k}&pfad=App.cs&von=1&bis=99"))
+        pruefe(z1["n"] == 61 and z2["n"] == 62, "Kontext in der Commit-Ansicht aus dem Commit-Stand, Popup aus dem MR-Stand")
+        pruefe(not post("/api/kommentar", dict(basis2, ansicht=ca, aktion="neu", text="x"))["ok"]
+               and not post("/api/hinweis", dict(basis2, ansicht=ca, aktion="verwerfen", key=hs["#4"]["key"]))["ok"]
+               and not post("/api/abschliessen", dict(basis2, ansicht=ca))["ok"], "Commit-Ansicht: Schreiben abgelehnt")
+        sa = f"seit:{c1}"
+        s2 = get(f"/mr/{mr}?seit={c1}")
+        pruefe('id="ansicht"' in s2 and "Änderungen seit" in s2 and '"lesen": false' in s2, "Seit-Seite")
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}&ansicht={sa}"))
+        hs = {h["finding"]: h for h in rv["hinweise"]}
+        pruefe(hs["#1"]["b"] == 12 and not hs["#1"]["lesen"] and "außerhalb der Änderungen" in hs["#1"]["unter"],
+               "Seit-Ansicht: #1 an MR-Zeile 12, änderbar")
+        pruefe("#4" not in hs and rv["ausserhalb"] >= 1, "Seit-Ansicht: seite.html nicht geändert → nur gezählt")
+        st2 = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+        sv = json.load(open(next(p[:-5] + ".json" for p in [os.path.join(f"{T}/cache/merge-train/mr", f) for f in os.listdir(f"{T}/cache/merge-train/mr")]
+                                 if f"-seit{c1[:12]}-" in p and p.endswith(".html"))))
+        i_v = next(i for i, f in enumerate(sv["dateien"]) if f["neu"] == "App.cs")
+        r = post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=None, b=4, text="Eingefügt?"))
+        kn = r["ok"] and next(x for x in json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["kommentare"] if x["text"] == "Eingefügt?")
+        pruefe(kn and kn["b"] == 4 and kn["a"] is None, "Seit-Ansicht: Kommentar wird auf die MR-Zeile (neu 4, im MR hinzugefügt) gelegt")
+        pruefe(not post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=3, b=None, text="x"))["ok"],
+               "Seit-Ansicht: alte Seite nicht kommentierbar")
+        pruefe(st2["struktur"] == json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["struktur"]
+               and "-seit" not in st2["struktur"] and "-commit" not in st2["struktur"], "Ansichten ändern die Struktur des MR nicht")
+        pruefe("gehört nicht zu diesem MR" in get(f"/mr/{mr}?commit={start}") and "ungültig" in get(f"/mr/{mr}?seit=xyz"),
+               "fremder Commit / ungültige sha abgelehnt")
         # Übersicht, Zug, lokal=false
         pruefe("Demo-Änderung" in get("/"), "Startseite zeigt MR-Liste (lokal = false)")
         pruefe('"name": "!1 demo"' in get("/mrzug.js?akt=" + mr), "MR-Zug")

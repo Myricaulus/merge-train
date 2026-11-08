@@ -138,14 +138,14 @@ def zug_schreiben(stats):
     ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
     return wagen
 
-def commits_html(commits):
-    """commits: Liste (kurz-sha, zeit, betreff, rumpf)."""
+def commits_html(commits, knoepfe=None):
+    """commits: Liste (kurz-sha, zeit, betreff, rumpf[, sha]). knoepfe(i, commit) → HTML hinter dem Betreff."""
     def nachricht(b):
         b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
         return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
-    return "".join(f'<div class="commit"><code>{html.escape(h)}</code> <b>{html.escape(s)}</b> '
-                   f'<span class="sub">{html.escape(t)}</span>{nachricht(b)}</div>'
-                   for h, t, s, b in commits) or '<div class="sub">keine Commits</div>'
+    return "".join(f'<div class="commit"><code>{html.escape(c[0])}</code> <b>{html.escape(c[2])}</b> '
+                   f'<span class="sub">{html.escape(c[1])}</span>{knoepfe(i, c) if knoepfe else ""}{nachricht(c[3])}</div>'
+                   for i, c in enumerate(commits)) or '<div class="sub">keine Commits</div>'
 
 def dateiliste_html(dateien):
     fl, letzter = [], None
