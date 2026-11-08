@@ -26,7 +26,7 @@ function lok(){ // bayerische S 3/6 (Vorbild 3673), Fahrtrichtung rechts; lokale
  ${rad(12,64,6)}${rad(38,64,6)}${rad(88,63,7)}${rad(106,59,11)}${rad(130,59,11)}${rad(154,59,11)}${rad(174,64,6)}${rad(188,64,6)}
  <line x1="106" y1="62" x2="154" y2="62" stroke="#c9c9c9" stroke-width="2.2" stroke-linecap="round"/>
  <line x1="154" y1="62" x2="170" y2="52" stroke="#c9c9c9" stroke-width="1.8"/>`}
-function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)return;const sl=box.scrollLeft;box.innerHTML='';
+function zug(){const box=document.getElementById('zug');if(!box)return;box.innerHTML='';if(!ZUG.length)return; // leer: altes Bild weg (sonst zeigen dessen Waggons ins Leere)
  const W=170,H=56,G=14,y=22,LW=200,yr=y+H+10,ns='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(ns,'svg'),breite=4+ZUG.length*(W+G)+LW+6;
  svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
@@ -48,7 +48,7 @@ function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)ret
    <line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
  s+=`<g transform="translate(${4+ZUG.length*(W+G)},${yr-70})">${lok()}</g>`;
  svg.innerHTML=s;box.appendChild(svg);
- svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
+ svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w&&w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
  const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
 zug();kh();
 const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
