@@ -71,8 +71,8 @@ def drafts():
         return []
 
 def main():
-    r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen"), "--pruefen"], capture_output=True, text=True)
-    pruefe(r.returncode == 0, "merge-train ist aus src/ gebaut (sonst ./bauen)")
+    r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
+    pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
     repo_anlegen()
     os.makedirs(f"{T}/config/merge-train")
     open(ENV["MERGE_TRAIN_CONFIG"], "w").write(

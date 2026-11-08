@@ -84,7 +84,7 @@ git clone git@github.com:Myricaulus/merge-train.git ~/merge-train
 ~/merge-train/install.sh --nur-gitlab
 ```
 
-`install.sh` verlinkt `~/.local/bin/merge-train`, legt die Einstellungen mit `lokal = false` an (unter WSL mit `browser = "wslview"`,
+`install.sh` baut `merge-train`, richtet die Git-Hooks fürs Neubauen ein, verlinkt `~/.local/bin/merge-train`, legt die Einstellungen mit `lokal = false` an (unter WSL mit `browser = "wslview"`,
 wenn vorhanden) und prüft `pygments` und `glab`. Danach:
 
 1. `glab auth login --hostname <gitlab-host>`. Beim Arbeits-GitLab zusätzlich `gitlab_host` eintragen.
@@ -108,8 +108,9 @@ CSS und JS in `src/web/`. Dort eingebettet über `NAME = r"""@einbetten web/date
 ./bauen --pruefen  # Exit 1, wenn merge-train nicht zu src/ passt
 ```
 
-`merge-train` wird mit eingecheckt und nie direkt bearbeitet. `~/.local/bin/merge-train` zeigt darauf,
-ein `git pull` genügt also weiterhin zum Aktualisieren.
+`merge-train` ist das gebaute Ergebnis und nicht eingecheckt (`.gitignore`). `~/.local/bin/merge-train` zeigt darauf.
+`install.sh` richtet Git-Hooks ein (post-merge, post-checkout, post-rewrite), die danach `./bauen` ausführen.
+Ein `git pull` genügt also weiterhin zum Aktualisieren.
 
 ## Tests
 

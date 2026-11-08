@@ -5,8 +5,8 @@
   ./bauen --pruefen  nur vergleichen: Exit 1, wenn ./merge-train nicht zum Stand in src/ passt
 
 In den Python-Teilen bettet `NAME = r\"\"\"@einbetten web/datei.js@\"\"\"` die Datei als String ein.
-Die gebaute Datei wird mit eingecheckt: ~/.local/bin/merge-train zeigt darauf, und ein `git pull`
-genügt zum Aktualisieren. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
+Die gebaute Datei ist nicht eingecheckt (.gitignore). ~/.local/bin/merge-train zeigt darauf; die Git-Hooks
+aus install.sh bauen nach pull/checkout/rebase neu. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
 """
 import os, re, sys
 
