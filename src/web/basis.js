@@ -1,7 +1,7 @@
 const ds=[...document.querySelectorAll('.datei')],ls=[...document.querySelectorAll('#liste a')],kopf=document.getElementById('kopf');
 function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHeight+'px')}
 kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
-function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(d.getBoundingClientRect().top<=g)k=j});return k}
+function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(!d.closest('#popup')&&d.getBoundingClientRect().top<=g)k=j});return k}
 let FEST=null;['wheel','touchmove','keydown','mousedown'].forEach(t=>addEventListener(t,()=>{FEST=null},{passive:true,capture:true}));
 function markiere(){const k=FEST!=null&&ds[FEST]?FEST:aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k],nav=a&&a.closest('nav');
  if(nav){const r=a.getBoundingClientRect(),p=nav.getBoundingClientRect(),h=nav.querySelector('h2'),oben=p.top+(h?h.offsetHeight:0);

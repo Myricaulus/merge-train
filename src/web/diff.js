@@ -16,7 +16,7 @@ function luKnoepfe(tr){const v=+tr.dataset.von,b=+tr.dataset.bis,n=b-v+1,kn=[el(
   if(tr.nextElementSibling)kn.push(el('button',{title:'20 Zeilen über dem sichtbaren Teil darunter',onclick:()=>aufklappen(tr,b-19,b)},'▲ 20'))}
  kn.push(el('button',{onclick:()=>aufklappen(tr,v,b)},n>30?'alle '+n:'aufklappen'));tr.lastElementChild.replaceChildren(...kn)}
 function luTeil(lu,v,b){const t=lu.cloneNode(true);t.dataset.von=v;t.dataset.bis=b;return t}
-function aufklappen(tr,x,y){const d=tr.closest('.datei,.pdatei'),v=tr.dataset.von,b=tr.dataset.bis,delta=+tr.dataset.d;x=Math.max(x,+v);y=Math.min(y,+b);
+function aufklappen(tr,x,y){const d=tr.closest('.datei'),v=tr.dataset.von,b=tr.dataset.bis,delta=+tr.dataset.d;x=Math.max(x,+v);y=Math.min(y,+b);
  return zeilenHolen(d.dataset.pfad,x,y).then(r=>{if(!r.ok){meld.textContent=r.text;return false}
   d.querySelectorAll('tr.lu[data-von="'+v+'"][data-bis="'+b+'"]').forEach(lu=>{const sbs=lu.closest('table').classList.contains('sbs'),neu=[];
    if(x>+v)neu.push(luTeil(lu,+v,x-1));
@@ -68,7 +68,9 @@ function siehe(sa){if(!sa||!sa.length)return null;
  return el('div',{class:'sa'},el('span',{},'Siehe auch:'),...sa.map(s=>{const wo=s.path+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):'');
   return s.problem?el('span',{class:'warn',title:s.problem},(s.label?s.label+' · ':'')+wo+' ('+s.problem+')')
    :el('a',{title:wo,onclick:()=>popup(s.path,s.zeile,s.label,s.bis)},s.label||(s.path.split('/').pop()+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):'')))}))}
-function schliessen(){['popup','schleier'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}
+var LEIHE=null; // Datei, die gerade im Popup steht: {d, platz}
+function zurueckgeben(){if(!LEIHE)return;const {d,platz}=LEIHE;LEIHE=null;d.querySelectorAll('tr.ziel').forEach(t=>t.classList.remove('ziel'));platz.replaceWith(d)}
+function schliessen(){zurueckgeben();['popup','schleier'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}
 function popup(pfad,zeile,label,bisZ){schliessen(); // Code im MR-Stand; liegt die Datei im Diff: deren Diff (aufklappbar)
  const di=ds.findIndex(d=>d.dataset.pfad===pfad),mitDiff=di>=0&&!LESEN,ende=bisZ||zeile,info=el('span',{class:'sub'}),pb=el('div',{class:'pb'});
  const gl=PROJ?el('a',{class:'gl-link',target:'_blank',rel:'noopener',href:PROJ+'/-/blob/'+MR.sha+'/'+pfad.split('/').map(encodeURIComponent).join('/')+(zeile?'#L'+zeile+(bisZ?'-'+bisZ:''):'')},'GitLab ↗'):null;
@@ -79,15 +81,15 @@ function popup(pfad,zeile,label,bisZ){schliessen(); // Code im MR-Stand; liegt d
  if(mitDiff){const d=ds[di];info.textContent='Diff im MR';
   kn.append(el('button',{title:'alle ausgeblendeten Zeilen dieser Datei laden',onclick:()=>alleAuf(pb)},'alles aufklappen'),
    zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,zu);
-  dateiLaden(d).then(ok=>{ // wie auf der Seite: inline oder nebeneinander
-   const tab=ok&&(document.body.classList.contains('inline')&&d.querySelector('table.inl')||d.querySelector('table.sbs'));if(!tab){pb.textContent='Diff nicht verfügbar';return}
-   const w=el('div',{class:'pdatei','data-pfad':pfad}),k=tab.cloneNode(true);k.querySelectorAll('tr.kr').forEach(t=>t.remove());
-   w.append(k);pb.append(w);k.querySelectorAll('tr.lu').forEach(luKnoepfe);
+  dateiLaden(d).then(ok=>{if(!pb.isConnected)return; // Popup inzwischen zu
+   if(!ok){pb.textContent='Diff nicht verfügbar';return}
+   // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie dort
+   const platz=el('div',{class:'leihplatz',style:'height:'+d.offsetHeight+'px'});d.replaceWith(platz);d.open=true;pb.append(d);LEIHE={d,platz};
    if(!zeile)return;
-   const markieren=()=>{let erst=null;k.querySelectorAll('tr[data-b]').forEach(t=>{const b=+t.dataset.b,an=b>=zeile&&b<=ende;t.classList.toggle('ziel',an);if(an&&!erst)erst=t});
-    if(erst)pb.scrollTop=erst.offsetTop-pb.clientHeight/2;return !!erst};
+   const markieren=()=>{let erst=null;d.querySelectorAll('tr[data-b]').forEach(t=>{const b=+t.dataset.b,an=b>=zeile&&b<=ende;t.classList.toggle('ziel',an);if(an&&!erst&&t.getClientRects().length)erst=t});
+    if(erst)pb.scrollTop+=erst.getBoundingClientRect().top-pb.getBoundingClientRect().top-pb.clientHeight/2;return !!erst};
    if(markieren())return;
-   const lu=[...k.querySelectorAll('tr.lu')].find(t=>+t.dataset.von<=ende&&zeile<=+t.dataset.bis);
+   const lu=[...d.querySelectorAll('tr.lu')].find(t=>+t.dataset.von<=ende&&zeile<=+t.dataset.bis);
    if(lu)aufklappen(lu,zeile-12,ende+12).then(markieren)});
   return}
  const st={von:Math.max(1,(zeile||1)-12),bis:(ende||1)+12},tb=el('tbody');

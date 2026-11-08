@@ -39,7 +39,7 @@ Im Browser:
 
 6. **`content-visibility:auto` auf `.datei`**: Nur sichtbare Dateien werden gerendert, gesucht wird trotzdem
    überall, Strg+F funktioniert. Jede Datei bekommt eine geschätzte Höhe (`contain-intrinsic-size`,
-   19 px pro Diffzeile), damit Scrollbalken und Sprünge über die Dateiliste stimmen (gemessen: 8 px Abstand = `scroll-margin`).
+   19 px pro Diffzeile, seit 2 px mehr Zeilenabstand 21 px), damit Scrollbalken und Sprünge über die Dateiliste stimmen (gemessen: 8 px Abstand = `scroll-margin`).
    Datei-Variante der Seite: DOM fertig 0,8–2,8 s → 0,2 s (beim wiederholten Laden im selben Browser).
 7. **MR-Zug blockierte den Seitenaufbau**: `<script src="/mrzug.js">` im `<head>` wartete auf zwei GitLab-Abfragen.
    Jetzt per `fetch` nach dem Aufbau. Bis die Antwort da ist, zeichnet die Seite den zuletzt gesehenen Zug aus

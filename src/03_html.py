@@ -99,7 +99,7 @@ def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
             f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
             f'<span class="m">−{d["minus"]}</span></summary>')
     # content-visibility (CSS): nur sichtbare Dateien werden gerendert; geschätzte Höhe hält Scrollbalken/Sprünge stabil
-    hoehe = 40 if spaeter or not d["hunks"] else 40 + 19 * (sum(len(h["z"]) for h in d["hunks"]) + 2 * len(d["hunks"]))
+    hoehe = 40 if spaeter or not d["hunks"] else 40 + 21 * (sum(len(h["z"]) for h in d["hunks"]) + 2 * len(d["hunks"]))
     auf = (f'<details open class="datei" id="d{n}" data-pfad="{html.escape(d["neu"])}" '
            f'style="contain-intrinsic-size:auto {hoehe}px">{kopf}')
     if spaeter:

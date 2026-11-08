@@ -78,7 +78,7 @@ function allgemein(allg){
   q.failing_tests?el('div',{},el('b',{},'failing_tests: '),JSON.stringify(q.failing_tests,null,1)):null);
   if(q.fehler)d.open=true;s.append(d)});
  allg.forEach(f=>s.append(f()))}
-document.querySelector('main').addEventListener('click',e=>{const td=e.target.closest('td.n');if(!td||!td.textContent.trim())return;
+document.addEventListener('click',e=>{const td=e.target.closest('main td.n,#popup td.n');if(!td||!td.textContent.trim())return; // Seite und Popup (ausgeliehene Datei)
  if(LESEN){meld.textContent='Nur-Lese-Ansicht: kommentieren im ganzen MR oder in „seit diesem“';return}
  const tr=td.closest('tr');if(!tr||!(tr.dataset.a||tr.dataset.b))return;
  const tab=tr.closest('table'),n=ds.indexOf(tr.closest('.datei'));let a=tr.dataset.a?+tr.dataset.a:null,b=tr.dataset.b?+tr.dataset.b:null;

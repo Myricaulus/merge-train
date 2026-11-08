@@ -47,4 +47,4 @@ body.gl #zug{min-height:92px}
 .gleise{display:flex;align-items:flex-end;gap:8px} .gleise #zug{flex:1;min-width:0}
 #bahnhof{flex:none;display:flex;flex-direction:column;gap:3px;padding:4px 8px;margin-bottom:6px;border:1px dashed var(--rand);border-radius:6px;font-size:12px;background:var(--bg)}
 #bahnhof b{font-size:11px;color:var(--muted);font-weight:600} #bahnhof button{font-size:12px;padding:1px 6px} #bahnhof .sub{margin:0;font-size:11px}
-.pdatei table{width:100%} body.inline .pdatei table.sbs{display:table} /* Popup wie die Seite; fehlt die Inline-Tabelle, nebeneinander */ .pdatei tr.ziel td.n{background:var(--tn);color:var(--bg)}
+#popup .datei{margin:0;border:0;content-visibility:visible} #popup .datei>summary{position:static} /* ausgeliehene Datei */ #popup tr.ziel td.n{background:var(--tn);color:var(--bg)}

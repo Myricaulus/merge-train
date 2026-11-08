@@ -32,7 +32,7 @@ main{min-width:0}
 .st-neu{color:var(--p)} .st-gelöscht{color:var(--m)}
 table{border-collapse:collapse;width:100%;table-layout:fixed} col.cn{width:44px}
 td.n{color:var(--muted);text-align:right;padding:0 6px;user-select:none;font:12px ui-monospace,monospace;vertical-align:top}
-td.c{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 8px;vertical-align:top;tab-size:4}
+td.c{white-space:pre-wrap;overflow-wrap:anywhere;padding:1px 8px;vertical-align:top;tab-size:4}
 .weg{background:var(--weg)} .dazu{background:var(--dazu)} .nix{background:var(--nix)}
 td.weg+td.n,td.dazu+td.n,td.nix+td.n,.sbs td.c+td.n{border-left:1px solid var(--rand)}
 del{background:var(--wegs);text-decoration:none;border-radius:2px} ins{background:var(--dazus);text-decoration:none;border-radius:2px}
