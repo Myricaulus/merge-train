@@ -1,0 +1,42 @@
+.gl-link{color:var(--tn);font-size:13px} .gl-link:hover{text-decoration:underline}
+#rvstand{font-size:13px}
+tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
+.kbox{border:1px solid var(--rand);border-left-width:4px;border-radius:6px;background:var(--kopf);padding:6px 10px;margin:3px 0;max-width:960px;font:13px system-ui,sans-serif}
+.kbox.km{border-left-color:var(--tn)} .kbox.hw{border-left-color:var(--tf)} .kbox.weg{opacity:.55}
+.kbox .kk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:3px}
+.kbox .kt{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg)}
+.knoepfe{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+.kbox button,#allgemein button{font:12px system-ui,sans-serif;padding:2px 8px;border-radius:5px;border:1px solid var(--rand);background:var(--bg);color:var(--fg);cursor:pointer}
+.kbox button:hover,#allgemein button:hover{border-color:var(--muted)}
+.kbox button.haupt{background:var(--tn);border-color:var(--tn);color:var(--bg)}
+.kbox textarea{display:block;width:100%;min-height:90px;font:13px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--rand);border-radius:5px;padding:6px;resize:vertical;margin-bottom:4px}
+.badge{font-size:11px;padding:0 6px;border-radius:9px;border:1px solid var(--rand);white-space:nowrap}
+.b-neu,.b-geaendert{color:var(--tb)} .b-ok{color:var(--p)} .b-loeschen{color:var(--m)} .b-agent{color:var(--tf)}
+.kbox details,.quelle{margin-top:4px;color:var(--muted);font-size:12px} .kbox details div,.quelle div{white-space:pre-wrap;margin:2px 0}
+.kbox summary,.quelle summary{cursor:pointer}
+.warn{color:var(--m)}
+body.gl td.n:not(:empty){cursor:pointer} body.gl td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
+#allgemein{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;padding:8px 12px}
+#allgemein>.kk{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#liste .kz{color:var(--tf);margin-right:6px}
+#meldung a{color:var(--tn)}
+tr.lu td{background:var(--hk);color:var(--muted);padding:2px 8px;font:12px system-ui,sans-serif}
+.spaet button,tr.lu button,#popup button{font:12px system-ui,sans-serif;padding:0 8px;margin-left:6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
+#popup button:disabled{opacity:.4;cursor:default}
+tr.blink td{animation:blink 1.8s ease-out} @keyframes blink{0%,30%{background:var(--akt)}}
+#quelle{font-size:13px;margin-top:4px} .quelle-ok{color:var(--p);font-size:13px}
+.sa{margin-top:4px;font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.sa a,a.ortlink{color:var(--tn);cursor:pointer;font:12px ui-monospace,monospace} .sa a:hover,a.ortlink:hover{text-decoration:underline}
+#schleier{position:fixed;inset:0;z-index:49;background:rgba(0,0,0,.3)}
+#popup{position:fixed;z-index:50;left:50%;top:7vh;transform:translateX(-50%);width:min(1100px,94vw);max-height:84vh;display:flex;flex-direction:column;
+background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+#popup .pk{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand);border-radius:8px 8px 0 0;font-size:13px}
+#popup .pb{overflow:auto} #popup tr.ziel td{background:var(--akt)}
+body.gl #zug{min-height:92px}
+#kliste{border-bottom:1px solid var(--rand)} #kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
+#kliste>div{max-height:38vh;overflow-y:auto;overflow-x:hidden}
+.ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px;border-left:3px solid transparent}
+.ke:hover{background:var(--kopf)} .ke.hw{border-left-color:var(--tf)} .ke.km{border-left-color:var(--tn)}
+.ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ke .ki{flex:none;font-size:11px}
+.kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}

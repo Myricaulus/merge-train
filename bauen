@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Baut merge-train aus src/ zusammen.
+
+  ./bauen            src/*.py der Reihe nach aneinanderhängen, web/*.css|js einbetten → ./merge-train
+  ./bauen --pruefen  nur vergleichen: Exit 1, wenn ./merge-train nicht zum Stand in src/ passt
+
+In den Python-Teilen bettet `NAME = r\"\"\"@einbetten web/datei.js@\"\"\"` die Datei als String ein.
+Die gebaute Datei wird mit eingecheckt: ~/.local/bin/merge-train zeigt darauf, und ein `git pull`
+genügt zum Aktualisieren. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
+"""
+import os, re, sys
+
+HIER = os.path.dirname(os.path.realpath(__file__))
+SRC = os.path.join(HIER, "src")
+ZIEL = os.path.join(HIER, "merge-train")
+
+
+def einbetten(m):
+    pfad = m.group(1)
+    text = open(os.path.join(SRC, pfad), encoding="utf-8").read()
+    if '"""' in text:
+        sys.exit(f"{pfad}: enthält \"\"\" und lässt sich nicht einbetten")
+    if text.endswith("\\"):
+        sys.exit(f"{pfad}: endet mit \\ und lässt sich nicht einbetten")
+    return "\n" + text   # wie vorher: der String beginnt mit einem Zeilenumbruch
+
+
+def bauen():
+    teile = sorted(f for f in os.listdir(SRC) if f.endswith(".py"))
+    text = "".join(open(os.path.join(SRC, f), encoding="utf-8").read() for f in teile)
+    return re.sub(r"@einbetten ([\w./-]+)@", einbetten, text)
+
+
+def main():
+    neu = bauen()
+    try:
+        alt = open(ZIEL, encoding="utf-8").read()
+    except FileNotFoundError:
+        alt = None
+    if "--pruefen" in sys.argv:
+        if alt != neu:
+            sys.exit("merge-train passt nicht zu src/ – ./bauen ausführen")
+        return
+    if alt == neu:
+        print("merge-train ist aktuell")
+        return
+    tmp = ZIEL + ".neu"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(neu)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, ZIEL)
+    print(f"merge-train gebaut ({neu.count(chr(10))} Zeilen)")
+
+
+if __name__ == "__main__":
+    main()
