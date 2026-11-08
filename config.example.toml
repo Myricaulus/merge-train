@@ -1,0 +1,29 @@
+# merge-train – Einstellungen
+# Ort: ~/.config/merge-train/config.toml  (oder Pfad in $MERGE_TRAIN_CONFIG)
+# Alles optional; auskommentiert = Standardwert.
+
+# Lokaler Projekt-Diff: von/bis-Branches aller Repos unter „projekte“ als Zug.
+# Auf einem Rechner nur für GitLab-MRs: false. Dann öffnet „merge-train“ ohne Argumente die MR-Liste.
+# lokal = true
+# projekte = "~/Projects"
+# von = "reviewed"
+# bis = "claude"
+
+# GitLab-Merge-Requests über glab (vorher einmal: glab auth login --hostname <host>)
+# gitlab = true
+# gitlab_host = ""            # leer: Host aus MR-URL bzw. git-Remote, sonst glab-Standardhost
+# glab = "glab"               # Befehl, darf Argumente enthalten
+# mr_liste = "reviewer"       # MR-Zug: reviewer | assignee | author | keine
+
+# Agent-Hinweise (jira-review): Dateien, die automatisch zum MR mit passendem „branch“ angezeigt werden
+# hinweise = ["~/workspaces/projekt/tasks/*-review-markers.json"]
+
+# Browser-Befehl. Leer: xdg-open, sonst wslview, sonst explorer.exe. Unter WSL z. B. "wslview".
+# browser = ""
+
+# port = 8771
+
+# Lokale Klone: Dateiinhalte von dort statt über die API (schneller).
+# Muss am Ende stehen: alles nach [repos] gehört zu dieser Tabelle. Schlüssel = Projektpfad in GitLab.
+# [repos]
+# "gruppe/projekt" = "~/workspaces/projekt"
