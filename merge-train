@@ -316,8 +316,11 @@ a{color:inherit;text-decoration:none} .p{color:var(--p)} .m{color:var(--m)} .sub
 .commit b{font-weight:600} .nachricht{white-space:pre-wrap;color:var(--muted);margin-top:2px}
 .todos{margin-top:4px} .todos code{background:var(--akt);padding:1px 5px;border-radius:4px;margin-right:4px}
 .rahmen{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;padding:16px}
-#liste{position:sticky;top:calc(var(--kopfh,60px) + 16px);align-self:start;max-height:calc(100vh - var(--kopfh,60px) - 32px);
-overflow:auto;border:1px solid var(--rand);border-radius:6px;font-size:13px}
+.seite{position:sticky;top:calc(var(--kopfh,60px) + 16px);align-self:start;max-height:calc(100vh - var(--kopfh,60px) - 32px);
+display:flex;flex-direction:column;gap:10px;min-width:0}
+.seite>.box{flex:none;border:1px solid var(--rand);border-radius:6px;overflow:hidden;font-size:13px}
+.seite>.box>:last-child{border-bottom:0}
+#liste{flex:1 1 auto;min-height:0;overflow:auto;border:1px solid var(--rand);border-radius:6px;font-size:13px}
 #liste h2{font-size:13px;margin:0;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand)}
 #liste a{display:block;padding:3px 10px;border-left:3px solid transparent}
 #liste a:hover{background:var(--kopf)} #liste a.akt{background:var(--akt);border-left-color:var(--tn)}
@@ -361,7 +364,8 @@ const ds=[...document.querySelectorAll('.datei')],ls=[...document.querySelectorA
 function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHeight+'px')}
 kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
 function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(d.getBoundingClientRect().top<=g)k=j});return k}
-function markiere(){const k=aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k];if(a){const r=a.getBoundingClientRect(),p=a.parentElement.getBoundingClientRect();if(r.top<p.top||r.bottom>p.bottom)a.scrollIntoView({block:'nearest'})}}
+let FEST=null;['wheel','touchmove','keydown','mousedown'].forEach(t=>addEventListener(t,()=>{FEST=null},{passive:true,capture:true}));
+function markiere(){const k=FEST!=null&&ds[FEST]?FEST:aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k];if(a){const r=a.getBoundingClientRect(),p=a.parentElement.getBoundingClientRect();if(r.top<p.top||r.bottom>p.bottom)a.scrollIntoView({block:'nearest'})}}
 addEventListener('scroll',markiere,{passive:true});markiere();
 function geh(k){if(!ds.length)return;k=Math.max(0,Math.min(ds.length-1,k));ds[k].open=true;ds[k].scrollIntoView({block:'start'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;
@@ -675,7 +679,7 @@ def seite_schreiben(wurzel, von, bis, inline=False):
 <span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
 <span id="meldung"></span><button id="fertig" title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
 <details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
-<div class="rahmen"><nav id="liste">{hilfe}<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<div class="rahmen"><aside class="seite"><div class="box">{hilfe}</div><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
 <main>{leer}{"".join(datei_html(n, d, *lokale_texte(wurzel, basis, bis, d)) for n, d in enumerate(dateien))}</main></div>
 <script>const MR={mr};{JS}{JS_ZUG}</script></body></html>"""
     ziel = os.path.join(ORDNER, dateiname(projekt))
@@ -1093,8 +1097,8 @@ def mr_html(mr, meta, dateien, commits, texte, head, struktur):
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
 <button id="fertig" title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
 <details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}</header>
-<div class="rahmen"><nav id="liste">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details>
-<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
+<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
 <main>{leer}{"".join(datei_html(n, d, *texte[n], luecken=True, spaeter=lokal and spaeter_grund(d)) for n, d in enumerate(dateien))}</main></div>
 <script>const MR={daten};{JS}{JS_ZUG}{JS_REVIEW}</script></body></html>"""
 
@@ -1149,7 +1153,7 @@ def datei_index(struktur, pfad):
 
 # ---------------------------------------------------------------- Agent-Hinweise (review-markers.json)
 
-HINWEIS_FELDER = {"finding", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
+HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
 
 def pfad_norm(p):
     p = str(p or "").strip().replace("\\", "/")
@@ -1260,7 +1264,8 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
-                     "see_also": see_also_aufloesen(mr, head, m.get("see_also"), tag)}
+                     "see_also": see_also_aufloesen(mr, head, m.get("see_also"), tag),
+                     "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None
             if not path:
                 pass  # allgemeiner Hinweis zum MR
@@ -1619,10 +1624,10 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 #popup .pb{overflow:auto} #popup tr.ziel td{background:var(--akt)}
 body.gl #zug{min-height:92px}
 #kliste{border-bottom:1px solid var(--rand)} #kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
-#kliste>div{max-height:38vh;overflow:auto}
+#kliste>div{max-height:38vh;overflow-y:auto;overflow-x:hidden}
 .ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px;border-left:3px solid transparent}
 .ke:hover{background:var(--kopf)} .ke.hw{border-left-color:var(--tf)} .ke.km{border-left-color:var(--tn)}
-.ke b{flex:none} .ke .ko{flex:none;color:var(--muted);font:11px ui-monospace,monospace} .ke .kt2{overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ke .ki{flex:none;font-size:11px}
 .kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}
 """
@@ -1670,7 +1675,8 @@ function aufklappen(tr,x,y){const d=tr.closest('.datei'),v=tr.dataset.von,b=tr.d
    if(y<+b)neu.push(luTeil(lu,y+1,+b));
    lu.replaceWith(...neu);neu.forEach(t=>{if(t.classList.contains('lu'))luKnoepfe(t)})});
   zeichnen();return true})}
-function aufblitzen(r){r.scrollIntoView({block:'center'});r.classList.remove('blink');void r.offsetWidth;r.classList.add('blink')}
+function blinken(e){e.classList.remove('blink');void e.offsetWidth;e.classList.add('blink');e.addEventListener('animationend',()=>e.classList.remove('blink'),{once:true})}
+function aufblitzen(r){r.scrollIntoView({block:'center'});blinken(r)}
 function dateiLaden(d){const p=d.querySelector('.spaet');if(!p)return Promise.resolve(true);if(p.dataset.laedt)return p.laedt;
  const b=p.querySelector('button');if(b){b.disabled=true;b.textContent='lädt …'}p.dataset.laedt=1;
  return p.laedt=fetch('/api/datei?'+qs()+'&i='+ds.indexOf(d)).then(r=>r.json()).then(r=>{
@@ -1693,8 +1699,8 @@ function zeigen(x,ohnePopup){ // Zeile im Diff zeigen (Kontext/Datei dafür nach
  return Promise.resolve(sonst())}
 function sichtbar(sel){return [...document.querySelectorAll(sel)].find(e=>e.getClientRects().length)}
 function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/Datei nachladen)
- const hin=()=>{const b=sichtbar('.kbox[data-id="'+i.id+'"]');if(!b)return false;b.scrollIntoView({block:'center'});
-  b.classList.remove('blink');void b.offsetWidth;b.classList.add('blink');return true};
+ const hin=()=>{const b=sichtbar('.kbox[data-id="'+i.id+'"]');if(!b)return false;const d=b.closest('.datei');FEST=d?ds.indexOf(d):null;
+  b.scrollIntoView({block:'center'});markiere();blinken(b);return true};
  if(hin())return;
  (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
 function kliste(){const k=document.getElementById('kliste');if(!k)return;
@@ -1703,10 +1709,11 @@ function kliste(){const k=document.getElementById('kliste');if(!k)return;
   ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))]
   .sort((p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0)));
  k.querySelector('summary').textContent='Kommentare ('+items.length+')';
- k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||''),f=i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t;
+ const titel=x=>x.title||(x.hinweis&&(RV.hinweise.find(h=>h.key===x.hinweis)||{}).title)||null;
+ k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
   return el('div',{class:'ke '+i.art,title:ort(i.x)+'\n'+t,onclick:()=>springen(i)},
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
-   i.f?el('b',{},i.f):null,el('span',{class:'ko'},ort(i.x)),el('span',{class:'kt2'},f))}))}
+   i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f))}))}
 function ortLink(x){return x.path?el('a',{class:'ortlink',title:'im Code zeigen',onclick:()=>zeigen(x)},ort(x)):el('code',{},ort(x))}
 function siehe(sa){if(!sa||!sa.length)return null;
  return el('div',{class:'sa'},el('span',{},'Siehe auch:'),...sa.map(s=>{const wo=s.path+(s.zeile?':'+s.zeile:'');
