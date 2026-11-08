@@ -79,7 +79,8 @@ function popup(pfad,zeile,label,bisZ){schliessen(); // Code im MR-Stand; liegt d
  if(mitDiff){const d=ds[di];info.textContent='Diff im MR';
   kn.append(el('button',{title:'alle ausgeblendeten Zeilen dieser Datei laden',onclick:()=>alleAuf(pb)},'alles aufklappen'),
    zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,zu);
-  dateiLaden(d).then(ok=>{const tab=ok&&d.querySelector('table.sbs');if(!tab){pb.textContent='Diff nicht verfügbar';return}
+  dateiLaden(d).then(ok=>{ // wie auf der Seite: inline oder nebeneinander
+   const tab=ok&&(document.body.classList.contains('inline')&&d.querySelector('table.inl')||d.querySelector('table.sbs'));if(!tab){pb.textContent='Diff nicht verfügbar';return}
    const w=el('div',{class:'pdatei','data-pfad':pfad}),k=tab.cloneNode(true);k.querySelectorAll('tr.kr').forEach(t=>t.remove());
    w.append(k);pb.append(w);k.querySelectorAll('tr.lu').forEach(luKnoepfe);
    if(!zeile)return;
