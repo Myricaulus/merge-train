@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------- Server (nur bei Bedarf)
 
 PORT = int(KONF["port"])
-ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8"><title>merge-train: alles durch</title>
+ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}<title>merge-train: alles durch</title>
 <style>{CSS}
 .durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1.25;margin-bottom:2vmin}}
 .durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
@@ -55,50 +55,51 @@ def server():
             pfad, _, abfrage = self.path.partition("?")
             pfad = urllib.parse.unquote(pfad).lstrip("/")
             q = {k: v[0] for k, v in urllib.parse.parse_qs(abfrage).items()}
+            ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else
+                                    f'seit:{q["seit"]}' if q.get("seit") else "")
+            if (q.get("commit") or q.get("seit")) and not ansicht:
+                return self.senden(400, "merge-train: ungültiger Commit", "text/plain; charset=utf-8")
             try:
                 if pfad == "ping":
                     return self.senden(200, "merge-train", "text/plain")
-                if pfad == "favicon.ico":
-                    return self.senden(204, b"", "image/x-icon")
+                if pfad in ("favicon.ico", "favicon.svg"):
+                    return self.senden(200, FAVICON.strip(), "image/svg+xml")
+                if pfad in ("api/zeilen", "api/datei"):  # beide Modi: Kontext / große Datei nachladen
+                    if q.get("k") != schluessel():
+                        return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
+                    struktur = seiten_struktur(q.get("mr", ""), ansicht_lesen(q.get("ansicht")))
+                    if struktur is None:
+                        return self.json_senden(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
+                    if pfad == "api/datei":
+                        try:
+                            return self.json_senden(200, datei_nachladen(struktur, int(q.get("i", -1))))
+                        except ValueError:
+                            return self.json_senden(400, {"ok": False, "text": "i ungültig"})
+                    try:
+                        von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
+                    except ValueError:
+                        return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
+                    return self.json_senden(200, zeilen_daten(struktur, q.get("pfad", ""), von, bis))
                 if KONF["gitlab"]:
-                    if pfad in ("mrs", "") and not KONF["lokal"]:
-                        return self.senden(200, mr_uebersicht())
+                    if pfad in ("mrs", "") and not KONF["lokal"] or pfad == "mrs":
+                        return self.senden(200, startseite())
                     if pfad == "mr-oeffnen":
                         return self.weiterleiten("/mr/" + mr_id(mr_vollstaendig(mr_ref(q.get("u", "")))))
                     if pfad.startswith("mr/"):
-                        ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else
-                                                f'seit:{q["seit"]}' if q.get("seit") else "")
-                        if (q.get("commit") or q.get("seit")) and not ansicht:
-                            return self.senden(400, "merge-train: ungültiger Commit", "text/plain; charset=utf-8")
-                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), inline=False, ansicht=ansicht)
+                        try:
+                            datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), ansicht=ansicht)
+                        except GitLabFehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
+                            return self.senden(200, startseite(str(e), pfad[3:]))
                         if mr_id(mr) != pfad[3:]:
                             return self.weiterleiten("/mr/" + mr_id(mr) + (f"?{abfrage}" if abfrage else ""))
                         return self.senden(200, open(datei, "rb").read())
-                    if pfad in ("mrzug.js", "api/mrzug"):
-                        try:
-                            wagen = mr_wagen(q.get("akt"))
-                        except GitLabFehler:
-                            wagen = []
-                        if pfad == "api/mrzug":
-                            return self.json_senden(200, {"wagen": wagen})
-                        return self.senden(200, "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";",
-                                           "text/javascript; charset=utf-8")
-                    if pfad in ("api/review", "api/stand", "api/zeilen", "api/datei"):
+                    if pfad == "api/mrzug":  # aus dem Cache, keine GitLab-Anfrage
+                        return self.json_senden(200, {"wagen": mr_wagen(q.get("akt")), "zeit": mr_liste()[1]})
+                    if pfad in ("api/review", "api/stand"):
                         if q.get("k") != schluessel():
                             return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                         mr = mr_aus_id(q.get("mr", ""))
                         ansicht = ansicht_lesen(q.get("ansicht"))
-                        if pfad == "api/datei":
-                            try:
-                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1)), ansicht))
-                            except ValueError:
-                                return self.json_senden(400, {"ok": False, "text": "i ungültig"})
-                        if pfad == "api/zeilen":
-                            try:
-                                von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
-                            except ValueError:
-                                return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
-                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis, ansicht))
                         if pfad == "api/stand":
                             return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
                         return self.json_senden(200, review_daten(mr, ansicht))
@@ -115,7 +116,7 @@ def server():
                             return self.senden(200, ALLES_DURCH)
                         return self.weiterleiten("/" + offen[0]["datei"])
                     if pfad in repos:
-                        datei = seite_schreiben(repos[pfad], VON, BIS)
+                        datei, _ = projekt_seite(repos[pfad], ansicht=ansicht)
                         return self.senden(200, open(datei, "rb").read())
                 self.senden(404, "nicht gefunden", "text/plain")
             except GitLabFehler as e:
@@ -132,10 +133,18 @@ def server():
                     ok, text = fertig(str(d.get("projekt", "")), str(d.get("sha", "")), str(d.get("k", "")))
                     wagen = json.loads(open(os.path.join(ORDNER, "zug.js")).read()[len("window.MR_ZUG="):-1])["wagen"]
                     return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": wagen})
-                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen") or not KONF["gitlab"]:
+                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gitlab") or not KONF["gitlab"]:
                     return self.senden(404, "nicht gefunden", "text/plain")
                 if str(d.get("k", "")) != schluessel():
                     return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
+                if self.path == "/api/gitlab":  # Güterbahnhof: GitLab nur auf Knopfdruck
+                    if d.get("aktion") == "mrliste":
+                        items, _ = mr_liste_holen()
+                        return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
+                    if d.get("aktion") == "mrdaten":
+                        mr, meta = mr_meta_holen(mr_aus_id(d.get("mr", "")))
+                        return self.json_senden(200, {"ok": True, "text": "MR-Daten geholt"})
+                    return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                 mr = mr_aus_id(d.get("mr", ""))
                 ansicht = ansicht_lesen(d.get("ansicht"))
                 if self.path == "/api/abschliessen":

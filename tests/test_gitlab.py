@@ -70,6 +70,49 @@ def drafts():
     except FileNotFoundError:
         return []
 
+def lokal_test():
+    """Lokaler Projekt-Diff (claude gegen reviewed): gleiche Seite wie im GitLab-Modus, ohne glab."""
+    proj = f"{T}/Projects/proj"
+    os.makedirs(proj)
+    g = lambda *a: sh("git", "-C", proj, *a).stdout.strip()
+    g("init", "-q", "-b", "reviewed"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    open(f"{proj}/a.py", "w").write("".join(f"x{i} = {i}\n" for i in range(1, 41)))
+    g("add", "-A"); g("commit", "-qm", "Start")
+    g("checkout", "-qb", "claude")
+    open(f"{proj}/a.py", "w").write("".join(f"x{i} = {i * 2 if i == 20 else i}\n" for i in range(1, 41)))
+    open(f"{proj}/b.Designer.cs", "w").write("// generiert\n")
+    g("add", "-A"); g("commit", "-qm", "Erster Schritt todo:demo")
+    c1 = g("rev-parse", "HEAD")
+    open(f"{proj}/a.py", "a").write("y = 1\n")
+    g("commit", "-qam", "Zweiter Schritt")
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal")
+    open(env["MERGE_TRAIN_CONFIG"], "w").write(f'lokal = true\ngitlab = false\nprojekte = "{T}/Projects"\nport = 8798\nbrowser = "true"\n')
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
+    try:
+        for _ in range(50):
+            try:
+                urllib.request.urlopen("http://127.0.0.1:8798/ping", timeout=1); break
+            except OSError:
+                time.sleep(0.1)
+        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:8798{p}", timeout=60).read().decode()
+        seite = hol("/proj.html")
+        k = open(f"{T}/cache-lokal/merge-train/schluessel").read().strip()
+        pruefe('class="lu" data-von="1" data-bis="16"' in seite and "generierte Datei" in seite and f"?commit={c1}" in seite
+               and f"?seit={c1}" in seite and "todo" in seite, "lokal: Lücken, große Dateien später, Commit-Knöpfe")
+        z = json.loads(hol(f"/api/zeilen?mr=projekt:proj&k={k}&pfad=a.py&von=1&bis=99"))
+        pruefe(z["ok"] and z["n"] == 41, "lokal: Kontext nachladen")
+        d = json.loads(hol(f"/api/datei?mr=projekt:proj&k={k}&i=1"))
+        pruefe(d["ok"] and "generiert" in d["html"], "lokal: große/generierte Datei nachladen")
+        s1 = hol(f"/proj.html?commit={c1}")
+        pruefe('id="ansicht"' in s1 and "Erster Schritt" in s1 and 'id="d1"' in s1 and 'data-b="41"' not in s1, "lokal: Einzel-Commit-Ansicht")
+        z = json.loads(hol(f"/api/zeilen?mr=projekt:proj&k={k}&pfad=a.py&von=1&bis=99&ansicht=commit:{c1}"))
+        pruefe(z["ok"] and z["n"] == 40, "lokal: Kontext in der Commit-Ansicht aus dem Commit-Stand")
+        s2 = hol(f"/proj.html?seit={c1}")
+        pruefe('id="ansicht"' in s2 and 'id="d1"' not in s2 and 'data-b="41"' in s2 and 'data-b="20"' not in s2,
+               "lokal: Seit-Ansicht zeigt nur den zweiten Schritt")
+    finally:
+        srv.terminate(); srv.wait()
+
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
     pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
@@ -84,7 +127,7 @@ def main():
                "markers": [
                    {"finding": "#1", "path": "App.cs", "needle": "public void Neu(", "text": "#1 Missing null check",
                     "rationale": "siehe Ticket", "resolved_when": "Test grün", "status": "open (GitLab comment)",
-                    "see_also": ["Neu.cs:2", {"path": "App.cs", "needle": "WeitWeg", "label": "Aufrufer"}]},
+                    "see_also": ["Neu.cs:2", {"path": "App.cs", "needle": "WeitWeg", "label": "Aufrufer"}, "App.cs:40-45"]},
                    {"finding": "#7", "text": "#7 General remark about the MR"},
                    {"path": "App.cs", "needle": "=public void WeitWeg() {}", "text": "K2 Rename method"},
                    {"finding": "#3", "path": "App.cs", "needle": "GibtEsNicht", "text": "#3 Weg"},
@@ -112,17 +155,14 @@ def main():
         pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
         pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
         pruefe("siehe auch" not in r.stdout, "see_also aufgelöst")
-        # lokaler Stand passt nicht → API (dort fehlt App.cs wie bei großen MRs), mit Grund
+        # Diff kommt immer vom Branch im Klon: lokale Änderungen und ausgecheckter Branch spielen keine Rolle
         open(f"{REPO}/App.cs", "a").write("// lokal geändert\n")
-        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, check=False, env=dict(ENV, FAKE_GLAB_ZU_GROSS="App.cs"))
-        pruefe("Quelle: GitLab-API" in r.stdout and "lokalen Änderungen" in r.stdout, "lokale Änderungen → API mit Grund")
-        api_seite = [p for p in os.listdir(f"{T}/cache/merge-train/mr") if "-api" in p and p.endswith(".html")]
-        pruefe(api_seite and "1 Datei(en) ohne Diff" in open(f"{T}/cache/merge-train/mr/{api_seite[0]}").read(),
-               "API-Seite nennt Dateien ohne Diff")
-        sh("git", "-C", REPO, "checkout", "-q", "--", "App.cs")
+        sh("git", "-C", REPO, "stash", "-q")
         sh("git", "-C", REPO, "checkout", "-q", "main")
+        sh("git", "-C", REPO, "stash", "pop", "-q")
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, check=False)
-        pruefe("steht auf main" in r.stdout, "falscher Branch erkannt")
+        pruefe("Quelle: lokal" in r.stdout and "App.cs:11" in r.stdout and r.returncode == 1, "anderer Branch ausgecheckt, Diff trotzdem vom Branch feature")
+        sh("git", "-C", REPO, "checkout", "-q", "--", "App.cs")
         sh("git", "-C", REPO, "checkout", "-q", "feature")
         # Review-Update: --seit
         start = sh("git", "-C", REPO, "rev-parse", "main").stdout.strip()
@@ -130,8 +170,12 @@ def main():
         pruefe("offen* (Datei geändert)" in r.stdout and "GEÄNDERT: needle nicht gefunden" in r.stdout
                and "Datei(en) geändert" in r.stdout, "--seit zeigt geändert/offen")
         pruefe(r.returncode == 0, "--seit: weggefallene needles sind kein Fehler")
-        # Seite + Review-Daten
+        # Seite + Review-Daten: keine GitLab-Anfrage beim Öffnen
+        vorher = len(open(f"{T}/glab/aufrufe.log").readlines())
         seite = get("/mr/gitlab.example.com/gruppe/demo/1")
+        get("/api/mrzug?akt=gitlab.example.com/gruppe/demo/1")
+        pruefe(len(open(f"{T}/glab/aufrufe.log").readlines()) == vorher, "Seite und Zug ohne GitLab-Anfrage")
+        pruefe('id="bahnhof"' in seite, "Güterbahnhof im Kopf")
         pruefe("Demo-Änderung &lt;b&gt;fett&lt;/b&gt;" in seite and 'data-b="10"' in seite, "MR-Seite mit Diff und escaptem Titel")
         k = open(f"{T}/cache/merge-train/schluessel").read().strip()
         mr = "gitlab.example.com/gruppe/demo/1"
@@ -142,8 +186,8 @@ def main():
         pruefe(hs["#6"]["im_diff"] and hs["#6"]["a"] == 10 and hs["#6"]["b"] == 10, "#6: Kontextzeile alt 10 / neu 10")
         pruefe(hs["#4"]["datei"] is not None and hs["#4"]["im_diff"], "#4 in seite.html")
         sa = hs["#1"]["see_also"]
-        pruefe([(s["path"], s["zeile"], s["label"]) for s in sa] == [("Neu.cs", 2, None), ("App.cs", 50, "Aufrufer")]
-               and not any(s["problem"] for s in sa), "see_also: pfad:zeile und needle aufgelöst")
+        pruefe([(s["path"], s["zeile"], s["bis"], s["label"]) for s in sa] == [("Neu.cs", 2, None, None), ("App.cs", 50, None, "Aufrufer"), ("App.cs", 40, 45, None)]
+               and not any(s["problem"] for s in sa), "see_also: pfad:zeile, pfad:von-bis und needle aufgelöst")
         pruefe("see_also" not in hs["#1"]["extra"] and "see_also" not in hs["#1"]["text"], "see_also nicht im Kommentartext")
         pruefe('class="lu" data-von="1" data-bis="7" data-d="0"' in seite and 'data-von="15" data-bis="17" data-d="0"' in seite
                and 'data-von="24" data-bis="61" data-d="1"' in seite, "ausgeblendete Bereiche vor, zwischen und nach den Hunks")
@@ -277,8 +321,13 @@ def main():
         pruefe("gehört nicht zu diesem MR" in get(f"/mr/{mr}?commit={start}") and "ungültig" in get(f"/mr/{mr}?seit=xyz"),
                "fremder Commit / ungültige sha abgelehnt")
         # Übersicht, Zug, lokal=false
-        pruefe("Demo-Änderung" in get("/"), "Startseite zeigt MR-Liste (lokal = false)")
-        pruefe('"name": "!1 demo"' in get("/mrzug.js?akt=" + mr), "MR-Zug")
+        pruefe("Güterbahnhof" in get("/") and "Demo-Änderung" not in get("/"), "Startseite ohne MR-Liste (lokal = false)")
+        r = post("/api/gitlab", dict(k=k, aktion="mrliste"))
+        z = json.loads(get("/api/mrzug?akt=" + mr))
+        pruefe(r["ok"] and any(w["name"] == "!1 demo" and "Demo-Änderung" in w["titel"] for w in z["wagen"]) and z["zeit"],
+               "Güterbahnhof holt die MR-Liste, der Zug kommt danach aus dem Cache")
+        pruefe(post("/api/gitlab", dict(k=k, aktion="mrdaten", mr=mr))["ok"], "Güterbahnhof holt MR-Daten")
+        pruefe(not post("/api/gitlab", dict(k="falsch", aktion="mrliste"))["ok"], "Güterbahnhof braucht Schlüssel")
         r = sh(sys.executable, SKRIPT, "irgendwas", check=False)
         pruefe(r.returncode and "abgeschaltet" in r.stderr, "lokaler Modus abgeschaltet")
         r = sh(sys.executable, SKRIPT, "--projekte", check=False)
@@ -288,6 +337,7 @@ def main():
         json.dump([{"path": "Neu.cs", "needle": "class Neu", "text": "#9 Old format"}], open(alt, "w"))
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", alt, "--mr", "https://gitlab.example.com/gruppe/demo/-/merge_requests/1", check=False)
         pruefe(r.returncode == 0 and "#9" in r.stdout and "Neu.cs:2" in r.stdout, "Altformat und --mr")
+        lokal_test()
     finally:
         srv.terminate()
         if "--behalten" in sys.argv:

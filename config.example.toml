@@ -23,7 +23,7 @@
 
 # port = 8771
 
-# Lokale Klone: Dateiinhalte von dort statt über die API (schneller).
+# Lokale Klone der GitLab-Projekte: Diff, Dateien und Commits kommen nur von dort.
 # Muss am Ende stehen: alles nach [repos] gehört zu dieser Tabelle. Schlüssel = Projektpfad in GitLab.
 # [repos]
 # "gruppe/projekt" = "~/workspaces/projekt"

@@ -44,3 +44,7 @@ body.gl #zug{min-height:92px}
 .ck:hover{background:var(--akt)} .ck.akt{background:var(--akt);font-weight:600}
 .ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
+.gleise{display:flex;align-items:flex-end;gap:8px} .gleise #zug{flex:1;min-width:0}
+#bahnhof{flex:none;display:flex;flex-direction:column;gap:3px;padding:4px 8px;margin-bottom:6px;border:1px dashed var(--rand);border-radius:6px;font-size:12px;background:var(--bg)}
+#bahnhof b{font-size:11px;color:var(--muted);font-weight:600} #bahnhof button{font-size:12px;padding:1px 6px} #bahnhof .sub{margin:0;font-size:11px}
+.pdatei table.sbs{width:100%} .pdatei tr.ziel td.n{background:var(--tn);color:var(--bg)}

@@ -27,15 +27,16 @@ def ansicht_aufloesen(ordner, refs, art, sha):
     return {"art": art, "sha": voll, "von": von, "bis": bis, "titel": titel, "kurz": voll[:8],
             "anzahl": anzahl, "merge": len(eltern) > 1}
 
-def ansicht_html(slug, ans):
-    zurueck = f'<a href="/mr/{html.escape(slug)}">ganzer MR</a>'
+def ansicht_html(url, zurueck_text, ans):
+    zurueck = f'<a href="{html.escape(url)}">{html.escape(zurueck_text)}</a>'
     t = f'<code>{html.escape(ans["kurz"])}</code> „{html.escape(ans["titel"])}“'
     if ans["art"] == "commit":
         merge = " · Merge-Commit: Diff gegen den ersten Vorgänger" if ans["merge"] else ""
         text = (f'Nur Commit {t}{merge} · <b>nur lesen</b>: Kommentare und Hinweise stehen an ihrer Zeile, '
                 f'wenn sie sich zuordnen lassen, sonst unter dem Dateinamen')
     else:
-        text = (f'Änderungen seit {t} ({ans["anzahl"]} Commit(s) danach) · kommentieren rechts (MR-Stand)')
+        text = (f'Änderungen seit {t} ({ans["anzahl"]} Commit(s) danach)'
+                + (" · kommentieren rechts (MR-Stand)" if not url.endswith(".html") else ""))
     return f'<div id="ansicht" class="ansicht">{text} · {zurueck}</div>'
 
 def diff_enden(struktur):
@@ -43,12 +44,18 @@ def diff_enden(struktur):
     a = struktur.get("ansicht")
     return (a["von"], a["bis"]) if a else (struktur["refs"]["base_sha"], struktur["refs"]["head_sha"])
 
-def ansicht_struktur(mr, haupt, ansicht):
-    """Struktur der Ansichts-Seite (erzeugt sie bei Bedarf)."""
-    p = seiten_stamm(mr, haupt["refs"]["head_sha"], "lokal", {"art": ansicht[0], "sha": ansicht[1]}) + ".json"
+def ansicht_struktur(haupt, ansicht):
+    """Struktur der Ansichts-Seite zur Hauptseite (erzeugt sie bei Bedarf)."""
+    p = praefix_json(haupt["praefix"], {"art": ansicht[0], "sha": ansicht[1]})
     if p not in STRUKTUR:
         if not os.path.exists(p):
-            return mr_seite(mr, ansicht=ansicht)[1]
+            sid = haupt["id"]
+            if sid.startswith("projekt:"):
+                wurzel = next((r for r in finde_repos() if projektname(r) == sid[8:]), None)
+                if not wurzel:
+                    raise GitLabFehler(f"Projekt {sid[8:]} nicht gefunden")
+                return projekt_seite(wurzel, ansicht=ansicht)[1]
+            return mr_seite(mr_aus_id(sid), ansicht=ansicht)[1]
         STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
     return STRUKTUR[p]
 

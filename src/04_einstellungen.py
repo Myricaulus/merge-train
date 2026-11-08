@@ -158,40 +158,6 @@ def dateiliste_html(dateien):
                   f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
     return fl
 
-def seite_schreiben(wurzel, von, bis, inline=False):
-    import json
-    basis = git(wurzel, "merge-base", von, bis).strip()
-    sha = git(wurzel, "rev-parse", bis).strip()
-    projekt = projektname(wurzel)
-    roh = git(wurzel, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
-              "--date=format:%d.%m. %H:%M", f"{von}..{bis}")
-    commits = [c.strip("\n").split("\x1f") for c in roh.split("\x1e") if c.strip()]
-    diff = git(wurzel, "diff", "--find-renames", "-U4", "--no-color", basis, bis)
-    dateien = zerlegen(diff)
-    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
-    todos = sorted(set(re.findall(r"todo:([\w.-]+)", roh)))
-    cl = commits_html(commits)
-    td = ('<div class="todos">todos: ' + "".join(f"<code>{html.escape(t)}</code>" for t in todos) + "</div>"
-          if todos else "")
-    fl = dateiliste_html(dateien)
-    leer = f'<div class="leer">Keine Unterschiede – {VON} ist auf dem Stand von {BIS}.</div>' if not dateien else ""
-    mr = json.dumps({"projekt": projekt, "sha": sha, "k": schluessel(), "dateien": len(dateien)})
-    hilfe = ('<div class="hilfe"><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
-             '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
-    seite = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
-<style>{CSS}</style><script src="zug.js"></script></head><body class="{'inline' if inline else ''}">
-<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}</h1>
-<span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · erzeugt {datetime.now():%d.%m.%Y %H:%M}</span>
-<span id="meldung"></span><button id="fertig" title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
-<details id="commits" open><summary>Commits</summary><div class="liste">{cl}</div>{td}</details></header>
-<div class="rahmen"><aside class="seite"><div class="box">{hilfe}</div><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
-<main>{leer}{"".join(datei_html(n, d, *lokale_texte(wurzel, basis, bis, d)) for n, d in enumerate(dateien))}</main></div>
-<script>const MR={mr};{JS}{JS_ZUG}</script></body></html>"""
-    ziel = os.path.join(ORDNER, dateiname(projekt))
-    ersetzen(ziel, seite)
-    return ziel
-
 def alles_erzeugen(von, bis, inline):
     from concurrent.futures import ThreadPoolExecutor
     schluessel()  # einmal vorab anlegen, sonst Wettlauf zwischen den Threads
@@ -201,7 +167,7 @@ def alles_erzeugen(von, bis, inline):
     wagen = zug_schreiben(stats)
     offen = {w["p"] for w in wagen if w["status"] == "offen"}
     with ThreadPoolExecutor(8) as ex:
-        list(ex.map(lambda r: seite_schreiben(r, von, bis, inline),
+        list(ex.map(lambda r: projekt_seite(r, von, bis),
                     [r for r in repos if projektname(r) in offen]))
     return repos, wagen
 

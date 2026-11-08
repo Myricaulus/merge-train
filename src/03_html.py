@@ -26,14 +26,6 @@ def hunk_zeilen(h, ta_tok, tb_tok):
             if tb is not None: b += 1
     return rows
 
-def lokale_texte(wurzel, basis, bis, d):
-    """Alter und neuer Dateiinhalt aus dem lokalen Repo (nur wenn es etwas darzustellen gibt)."""
-    if d["binaer"] or not d["hunks"]:
-        return None, None
-    alt = git(wurzel, "show", f"{basis}:{d['alt']}", check=False) if d["status"] != "neu" else ""
-    neu = git(wurzel, "show", f"{bis}:{d['neu']}", check=False) if d["status"] != "gelöscht" else ""
-    return alt, neu
-
 def zeilenzahl(text):
     if not text:
         return 0

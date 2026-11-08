@@ -4,8 +4,12 @@ Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nu
 
 - **Lokaler Projekt-Diff**: Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen. Jedes Projekt ist ein Waggon im Zug.
   „fertig“ setzt `reviewed` auf den gesehenen Stand.
-- **GitLab-MR-Review** (über `glab`): Diff eines MR mit eigenen Kommentaren und Agent-Hinweisen.
+- **GitLab-MR-Review**: Diff eines MR mit eigenen Kommentaren und Agent-Hinweisen.
   „Review abschließen“ legt die Kommentare als **Entwürfe** im MR an. Veröffentlicht wird danach in GitLab.
+
+Beide Modi bauen die Seite gleich aus dem lokalen Git (Kontext nachladen, große Dateien auf Klick, Commit-Ansichten).
+Der GitLab-Modus unterscheidet sich nur darin, dass `glab` MR-Daten holt und Kommentare als Entwürfe überträgt –
+und zwar nur auf Anforderung (siehe [GitLab nur auf Knopfdruck](#gitlab-nur-auf-knopfdruck)).
 
 Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit `pygments`, GitLab mit `glab`).
 Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
@@ -29,16 +33,16 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
 
 ## GitLab-Review
 
-- **Quelle**: Steht ein lokaler Klon (`[repos]` oder Repo der Hinweis-Datei) auf dem Quell-Branch des MR, genau auf dem
-  MR-Stand und ohne lokale Änderungen, kommen Diff und Dateien von dort. Das ist schnell und vollständig.
-  Sonst kommt der Diff über die GitLab-API. Ein Hinweis oben nennt dann den Grund und die Zahl der Dateien, für die
-  GitLab keinen Diff liefert (bei großen MRs häufig).
+- **Quelle**: Diff, Dateien und Commits kommen immer aus dem lokalen Klon (`[repos]` oder Repo der Hinweis-Datei):
+  Stand = Quell-Branch des MR (lokal, sonst `origin/…`), Basis = gemeinsamer Vorgänger mit dem Ziel-Branch.
+  Welcher Branch ausgecheckt ist und lokale Änderungen spielen keine Rolle. Stand GitLab beim letzten Holen woanders,
+  sagt das ein Hinweis oben. Die GitLab-API für Diffs wird nicht mehr benutzt.
 - **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
 - **Kommentarliste** links über den Dateien: alle offenen Agent-Hinweise (🤖) und eigenen bzw. übernommenen Kommentare (💬)
   in Datei-Reihenfolge. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
-- **Commit-Ansichten** (nur mit lokalem Klon): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
+- **Commit-Ansichten** (auch im lokalen Projekt-Diff): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
   - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
     Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des MR, außerhalb
     der Änderungen), stehen sie unter dem Dateinamen mit dem Grund.
@@ -49,7 +53,9 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
   Allgemeine Kommentare über „＋ allgemeiner Kommentar“.
 - **Agent-Hinweise** (lila) stehen an ihrer Zeile. Liegt die Zeile außerhalb des Diffs, stehen sie oben unter „Review“.
   Ein Klick auf den Ort klappt den Kontext dorthin auf (oder öffnet ein Popup, wenn die Datei nicht im MR ist).
-  „Siehe auch“-Verweise öffnen den Code im Popup. Sie gehören nicht zum GitLab-Kommentar.
+  „Siehe auch“-Verweise öffnen den Code im Popup, die Zeile bzw. der Bereich (`pfad:10-20`) ist hervorgehoben.
+  Liegt die Datei im Diff, zeigt das Popup deren Diff (Lücken aufklappbar, „alles aufklappen“), sonst den Dateiinhalt
+  (mehr laden / ganze Datei). Die Verweise gehören nicht zum GitLab-Kommentar.
   Mit „übernehmen“ oder „anpassen & übernehmen“ werden Hinweise zu einem eigenen Kommentar, „verwerfen“ blendet sie aus.
 - **Kommentare** lassen sich bearbeiten und löschen. Das Etikett zeigt den Stand: *Entwurf (lokal)*, *in GitLab (Entwurf)*,
   *geändert* oder *wird in GitLab gelöscht*.
@@ -60,6 +66,16 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
 
 Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cache in `~/.cache/merge-train/`.
+
+## GitLab nur auf Knopfdruck
+
+Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten (Titel, Beschreibung, Branches,
+GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
+
+- von `merge-train agent pruefen|zeigen` (macht der jira-review-Skill, wenn er den Branch aktualisiert hat) und `merge-train <MR>`,
+- im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer bin) und „↻ MR-Daten“ (dieser MR),
+- beim **Review abschließen**: aktueller GitLab-Stand (steht GitLab woanders als die Seite, wird nichts übertragen),
+  dann die Draft-Notes.
 
 ## Einstellungen
 
@@ -72,7 +88,7 @@ Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cach
 | `gitlab_host` | leer | Host, wenn ihn weder URL noch Remote liefern |
 | `mr_liste` | `reviewer` | welche MRs der Zug zeigt |
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |
-| `repos` | `{}` | lokale Klone, damit Dateien nicht über die API geholt werden müssen |
+| `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.

@@ -49,9 +49,13 @@ def agent_main(argv):
                     st["klon"] = ordner; review_speichern(mr, st)
             except GitLabFehler:
                 pass
-        _, struktur, mr = mr_seite(mr)
+        mr, meta = mr_meta_holen(mr)  # die einzige GitLab-Anfrage: aktuelle MR-Daten für die Seite merken
     except GitLabFehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2
+    try:
+        _, struktur, mr = mr_seite(mr)
+    except GitLabFehler as e:
+        print(f"merge-train: {e}", file=sys.stderr); return 3
     with SPERRE:
         st = review_laden(mr)
         if o.befehl == "zeigen" and pfad not in st["hinweis_dateien"]:
@@ -69,10 +73,11 @@ def agent_main(argv):
             print(f"merge-train: {e}", file=sys.stderr); return 2
     hinweise, _ = hinweise_aufloesen(mr, st, struktur, nur=[pfad])
     print(f'{mr["projekt"]}!{mr["iid"]} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
-    if struktur.get("quelle") == "lokal":
-        print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
-    else:
-        print(f'Quelle: GitLab-API – lokal nicht möglich: {struktur.get("grund") or "kein lokaler Klon bekannt"}')
+    print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha") or ""
+    abweichend = gl_head and gl_head != head
+    if abweichend:
+        print(f"Achtung: GitLab steht auf {gl_head[:8]}, der lokale Branch auf {head[:8]} – Branch aktualisieren")
     if geaendert is not None:
         print(f"seit {seit}: {len(geaendert)} Datei(en) geändert")
     schlecht = 0
@@ -108,16 +113,15 @@ def agent_main(argv):
         im_browser("/mr/" + mr_id(mr), nur_url=o.nicht_oeffnen)
     if schlecht:
         return 1
-    return 3 if struktur.get("quelle") != "lokal" else 0
+    return 3 if abweichend else 0
 
 def geaenderte_dateien(mr, von, bis):
-    """Pfade (alt und neu), die sich zwischen von und bis geändert haben: lokal, sonst über die API."""
+    """Pfade (alt und neu), die sich zwischen von und bis geändert haben (lokaler Klon)."""
     for o in lokale_klone(mr):
         out = git(o, "-c", "core.quotepath=false", "diff", "--name-status", "-M", von, bis, check=False)
         if out is not None:
             return {p for z in out.splitlines() for p in z.split("\t")[1:]}
-    r = glab(mr["host"], f'projects/{enc(mr["projekt"])}/repository/compare?from={enc(von)}&to={enc(bis)}')
-    return {p for d in (r or {}).get("diffs", []) for p in (d.get("old_path"), d.get("new_path")) if p}
+    raise GitLabFehler(f"Commit {von} ist im lokalen Klon nicht bekannt (git fetch)")
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
@@ -150,8 +154,8 @@ def main():
     if o.ordner and ist_mr_ref(o.ordner) and not os.path.exists(o.ordner):
         if not KONF["gitlab"]:
             sys.exit("merge-train: GitLab ist abgeschaltet (gitlab = false in der Einstellung)")
-        try:
-            mr = mr_vollstaendig(mr_ref(o.ordner, os.getcwd()))
+        try:  # Aufruf von Hand: MR-Daten einmal holen, die Seite selbst fragt GitLab nicht
+            mr, _ = mr_meta_holen(mr_vollstaendig(mr_ref(o.ordner, os.getcwd())))
         except GitLabFehler as e:
             sys.exit(f"merge-train: {e}")
         return im_browser("/mr/" + mr_id(mr), o.nur_datei)
@@ -174,20 +178,19 @@ def main():
         sys.exit(f"merge-train: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
     repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
     if wurzel:
-        if projektname(wurzel) not in {w["p"] for w in wagen}:
-            seite_schreiben(wurzel, o.von, o.bis, o.inline)
-        ziel = os.path.join(ORDNER, dateiname(projektname(wurzel)))
+        ziel, _ = projekt_seite(wurzel, o.von, o.bis)
     else:
         offen = [w for w in wagen if w["status"] == "offen"]
         if not offen:
             print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
-        ziel = os.path.join(ORDNER, offen[0]["datei"])
+        ziel = next(projekt_seite(r)[0] for r in repos if projektname(r) == offen[0]["p"])
     if o.nur_datei or o.von != VON or o.bis != BIS or o.inline:
         print(ziel)
         if not o.nur_datei:
             oeffnen(ziel)
         return
-    url = f"http://127.0.0.1:{PORT}/{os.path.basename(ziel)}" if server_sicherstellen() else ziel
+    url = f"http://127.0.0.1:{PORT}/{dateiname(projektname(wurzel)) if wurzel else offen[0]['datei']}" \
+        if server_sicherstellen() else ziel
     print(url)
     oeffnen(url)
 

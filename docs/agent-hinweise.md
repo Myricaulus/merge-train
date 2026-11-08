@@ -7,10 +7,10 @@ lädt sie neu, sobald sie sich ändert. Wie der Skill damit arbeitet, steht in `
 
 ## Ablauf
 
-Der Klon muss auf dem Quell-Branch des MR stehen, genau auf dem MR-Stand und ohne lokale Änderungen
-(`git status --untracked-files=no` leer). Dann kommen Diff und Dateien aus dem Klon. Das ist schneller und vollständig,
-denn GitLab liefert bei großen MRs für viele Dateien keinen Diff. Passt der Klon nicht, nimmt merge-train die GitLab-API
-und nennt den Grund.
+Diff, Dateien und Commits kommen nur aus dem lokalen Klon: Stand = Quell-Branch des MR (lokaler Branch, sonst
+`origin/…`), Basis = gemeinsamer Vorgänger mit dem Ziel-Branch. Der Branch muss also vorher aktuell sein (fetch,
+fast-forward). `pruefen` und `zeigen` holen dabei einmal die MR-Daten aus GitLab (Titel, Beschreibung, Branches, Stand)
+und legen sie für die Seite ab – die Seite selbst fragt GitLab nicht.
 
 Nach dem Schreiben bzw. Aktualisieren der Datei (Repo-Root als Arbeitsordner):
 
@@ -19,7 +19,7 @@ merge-train agent pruefen tasks/<KEY>-review-markers.json
 merge-train agent zeigen  tasks/<KEY>-review-markers.json    # Datei beim MR anmelden und MR öffnen (--nicht-oeffnen: nur URL)
 ```
 
-Erste Zeilen der Ausgabe: MR und Stand, dann `Quelle: lokal (…)` oder `Quelle: GitLab-API – lokal nicht möglich: …`.
+Erste Zeilen der Ausgabe: MR und Stand, dann `Quelle: lokal (…)`, ggf. `Achtung: GitLab steht auf …, der lokale Branch auf …`.
 Danach eine Zeile pro Eintrag:
 
 | Ausgabe | Bedeutung | Was tun |
@@ -34,7 +34,7 @@ Danach eine Zeile pro Eintrag:
 | `(needle passt N×)` | needle trifft mehrere Zeilen | gewollt? Sonst needle genauer oder mit `=` |
 
 Exit-Code: 0 = alles passt, 1 = etwas `FEHLT`, 2 = Datei nicht lesbar oder kein MR zuzuordnen,
-3 = alles gefunden, aber der lokale Klon passt nicht (Diff kam über die API).
+3 = kein lokaler Klon/Branch zum MR, oder der lokale Branch steht nicht auf dem GitLab-Stand (fetch / fast-forward).
 
 ### Review-Update: `--seit`
 
@@ -71,8 +71,10 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
   Eintrag als neuer Hinweis. Schon übernommene Kommentare bleiben erhalten.
 - `needle`: Text auf der Zeile im MR-Stand. Mit `=` am Anfang muss er die ganze Zeile treffen. Alternativ `line` (Zahl),
   nur wenn ein needle nicht eindeutig zu machen ist.
-- `see_also`: Verweise auf anderen Code (`"pfad"`, `"pfad:zeile"` oder `{"path", "line" | "needle", "label"}`).
-  merge-train zeigt sie als Links. Ein Klick öffnet den Code im Popup (nachladbar, mit Link nach GitLab).
+- `see_also`: Verweise auf anderen Code (`"pfad"`, `"pfad:zeile"`, `"pfad:von-bis"` oder
+  `{"path", "line" | "needle", "end", "label"}`; `end` = letzte Zeile eines Bereichs). merge-train zeigt sie als Links.
+  Ein Klick öffnet den Code im Popup, Zeile bzw. Bereich hervorgehoben: liegt die Datei im Diff, deren Diff (aufklappbar),
+  sonst den Dateiinhalt.
   Die Verweise gehören **nicht** zum GitLab-Kommentar.
 - `problem`, `decision`, `status` und weitere Felder erscheinen unter „Details“, `status` zusätzlich als Etikett.
 - Oben optional `"mr": "<MR-URL>"`.

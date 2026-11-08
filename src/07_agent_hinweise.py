@@ -6,16 +6,17 @@ def pfad_norm(p):
     p = str(p or "").strip().replace("\\", "/")
     return p[2:] if p.startswith("./") else p
 
-def see_also_aufloesen(mr, head, eintraege, tag):
-    """see_also: Liste aus "pfad", "pfad:zeile" oder {"path", "line"|"needle", "label"} → Zeilen im MR-Stand.
-    Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars."""
+def see_also_aufloesen(ordner, head, eintraege, tag):
+    """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label"}
+    → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars."""
     if isinstance(eintraege, (str, dict)):
         eintraege = [eintraege]
     out = []
     for e in eintraege if isinstance(eintraege, list) else []:
         if isinstance(e, str):
-            m = re.fullmatch(r"(.+?)(?::(\d+))?", e.strip())
-            e = {"path": m.group(1), "line": int(m.group(2)) if m.group(2) else None} if m else {}
+            m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", e.strip())
+            e = {"path": m.group(1), "line": int(m.group(2)) if m.group(2) else None,
+                 "end": int(m.group(3)) if m.group(3) else None} if m else {}
         if not isinstance(e, dict):
             continue
         path, zeile, problem = pfad_norm(e.get("path")), None, None
@@ -24,7 +25,7 @@ def see_also_aufloesen(mr, head, eintraege, tag):
         if not path:
             problem = "kein Pfad"
         elif head:
-            t = inhalt(mr, head, path)
+            t = inhalt(ordner, head, path)
             if t is None:
                 problem = "Datei nicht im MR-Stand"
             elif zeile and zeile > zeilenzahl(t):
@@ -33,7 +34,8 @@ def see_also_aufloesen(mr, head, eintraege, tag):
                 z = needle_zeilen(t, str(e["needle"]), tag)
                 zeile = z[0] if z else None
                 problem = None if z else "needle nicht gefunden"
-        out.append({"path": path, "zeile": zeile, "label": e.get("label"), "problem": problem})
+        bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
+        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem})
     return out
 _HW_CACHE = {}
 
@@ -93,6 +95,7 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
     """Hinweise aller Dateien auf Zeilen des MR-Stands abbilden. Rückgabe (hinweise, quellen)."""
     hinweise, quellen = [], []
     head = (struktur or {}).get("refs", {}).get("head_sha")
+    ordner = (struktur or {}).get("ordner")
     for pfad in (nur if nur is not None else hinweis_dateien(mr, st)):
         try:
             h = hinweise_lesen(pfad)
@@ -111,7 +114,7 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
-                     "see_also": see_also_aufloesen(mr, head, m.get("see_also"), tag),
+                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag),
                      "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None
             if not path:
@@ -121,7 +124,7 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
             elif not head:
                 problem = "MR-Stand unbekannt"
             else:
-                t = inhalt(mr, head, path)
+                t = inhalt(ordner, head, path)
                 if t is None:
                     problem = "Datei nicht im MR-Stand"
                 elif not needle:
@@ -168,7 +171,7 @@ def review_daten(mr, ansicht=None):
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
-        ans_st = ansicht_struktur(mr, struktur, ansicht)
+        ans_st = ansicht_struktur(struktur, ansicht)
         vorher = len(kom) + sum(1 for h in hinweise if h["status"] == "offen")
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
@@ -176,52 +179,55 @@ def review_daten(mr, ansicht=None):
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
             "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
 
-def seiten_struktur(mr, ansicht=None):
-    """Struktur der Seite: ganzer MR oder eine Commit-Ansicht."""
-    with SPERRE:
-        st = review_laden(mr)
-    struktur = struktur_laden(st)
+def seiten_struktur(sid, ansicht=None):
+    """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
+    if str(sid).startswith("projekt:"):
+        try:
+            p = open(projekt_zeiger(sid[8:]), encoding="utf-8").read().strip()
+        except OSError:
+            return None
+        struktur = struktur_laden({"struktur": p})
+    else:
+        with SPERRE:
+            st = review_laden(mr_aus_id(sid))
+        struktur = struktur_laden(st)
     if ansicht and struktur:
-        struktur = ansicht_struktur(mr, struktur, ansicht)
+        struktur = ansicht_struktur(struktur, ansicht)
     return struktur
 
-def datei_nachladen(mr, i, ansicht=None):
-    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
-    struktur = seiten_struktur(mr, ansicht)
+def datei_nachladen(struktur, i):
+    """Diff einer zunächst ausgelassenen (großen/generierten) Datei."""
     try:
         if i < 0:
             raise IndexError
         f = struktur["dateien"][i]
     except (TypeError, IndexError):
         return {"ok": False, "text": "unbekannte Datei – Seite neu laden"}
-    if struktur.get("quelle") != "lokal" or not struktur.get("ordner"):
-        return {"ok": False, "text": "nur im lokalen Modus möglich"}
     von, bis = diff_enden(struktur)
     out = git(struktur["ordner"], "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U3",
               von, bis, "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
     d = next((x for x in zerlegen(out or "") if x["neu"] == f["neu"]), None)
     if d is None:
         return {"ok": False, "text": "Diff nicht gefunden"}
-    alt = inhalt(mr, von, d["alt"]) if d["status"] != "neu" else ""
-    neu = inhalt(mr, bis, d["neu"]) if d["status"] != "gelöscht" else ""
+    alt = inhalt(struktur["ordner"], von, d["alt"]) or "" if d["status"] != "neu" else ""
+    neu = inhalt(struktur["ordner"], bis, d["neu"]) or "" if d["status"] != "gelöscht" else ""
     return {"ok": True, "html": datei_tabelle(d, alt, neu, luecken=True)}
 
 _TOKENS = {}
 
-def zeilen_daten(mr, pfad, von, bis, ansicht=None):
+def zeilen_daten(struktur, pfad, von, bis):
     """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht) als HTML – zum Nachladen von Kontext und fürs Popup."""
-    struktur = seiten_struktur(mr, ansicht)
     head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
     pfad = pfad_norm(pfad)
-    text = inhalt(mr, head, pfad)
+    text = inhalt(struktur["ordner"], head, pfad)
     if text is None:
         return {"ok": False, "text": f"{pfad} gibt es im Stand {head[:8]} nicht"}
     zeilen = text.replace("\r\n", "\n").split("\n")
     if zeilen and zeilen[-1] == "":
         zeilen.pop()
-    k = (mr_id(mr), head, pfad)
+    k = (struktur["ordner"], head, pfad)
     if k not in _TOKENS:
         if len(_TOKENS) > 40:
             _TOKENS.clear()
@@ -260,7 +266,7 @@ def kommentar_aktion(mr, d):
             elif d.get("datei") is not None:
                 if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
                     return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."
-                seite = ansicht_struktur(mr, struktur, ansicht) if ansicht else struktur
+                seite = ansicht_struktur(struktur, ansicht) if ansicht else struktur
                 try:
                     f = seite["dateien"][int(d["datei"])]
                 except (ValueError, IndexError):
@@ -349,11 +355,16 @@ def entwurf_anlegen(mr, k, head, proj_url):
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
     host, P = mr["host"], mr_pfad(mr)
+    head = ((struktur_laden(review_laden(mr)) or {}).get("refs") or {}).get("head_sha")
+    _, meta = mr_meta_holen(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    if head and gl_head and gl_head != head:
+        return (False, f"GitLab steht auf {gl_head[:8]}, die Seite auf {head[:8]} – erst den lokalen Stand aktualisieren "
+                       "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or "")
     with SPERRE:
         st = review_laden(mr)
         web = st["mr"].get("web_url", "")
         proj_url = web.split("/-/merge_requests/")[0]
-        head = ((struktur_laden(st) or {}).get("refs") or {}).get("head_sha")
         try:
             vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
         except GitLabFehler as e:

@@ -107,36 +107,6 @@ def mr_normalisieren(meta, mr):
     m = URL_MR.search(meta.get("web_url") or "")
     return {"host": mr["host"] or m.group(1), "projekt": m.group(2), "iid": int(m.group(3))} if m else mr
 
-def mr_diffs(host, P):
-    try:
-        return alle(host, f"{P}/diffs")
-    except GitLabFehler as e:
-        if "404" not in str(e):
-            raise
-        return (glab(host, f"{P}/changes") or {}).get("changes", [])  # GitLab < 15.7
-
-INHALT = {}
-
-def inhalt(mr, sha, pfad):
-    """Dateiinhalt an einem Stand: erst lokaler Klon (falls bekannt), sonst über die API. None = gibt es nicht."""
-    k = (mr_id(mr), sha, pfad)
-    if k in INHALT:
-        return INHALT[k]
-    text = None
-    for ordner in lokale_klone(mr):
-        text = git(ordner, "show", f"{sha}:{pfad}", check=False)
-        if text is not None:
-            break
-    if text is None:
-        try:
-            text = glab(mr["host"], f'projects/{enc(mr["projekt"])}/repository/files/{enc(pfad)}/raw?ref={sha}', roh=True)
-        except GitLabFehler:
-            text = None
-    if len(INHALT) > 3000:
-        INHALT.clear()
-    INHALT[k] = text
-    return text
-
 def lokale_klone(mr):
     out = []
     for schl in (mr["projekt"], f'{mr["host"]}/{mr["projekt"]}'):
@@ -150,33 +120,6 @@ def lokale_klone(mr):
 def kurzpfad(p):
     h = os.path.expanduser("~")
     return "~" + p[len(h):] if p and (p == h or p.startswith(h + os.sep)) else p
-
-def lokal_pruefen(mr, refs, branch):
-    """Ist ein lokaler Klon genau auf dem MR-Stand (Branch, Commit, keine lokalen Änderungen)?
-    Rückgabe (ordner, grund): ordner = nutzbarer Klon, sonst grund (None = kein Klon eingetragen)."""
-    klone, head = lokale_klone(mr), refs.get("head_sha")
-    if not klone:
-        return None, None
-    if not head or not refs.get("base_sha"):
-        return None, "MR-Stand unbekannt"
-    gruende = []
-    for o in dict.fromkeys(os.path.realpath(k) for k in klone):
-        k = kurzpfad(o)
-        akt = (git(o, "rev-parse", "HEAD", check=False) or "").strip()
-        zweig = (git(o, "rev-parse", "--abbrev-ref", "HEAD", check=False) or "").strip()
-        if akt != head or (branch and zweig != branch):
-            gruende.append(f"{k} steht auf {zweig or '?'} {akt[:8]}, der MR auf {branch or '?'} {head[:8]}")
-            continue
-        geaendert = [z for z in (git(o, "status", "--porcelain", "--untracked-files=no",
-                                     "--ignore-submodules=dirty", check=False) or "").splitlines() if z.strip()]
-        if geaendert:
-            gruende.append(f"{k}: {len(geaendert)} Datei(en) mit lokalen Änderungen (git status)")
-            continue
-        if git(o, "cat-file", "-e", refs["base_sha"] + "^{commit}", check=False) is None:
-            gruende.append(f"{k}: Basis-Commit {refs['base_sha'][:8]} fehlt lokal (git fetch)")
-            continue
-        return o, None
-    return None, "; ".join(gruende)
 
 def blobs(ordner, specs):
     """Viele Dateiinhalte („rev:pfad“) mit einem git-cat-file-Aufruf. None = gibt es nicht."""
@@ -232,152 +175,121 @@ def kontext_zeile(f, a, b):
     return (a is not None and b is not None and 0 < b <= (f.get("bn") or 0)
             and not any(p[1] == b for p in f["paare"]) and alt_zeile(f, b) == a)
 
-def api_commit(c):
-    msg = (c.get("message") or "").split("\n", 1)
-    zeit = c.get("authored_date") or c.get("created_at") or ""
-    try:
-        zeit = datetime.fromisoformat(zeit.replace("Z", "+00:00")[:25]).astimezone().strftime("%d.%m. %H:%M")
-    except ValueError:
-        zeit = zeit[:16]
-    return (c.get("short_id", ""), zeit, c.get("title") or msg[0], msg[1] if len(msg) > 1 else "", c.get("id", ""))
+# MR-Daten (Titel, Beschreibung, Branches …) kommen aus dem Cache im Review-Stand. GitLab wird nur auf
+# Anforderung gefragt: CLI (merge-train <MR>, agent pruefen/zeigen – also vom jira-review), Güterbahnhof, Abschließen.
+META_FELDER = ("title", "description", "web_url", "source_branch", "target_branch", "draft", "work_in_progress",
+               "diff_refs", "sha", "iid")
 
-MR_ORDNER = os.path.join(ORDNER, "mr")
-VERSION = str(int(os.path.getmtime(os.path.realpath(__file__))))
+class MetaFehlt(GitLabFehler):
+    pass
 
-def seiten_stamm(mr, head, quelle, ans=None):
-    teil = f'-{ans["art"]}{ans["sha"][:12]}' if ans else ""
-    return os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}{teil}-{VERSION}")
-
-def mr_seite(mr, meta=None, inline=False, ansicht=None):
-    """MR-Seite (im Cache je Stand) erzeugen. Rückgabe (html-pfad, struktur, mr).
-    ansicht = ("commit"|"seit", sha): nur ein Commit bzw. alles nach einem Commit (nur mit lokalem Klon)."""
-    from concurrent.futures import ThreadPoolExecutor
-    meta = meta or glab(mr["host"], mr_pfad(mr))
-    mr = mr_normalisieren(meta, mr)
-    host, P = mr["host"], mr_pfad(mr)
-    refs = meta.get("diff_refs") or {}
-    head = refs.get("head_sha") or meta.get("sha") or "leer"
-    lokal, grund = lokal_pruefen(mr, refs, meta.get("source_branch", ""))
-    ans = None
-    if ansicht:
-        if not lokal:
-            raise GitLabFehler("Commit-Ansichten brauchen den lokalen Klon auf dem MR-Stand – "
-                               + (grund or "kein Klon unter [repos] eingetragen"))
-        ans = ansicht_aufloesen(lokal, refs, *ansicht)
-    quelle = "lokal" if lokal else "api" + (hashlib.sha1(grund.encode()).hexdigest()[:6] if grund else "")
-    stamm = seiten_stamm(mr, head, quelle, ans)
-    von, bis = (ans["von"], ans["bis"]) if ans else (refs.get("base_sha"), head)
-    if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
-        struktur = json.load(open(stamm + ".json", encoding="utf-8"))
-    else:
-        if lokal:
-            dateien = zerlegen(git(lokal, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
-                                   "-M", "-U3", von, bis))
-        else:
-            dateien = []
-            for e in (mr_diffs(host, P) if refs.get("head_sha") else []):
-                kopf = "diff --git a/x b/x\n" + ("new file mode\n" if e.get("new_file") else "") + \
-                       ("deleted file mode\n" if e.get("deleted_file") else "") + \
-                       ("rename from x\n" if e.get("renamed_file") else "")
-                d = zerlegen(kopf + (e.get("diff") or ""))[0]
-                d["alt"], d["neu"] = e.get("old_path") or e.get("new_path"), e.get("new_path") or e.get("old_path")
-                if not d["hunks"] and (e.get("too_large") or e.get("collapsed")):
-                    d["leer"] = "GitLab liefert für diese Datei keinen Diff (zu groß) – lokalen Klon auf den MR-Stand bringen"
-                    d["ohne_diff"] = True
-                dateien.append(d)
-        commits = [api_commit(c) for c in reversed(alle(host, f"{P}/commits"))]
-        def benoetigt(d):
-            if d["binaer"] or not d["hunks"]:
-                return None, None
-            return (f'{von}:{d["alt"]}' if d["status"] != "neu" else None,
-                    f'{bis}:{d["neu"]}' if d["status"] != "gelöscht" else None)
-        if lokal:  # alle Inhalte auf einmal in den Cache
-            for spec, text in blobs(lokal, [s for d in dateien for s in benoetigt(d) if s]).items():
-                sha, _, pfad = spec.partition(":")
-                INHALT[(mr_id(mr), sha, pfad)] = text
-        def texte(d):
-            a, b = benoetigt(d)
-            if a is None and b is None:
-                return None, None
-            return (inhalt(mr, *a.split(":", 1)) if a else "", inhalt(mr, *b.split(":", 1)) if b else "")
-        with ThreadPoolExecutor(8) as ex:
-            tx = list(ex.map(texte, dateien))
-        struktur = {"mr": mr, "refs": {k: refs.get(k) for k in ("base_sha", "start_sha", "head_sha")},
-                    "web_url": meta.get("web_url", ""), "quelle": "lokal" if lokal else "api",
-                    "ordner": lokal, "grund": grund, "ansicht": ans, "dateien": []}
-        for d, (_, neu_text) in zip(dateien, tx):
-            paare, hunks = paare_und_hunks(d)
-            struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
-                                        "paare": paare, "hunks": hunks, "bn": zeilenzahl(neu_text) or None})
-        ersetzen(stamm + ".html", mr_html(mr, meta, dateien, commits, tx, head, struktur))
-        ersetzen(stamm + ".json", json.dumps(struktur, ensure_ascii=False))
+def mr_meta_holen(mr):
+    """MR-Daten aus GitLab holen und merken. Rückgabe (mr kanonisch, meta)."""
+    roh = glab(mr["host"], mr_pfad(mr))
+    mr = mr_normalisieren(roh, mr)
+    meta = {k: roh.get(k) for k in META_FELDER}
+    meta["author"] = {"name": (roh.get("author") or {}).get("name", "")}
+    meta["_zeit"] = datetime.now().strftime("%d.%m. %H:%M")
     with SPERRE:
         st = review_laden(mr)
-        st["mr"] = dict(mr, web_url=meta.get("web_url", ""), titel=meta.get("title", ""),
-                        source_branch=meta.get("source_branch", ""), target_branch=meta.get("target_branch", ""))
-        if not ans:  # Kommentare und Hinweise beziehen sich immer auf den ganzen MR
-            st["struktur"] = stamm + ".json"
+        st["meta"] = meta
+        st["mr"] = dict(mr, web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
+                        source_branch=meta.get("source_branch") or "", target_branch=meta.get("target_branch") or "")
         review_speichern(mr, st)
-    return stamm + ".html", struktur, mr
+    return mr, meta
 
-def quelle_html(struktur, dateien):
-    if struktur.get("quelle") == "lokal":
-        return f'<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>'
-    ohne = sum(1 for d in dateien if d.get("ohne_diff"))
-    grund = struktur.get("grund") or "kein lokaler Klon unter [repos] eingetragen"
-    teile = ["Diff über die GitLab-API" + (f": <b>{ohne} Datei(en) ohne Diff</b>" if ohne else "") + "."]
-    teile.append(f"Lokal nicht möglich – {html.escape(grund)}.")
-    return f'<div id="quelle" class="warn">{" ".join(teile)}</div>'
+def ref_sha(ordner, name, remote_zuerst=False):
+    for r in ([f"refs/remotes/origin/{name}", f"refs/heads/{name}"] if remote_zuerst
+              else [f"refs/heads/{name}", f"refs/remotes/origin/{name}"]):
+        s = (git(ordner, "rev-parse", "--verify", "-q", r + "^{commit}", check=False) or "").strip()
+        if s:
+            return s
+    return None
 
-def mr_html(mr, meta, dateien, commits, texte, head, struktur):
+def mr_lokal(mr, meta):
+    """Lokaler Klon und Stand: Kopf = Quell-Branch (lokal, sonst origin), Basis = merge-base mit dem Ziel-Branch
+    (bzw. die Basis aus GitLab, wenn GitLab beim letzten Holen auf demselben Stand war). Rückgabe (ordner, refs)."""
+    quelle, ziel = meta.get("source_branch") or "", meta.get("target_branch") or ""
+    gl = meta.get("diff_refs") or {}
+    gruende = []
+    for o in dict.fromkeys(os.path.realpath(k) for k in lokale_klone(mr)):
+        head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
+        if not head or not tgt:
+            gruende.append(f"{kurzpfad(o)}: Branch {quelle if not head else ziel} fehlt (git fetch)"); continue
+        if gl.get("head_sha") == head and gl.get("base_sha") and \
+           git(o, "cat-file", "-e", gl["base_sha"] + "^{commit}", check=False) is not None:
+            return o, {"base_sha": gl["base_sha"], "start_sha": gl.get("start_sha") or tgt, "head_sha": head}
+        base = (git(o, "merge-base", tgt, head, check=False) or "").strip()
+        if not base:
+            gruende.append(f"{kurzpfad(o)}: kein gemeinsamer Vorgänger von {ziel} und {quelle}"); continue
+        return o, {"base_sha": base, "start_sha": tgt, "head_sha": head}
+    raise GitLabFehler("kein lokaler Klon für " + f'{mr["projekt"]}!{mr["iid"]}: '
+                       + ("; ".join(gruende) or "unter [repos] eintragen oder „merge-train agent zeigen“ im Repo aufrufen"))
+
+def mr_seite(mr, ansicht=None):
+    """MR-Seite aus dem lokalen Klon (im Cache je Stand). Rückgabe (html-pfad, struktur, mr). Keine GitLab-Anfrage."""
+    st = review_laden(mr)
+    meta = st.get("meta")
+    if not meta:
+        raise MetaFehlt(f'Für {mr["projekt"]}!{mr["iid"]} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
+                        "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
+    ordner, refs = mr_lokal(mr, meta)
+    mh = hashlib.sha1(json.dumps(meta, sort_keys=True).encode()).hexdigest()[:6]
+    praefix = os.path.join(MR_ORDNER, f'{mr_datei(mr)}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
+    pfad, struktur = seite_bauen(mr_id(mr), ordner, refs, praefix,
+                                 lambda *a: mr_html(mr, meta, *a), ansicht)
+    if not ansicht and st.get("struktur") != praefix_json(praefix):
+        with SPERRE:  # Kommentare und Hinweise beziehen sich immer auf den ganzen MR
+            st = review_laden(mr)
+            st["struktur"] = praefix_json(praefix)
+            review_speichern(mr, st)
+    return pfad, struktur, mr
+
+def mr_html(mr, meta, dateien, commits, texte, struktur):
     slug = mr_id(mr)
-    qh = quelle_html(struktur, dateien)
-    band = qh if qh.startswith("<div") else ""
-    lokal = struktur.get("quelle") == "lokal"  # nur lokal lassen sich Dateien einzeln nachladen
+    head = struktur["refs"]["head_sha"]
+    ans = struktur.get("ansicht")
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
-    web = meta.get("web_url", "")
+    web = meta.get("web_url") or ""
     autor = (meta.get("author") or {}).get("name", "")
     beschr = (meta.get("description") or "").strip()
-    ans = struktur.get("ansicht")
-    def knoepfe(i, c):  # je Commit: nur dieser / seit diesem (brauchen den lokalen Klon)
-        sha = c[4] if len(c) > 4 else ""
-        if not lokal or not sha:
-            return ""
-        akt = ans and ans["sha"] == sha
-        out = (f'<a class="ck{" akt" if akt and ans["art"] == "commit" else ""}" href="/mr/{html.escape(slug)}?commit={sha}" '
-               f'title="nur die Änderungen dieses Commits (nur lesen)">nur dieser</a>')
-        if i < len(commits) - 1:
-            out += (f'<a class="ck{" akt" if akt and ans["art"] == "seit" else ""}" href="/mr/{html.escape(slug)}?seit={sha}" '
-                    f'title="alle Änderungen nach diesem Commit bis zum MR-Stand">seit diesem</a>')
-        return f'<span class="cks">{out}</span>'
     cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
-        + commits_html(commits, knoepfe)
-    fl = dateiliste_html(dateien)
-    leer = '<div class="leer">Keine Änderungen in diesem Merge-Request (oder GitLab berechnet den Diff noch).</div>' \
-        if not dateien else ""
+        + commits_html(commits, commit_knoepfe(f"/mr/{slug}", commits, ans))
+    leer = '<div class="leer">Keine Änderungen in diesem Merge-Request.</div>' if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
-    daten = json.dumps({"modus": "gitlab", "projekt": slug, "id": slug, "sha": head, "k": schluessel(),
-                        "dateien": len(dateien), "web_url": web,
-                        "ansicht": f'{ans["art"]}:{ans["sha"]}' if ans else "", "lesen": lesen})
+    daten = seiten_daten(slug, head, len(dateien), ans, modus="gitlab", projekt=slug, web_url=web)
     klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
              else "Klick auf Zeilennummer: Kommentar")
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
-    ah = ansicht_html(slug, ans) if ans else ""
+    ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    abw = (f'<div class="warn">GitLab stand beim letzten Holen ({html.escape(meta.get("_zeit") or "?")}) auf '
+           f'{html.escape(gl_head[:8])}, lokal ist {html.escape(head[:8])} – Branch aktualisieren oder MR-Daten holen.</div>'
+           if gl_head and gl_head != head else "")
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
-    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>!{mr["iid"]} {html.escape(meta.get("title", ""))}</title>
+    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>!{mr["iid"]} {html.escape(meta.get("title") or "")}</title>
 <style>{CSS}{CSS_REVIEW}</style></head><body class="gl">
-<header id="kopf"><div id="zug"></div><div class="zeile"><h1>{entwurf}{html.escape(meta.get("title", ""))}</h1>
+<header id="kopf">{gleise_html(True)}<div class="zeile"><h1>{entwurf}{html.escape(meta.get("title") or "")}</h1>
 <a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>
-<span class="sub">{html.escape(meta.get("source_branch", ""))} → {html.escape(meta.get("target_branch", ""))} · {html.escape(autor)} ·
-{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{"" if band else qh}
+<span class="sub">{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·
+{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
+<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
 <button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
-<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}{ah}</header>
+<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{abw}{ah}</header>
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
-<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav></aside>
-<main>{leer}{"".join(datei_html(n, d, *texte[n], luecken=True, spaeter=lokal and spaeter_grund(d)) for n, d in enumerate(dateien))}</main></div>
-<script>const MR={daten};{JS}{JS_ZUG}{JS_REVIEW}</script></body></html>"""
+<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
+<main>{leer}{dateien_html(dateien, texte)}</main></div>
+<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""
 
+def gleise_html(gitlab):
+    """Kopf: links der Güterbahnhof (GitLab nur auf Knopfdruck), rechts der Zug."""
+    if not gitlab:
+        return '<div id="zug"></div>'
+    return ('<div class="gleise"><div id="bahnhof" title="Güterbahnhof: GitLab wird nur hier (und beim Abschließen) gefragt">'
+            '<b>Güterbahnhof</b><button data-g="mrliste" title="MRs, bei denen ich Reviewer bin, aus GitLab holen">↻ MRs</button>'
+            '<button data-g="mrdaten" title="Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen">↻ MR-Daten</button>'
+            '<span class="sub" id="bhzeit"></span></div><div id="zug"></div></div>')
