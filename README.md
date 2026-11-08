@@ -8,6 +8,7 @@ Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nu
   „Review abschließen“ legt die Kommentare als **Entwürfe** im MR an. Veröffentlicht wird danach in GitLab.
 
 Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit `pygments`, GitLab mit `glab`).
+Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
 Ein kleiner Server auf `127.0.0.1:8771` liefert die Seiten aus und beendet sich nach einer Stunde ohne Anfrage.
 
 ## Aufruf
@@ -89,6 +90,19 @@ wenn vorhanden) und prüft `pygments` und `glab`. Danach:
 
 Python ≥ 3.8 genügt. Ohne `tomllib` (vor 3.11) liest ein einfacher Ersatzparser die Einstellungen.
 Er versteht nur `schlüssel = wert`, `[abschnitt]` und einzeilige Listen.
+
+## Entwicklung
+
+Der Code liegt in `src/`: die Python-Abschnitte als `src/NN_name.py` (in dieser Reihenfolge aneinandergehängt),
+CSS und JS in `src/web/`. Dort eingebettet über `NAME = r"""@einbetten web/datei.js@"""`.
+
+```sh
+./bauen            # src/ → merge-train (schreibt nur bei Änderung; der laufende Server startet dann neu)
+./bauen --pruefen  # Exit 1, wenn merge-train nicht zu src/ passt
+```
+
+`merge-train` wird mit eingecheckt und nie direkt bearbeitet. `~/.local/bin/merge-train` zeigt darauf,
+ein `git pull` genügt also weiterhin zum Aktualisieren.
 
 ## Tests
 

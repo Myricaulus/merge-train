@@ -34,7 +34,7 @@ function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)ret
  ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
   const nm=w.name||w.p,name=esc(nm.length>23?nm.slice(0,22)+'…':nm),ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
   const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':(todos.length?'● todo '+todos.length:'● offen')));
-  const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\\ntodos: '+todos.join(', '):''}`);
+  const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\ntodos: '+todos.join(', '):''}`);
   const zmax=Math.max(6,24-marke.length);
   const z2=w.zeile2!=null?`<tspan class="klein">${esc(w.zeile2.length>zmax?w.zeile2.slice(0,zmax-1)+'…':w.zeile2)}</tspan>`:`<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
   const balken=w.plus+w.minus>0?`<rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>`:'';

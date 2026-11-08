@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------- Review-Oberfläche
 
-CSS_REVIEW = """@einbetten web/review.css@"""
+CSS_REVIEW = r"""@einbetten web/review.css@"""
 
 JS_REVIEW = r"""@einbetten web/review.js@"""
 

@@ -11,6 +11,11 @@
 Dass die drei Branches gerade auf denselben Commit zeigen, heißt nur, dass alles gereviewt und deployt ist.
 Nicht als Hinweis lesen, dass `reviewed` und `main` dasselbe wären.
 
+## Code
+
+Änderungen nur in `src/` (Python-Teile, `src/web/*.css|js`), danach `./bauen`. `merge-train` ist das gebaute
+Ergebnis: mit committen, nie direkt bearbeiten. Die Tests prüfen zuerst, ob es zum Stand in `src/` passt.
+
 ## Tests
 
 `python3 tests/test_gitlab.py` (GitLab-Modus mit `tests/fake-glab`, Port 8799). Nicht `pkill -f "merge-train --server"`:

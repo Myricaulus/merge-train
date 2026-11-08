@@ -297,7 +297,7 @@ def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
                 f'<button class="laden">Diff laden</button></div></details>')
     return f'{auf}{datei_tabelle(d, alt_text, neu_text, luecken)}</details>'
 
-CSS = """
+CSS = r"""
 :root{--bg:#fff;--fg:#1f2328;--muted:#656d76;--rand:#d0d7de;--kopf:#f6f8fa;--weg:#ffebe9;--wegs:#ffb8b0;
 --dazu:#e6ffec;--dazus:#a6f0b6;--hk:#ddf4ff;--nix:#f6f8fa;--p:#1a7f37;--m:#cf222e;--akt:#ddf4ff;
 --tk:#cf222e;--ts:#0a3069;--tc:#6e7781;--tn:#0550ae;--tt:#116329;--ta:#0550ae;--tf:#8250df;--tb:#953800;--tv:#953800;--to:#1f2328}
@@ -359,7 +359,7 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .ta{color:var(--ta)} .tf{color:var(--tf)} .tb{color:var(--tb)} .tv{color:var(--tv)} .to{color:var(--to)}
 """
 
-JS = """
+JS = r"""
 const ds=[...document.querySelectorAll('.datei')],ls=[...document.querySelectorAll('#liste a')],kopf=document.getElementById('kopf');
 function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHeight+'px')}
 kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
@@ -398,7 +398,7 @@ function inlBauen(nur){ // Inline-Tabelle aus der Tabelle nebeneinander bauen (s
 try{if(localStorage.inline){inlBauen();document.body.classList.add('inline')}}catch(_){}
 """
 
-JS_ZUG = """
+JS_ZUG = r"""
 let ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
 const GL=MR.modus==='gitlab',esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
@@ -435,7 +435,7 @@ function zug(){const box=document.getElementById('zug');if(!box||!ZUG.length)ret
  ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
   const nm=w.name||w.p,name=esc(nm.length>23?nm.slice(0,22)+'…':nm),ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
   const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':(todos.length?'● todo '+todos.length:'● offen')));
-  const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\\ntodos: '+todos.join(', '):''}`);
+  const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\ntodos: '+todos.join(', '):''}`);
   const zmax=Math.max(6,24-marke.length);
   const z2=w.zeile2!=null?`<tspan class="klein">${esc(w.zeile2.length>zmax?w.zeile2.slice(0,zmax-1)+'…':w.zeile2)}</tspan>`:`<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
   const balken=w.plus+w.minus>0?`<rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>`:'';
@@ -1589,7 +1589,7 @@ def mr_uebersicht():
 
 # ---------------------------------------------------------------- Review-Oberfläche
 
-CSS_REVIEW = """
+CSS_REVIEW = r"""
 .gl-link{color:var(--tn);font-size:13px} .gl-link:hover{text-decoration:underline}
 #rvstand{font-size:13px}
 tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}

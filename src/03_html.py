@@ -115,9 +115,9 @@ def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
                 f'<button class="laden">Diff laden</button></div></details>')
     return f'{auf}{datei_tabelle(d, alt_text, neu_text, luecken)}</details>'
 
-CSS = """@einbetten web/basis.css@"""
+CSS = r"""@einbetten web/basis.css@"""
 
-JS = """@einbetten web/basis.js@"""
+JS = r"""@einbetten web/basis.js@"""
 
-JS_ZUG = """@einbetten web/zug.js@"""
+JS_ZUG = r"""@einbetten web/zug.js@"""
 

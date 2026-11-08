@@ -22,13 +22,16 @@ def einbetten(m):
         sys.exit(f"{pfad}: enthält \"\"\" und lässt sich nicht einbetten")
     if text.endswith("\\"):
         sys.exit(f"{pfad}: endet mit \\ und lässt sich nicht einbetten")
-    return "\n" + text   # wie vorher: der String beginnt mit einem Zeilenumbruch
+    return 'r"""\n' + text + '"""'   # der String beginnt mit einem Zeilenumbruch
 
 
 def bauen():
     teile = sorted(f for f in os.listdir(SRC) if f.endswith(".py"))
     text = "".join(open(os.path.join(SRC, f), encoding="utf-8").read() for f in teile)
-    return re.sub(r"@einbetten ([\w./-]+)@", einbetten, text)
+    text = re.sub(r'r"""@einbetten ([\w./-]+)@"""', einbetten, text)
+    if "@einbetten" in text:
+        sys.exit("@einbetten nur als r\"\"\"@einbetten web/datei@\"\"\" (roher String)")
+    return text
 
 
 def main():
