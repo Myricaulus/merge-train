@@ -44,6 +44,7 @@ def repo_anlegen():
     open(f"{REPO}/App.cs", "w").write("class App {\n" + "\n".join(zeilen) + "\n}\n")
     open(f"{REPO}/seite.html", "w").write("<p>Hallo Welt</p>\n<p>Bar(x)</p>\n")
     open(f"{REPO}/Neu.cs", "w").write("// neu\nclass Neu { void Bar(int x) {} }\n")
+    open(f"{REPO}/Modell.Designer.cs", "w").write("// generiert\nclass Modell {}\n")
     g("add", "-A"); g("commit", "-qm", "Neu und Bar\n\nMit Rumpf.")
     os.makedirs(f"{REPO}/tasks")
 
@@ -80,7 +81,9 @@ def main():
                "notes": "Team-Thema: Logging", "failing_tests": {"#1": "AppTest.Neu"},
                "markers": [
                    {"finding": "#1", "path": "App.cs", "needle": "public void Neu(", "text": "#1 Missing null check",
-                    "rationale": "siehe Ticket", "resolved_when": "Test grün", "status": "open (GitLab comment)"},
+                    "rationale": "siehe Ticket", "resolved_when": "Test grün", "status": "open (GitLab comment)",
+                    "see_also": ["Neu.cs:2", {"path": "App.cs", "needle": "WeitWeg", "label": "Aufrufer"}]},
+                   {"finding": "#7", "text": "#7 General remark about the MR"},
                    {"path": "App.cs", "needle": "=public void WeitWeg() {}", "text": "K2 Rename method"},
                    {"finding": "#3", "path": "App.cs", "needle": "GibtEsNicht", "text": "#3 Weg"},
                    {"finding": "#4", "path": "seite.html", "needle": "Bar(x)", "text": "#4 Escape output",
@@ -104,6 +107,27 @@ def main():
         pruefe("needle nicht gefunden" in r.stdout, "#3 needle nicht gefunden")
         r = sh(sys.executable, SKRIPT, "agent", "zeigen", hw, "--nicht-oeffnen", check=False)
         pruefe("http://127.0.0.1:8799/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
+        pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
+        pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
+        pruefe("siehe auch" not in r.stdout, "see_also aufgelöst")
+        # lokaler Stand passt nicht → API (dort fehlt App.cs wie bei großen MRs), mit Grund
+        open(f"{REPO}/App.cs", "a").write("// lokal geändert\n")
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, check=False, env=dict(ENV, FAKE_GLAB_ZU_GROSS="App.cs"))
+        pruefe("Quelle: GitLab-API" in r.stdout and "lokalen Änderungen" in r.stdout, "lokale Änderungen → API mit Grund")
+        api_seite = [p for p in os.listdir(f"{T}/cache/merge-train/mr") if "-api" in p and p.endswith(".html")]
+        pruefe(api_seite and "1 Datei(en) ohne Diff" in open(f"{T}/cache/merge-train/mr/{api_seite[0]}").read(),
+               "API-Seite nennt Dateien ohne Diff")
+        sh("git", "-C", REPO, "checkout", "-q", "--", "App.cs")
+        sh("git", "-C", REPO, "checkout", "-q", "main")
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, check=False)
+        pruefe("steht auf main" in r.stdout, "falscher Branch erkannt")
+        sh("git", "-C", REPO, "checkout", "-q", "feature")
+        # Review-Update: --seit
+        start = sh("git", "-C", REPO, "rev-parse", "main").stdout.strip()
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, "--seit", start, check=False)
+        pruefe("offen* (Datei geändert)" in r.stdout and "GEÄNDERT: needle nicht gefunden" in r.stdout
+               and "Datei(en) geändert" in r.stdout, "--seit zeigt geändert/offen")
+        pruefe(r.returncode == 0, "--seit: weggefallene needles sind kein Fehler")
         # Seite + Review-Daten
         seite = get("/mr/gitlab.example.com/gruppe/demo/1")
         pruefe("Demo-Änderung &lt;b&gt;fett&lt;/b&gt;" in seite and 'data-b="10"' in seite, "MR-Seite mit Diff und escaptem Titel")
@@ -115,6 +139,23 @@ def main():
         pruefe(not hs["K2"]["im_diff"] and hs["K2"]["b"] == 50 and hs["K2"]["a"] == 51, "K2: außerhalb, alt 51 (eine Zeile gelöscht)")
         pruefe(hs["#6"]["im_diff"] and hs["#6"]["a"] == 10 and hs["#6"]["b"] == 10, "#6: Kontextzeile alt 10 / neu 10")
         pruefe(hs["#4"]["datei"] is not None and hs["#4"]["im_diff"], "#4 in seite.html")
+        sa = hs["#1"]["see_also"]
+        pruefe([(s["path"], s["zeile"], s["label"]) for s in sa] == [("Neu.cs", 2, None), ("App.cs", 50, "Aufrufer")]
+               and not any(s["problem"] for s in sa), "see_also: pfad:zeile und needle aufgelöst")
+        pruefe("see_also" not in hs["#1"]["extra"] and "see_also" not in hs["#1"]["text"], "see_also nicht im Kommentartext")
+        pruefe('class="lu" data-von="1" data-bis="7" data-d="0"' in seite and 'data-von="15" data-bis="17" data-d="0"' in seite
+               and 'data-von="24" data-bis="61" data-d="1"' in seite, "ausgeblendete Bereiche vor, zwischen und nach den Hunks")
+        z = json.loads(get(f"/api/zeilen?mr={mr}&k={k}&pfad=App.cs&von=49&bis=99"))
+        pruefe(z["ok"] and z["n"] == 61 and z["von"] == 49 and z["bis"] == 61 and len(z["zeilen"]) == 13
+               and "WeitWeg" in z["zeilen"][1], "Zeilen nachladen (begrenzt auf Dateiende)")
+        pruefe(not json.loads(get(f"/api/zeilen?mr={mr}&k={k}&pfad=Gibts.cs&von=1&bis=2"))["ok"], "unbekannte Datei beim Nachladen")
+        pruefe(not json.loads(get(f"/api/zeilen?mr={mr}&k=falsch&pfad=App.cs&von=1&bis=2"))["ok"], "Nachladen braucht Schlüssel")
+        pruefe('generierte Datei' in seite and 'class="laden"' in seite and "class Modell" not in seite, "generierte Datei erst auf Klick")
+        i_gen = next(i for i, f in enumerate(json.load(open(json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["struktur"]))["dateien"]) if f["neu"] == "Modell.Designer.cs")
+        z = json.loads(get(f"/api/datei?mr={mr}&k={k}&i={i_gen}"))
+        pruefe(z["ok"] and 'class="sbs"' in z["html"] and "Modell" in z["html"], "generierte Datei nachladen")
+        pruefe(not json.loads(get(f"/api/datei?mr={mr}&k={k}&i=-1"))["ok"], "ungültiger Datei-Index abgelehnt")
+        pruefe('class="inl"' not in seite, "Inline-Tabelle baut erst der Browser")
         pruefe(rv["quellen"][0]["notes"] == "Team-Thema: Logging" and rv["quellen"][0]["alt"], "Notizen und veralteter Stand")
         pruefe(json.loads(get(f"/api/review?mr={mr}&k=falsch"))["ok"] is False, "falscher Schlüssel abgelehnt")
         sha = rv["hinweise"][0] and json.load(open(rv and f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
@@ -129,6 +170,11 @@ def main():
         r = post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=21, b=None, text="Warum gelöscht?"))
         pruefe(r["ok"], "Kommentar an gelöschter Zeile 21 (alt)")
         pruefe(not post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=None, b=40, text="x"))["ok"], "Zeile außerhalb des Diffs per Klick abgelehnt")
+        r = post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=41, b=40, text="Kontext"))
+        pruefe(r["ok"], "Kommentar an nachgeladener Kontextzeile (alt 41 / neu 40)")
+        pruefe(not post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=40, b=40, text="x"))["ok"], "falsche alte Zeile abgelehnt")
+        kx = next(x for x in r["review"]["kommentare"] if x["text"] == "Kontext")
+        post("/api/kommentar", dict(basis, aktion="loeschen", id=kx["id"]))
         pruefe(not post("/api/kommentar", dict(basis, sha="alt", aktion="neu", datei=i_app, a=21, b=None, text="x"))["ok"], "veralteter Stand abgelehnt")
         r = post("/api/kommentar", dict(basis, aktion="neu", text="Insgesamt gut."))
         ks = {x["text"]: x for x in r["review"]["kommentare"]}

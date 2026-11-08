@@ -7,6 +7,7 @@ jeder Aufruf wird in $FAKE_GLAB_STATE/aufrufe.log protokolliert.
 
 Umgebung: FAKE_GLAB_REPO (Pfad), FAKE_GLAB_STATE (Ordner), FAKE_GLAB_PROJEKT (Standard: gruppe/demo),
 FAKE_GLAB_FEHLER_POSITION=1 → Draft-Notes mit Position werden abgelehnt (wie bei ungültiger Zeile).
+FAKE_GLAB_ZU_GROSS=a.cs,b.cs → für diese Dateien kein Diff („collapsed“, wie GitLab bei großen MRs).
 """
 import json, os, re, subprocess, sys, urllib.parse
 
@@ -86,8 +87,9 @@ def main():
             alt, neu = (teile[1], teile[2]) if st.startswith("R") else (teile[1], teile[1])
             d = git("diff", "-M", "-U3", basis, head, "--", *({alt, neu}))
             d = d[d.index("@@"):] if "@@" in d else ("Binary files differ\n" if "Binary" in d else "")
+            zu = neu in os.environ.get("FAKE_GLAB_ZU_GROSS", "").split(",")
             out.append({"old_path": alt, "new_path": neu, "new_file": st == "A", "deleted_file": st == "D",
-                        "renamed_file": st.startswith("R"), "diff": d})
+                        "renamed_file": st.startswith("R"), "diff": "" if zu else d, "collapsed": zu})
         return raus(out)
     if rest == "/commits":
         if seite > 1:

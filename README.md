@@ -20,6 +20,7 @@ merge-train '!42'               # MR 42 des Projekts im aktuellen Ordner (git re
 merge-train gruppe/projekt!42
 merge-train --mrs               # MRs, bei denen ich Reviewer bin
 merge-train agent pruefen tasks/PROJ-824-review-markers.json   # siehe docs/agent-hinweise.md
+merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-Update seit reviewed_commit
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
 ```
 
@@ -27,10 +28,21 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
 
 ## GitLab-Review
 
+- **Quelle**: Steht ein lokaler Klon (`[repos]` oder Repo der Hinweis-Datei) auf dem Quell-Branch des MR, genau auf dem
+  MR-Stand und ohne lokale Änderungen, kommen Diff und Dateien von dort. Das ist schnell und vollständig.
+  Sonst kommt der Diff über die GitLab-API. Ein Hinweis oben nennt dann den Grund und die Zahl der Dateien, für die
+  GitLab keinen Diff liefert (bei großen MRs häufig).
+- **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
+  Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
+  automatisch, sobald ein Kommentar oder Hinweis darin liegt.
+- **Kommentarliste** links über den Dateien: alle offenen Agent-Hinweise (🤖) und eigenen bzw. übernommenen Kommentare (💬)
+  in Datei-Reihenfolge. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
 - **Kommentar schreiben**: Auf eine Zeilennummer klicken (links = alte Zeile, rechts = neue). Speichern mit Strg+Enter, abbrechen mit Esc.
   Allgemeine Kommentare über „＋ allgemeiner Kommentar“.
 - **Agent-Hinweise** (lila) stehen an ihrer Zeile. Liegt die Zeile außerhalb des Diffs, stehen sie oben unter „Review“.
-  Mit „übernehmen“ oder „anpassen & übernehmen“ werden sie zu einem eigenen Kommentar, „verwerfen“ blendet sie aus.
+  Ein Klick auf den Ort klappt den Kontext dorthin auf (oder öffnet ein Popup, wenn die Datei nicht im MR ist).
+  „Siehe auch“-Verweise öffnen den Code im Popup. Sie gehören nicht zum GitLab-Kommentar.
+  Mit „übernehmen“ oder „anpassen & übernehmen“ werden Hinweise zu einem eigenen Kommentar, „verwerfen“ blendet sie aus.
 - **Kommentare** lassen sich bearbeiten und löschen. Das Etikett zeigt den Stand: *Entwurf (lokal)*, *in GitLab (Entwurf)*,
   *geändert* oder *wird in GitLab gelöscht*.
 - **Review abschließen → GitLab** legt neue Kommentare als Draft-Notes an, aktualisiert geänderte und löscht entfernte.
@@ -72,7 +84,8 @@ wenn vorhanden) und prüft `pygments` und `glab`. Danach:
    und `repos` setzen.
 3. Unter WSL: `sudo apt install wslu python3-pygments` (`wslview` öffnet den Windows-Browser). Der Server hört auf `127.0.0.1`,
    und WSL2 reicht `localhost` an Windows durch. Klappt das nicht, in `%UserProfile%\.wslconfig` `localhostForwarding=true` setzen.
-4. Den Abschnitt aus [`docs/agent-hinweise.md`](docs/agent-hinweise.md) in den jira-review-Skill übernehmen.
+4. Der jira-review-Skill arbeitet mit `merge-train agent …` (Format und Ausgaben: [`docs/agent-hinweise.md`](docs/agent-hinweise.md)).
+   Im Code werden keine Marker mehr gesetzt.
 
 Python ≥ 3.8 genügt. Ohne `tomllib` (vor 3.11) liest ein einfacher Ersatzparser die Einstellungen.
 Er versteht nur `schlüssel = wert`, `[abschnitt]` und einzeilige Listen.

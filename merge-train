@@ -73,18 +73,24 @@ SHEBANG = {"python": "python", "bash": "bash", "sh": "bash", "zsh": "bash", "das
            "fish": "fish", "node": "javascript", "perl": "perl", "ruby": "ruby", "lua": "lua",
            "php": "php", "awk": "awk", "gawk": "awk", "pwsh": "powershell"}
 
+_LEXER = {}
+
 def lexer_fuer(pfad, text=None):
-    """Lexer nach Dateiname, ohne passende Endung nach der Shebang-Zeile."""
+    """Lexer nach Dateiname, ohne passende Endung nach der Shebang-Zeile.
+    Je Endung gemerkt: die Suche über alle Pygments-Plugins kostet sonst ~6 ms pro Datei."""
     if not PYGMENTS:
         return None
     ext = os.path.splitext(pfad)[1].lower()
     kw = dict(stripnl=False, ensurenl=False)
-    try:
-        if ext in SONDER:
-            return get_lexer_by_name(SONDER[ext], **kw)
-        return get_lexer_for_filename(pfad, **kw)
-    except ClassNotFound:
-        pass
+    schl = ext if ext else os.path.basename(pfad).lower()  # Makefile, Dockerfile …
+    if schl in _LEXER and _LEXER[schl] is not None:
+        return _LEXER[schl]
+    if schl not in _LEXER:
+        try:
+            _LEXER[schl] = get_lexer_by_name(SONDER[ext], **kw) if ext in SONDER else get_lexer_for_filename(pfad, **kw)
+            return _LEXER[schl]
+        except ClassNotFound:
+            _LEXER[schl] = None
     erste = (text or "").split("\n", 1)[0]
     if erste.startswith("#!"):
         teile = erste[2:].split()
@@ -99,7 +105,15 @@ def lexer_fuer(pfad, text=None):
                 pass
     return None
 
+_KLASSE = {}
+
 def klasse(tt):
+    k = _KLASSE.get(tt)
+    if k is None:
+        k = _KLASSE[tt] = _klasse(tt)
+    return k
+
+def _klasse(tt):
     if not PYGMENTS: return ""
     if tt in T.Comment: return "tc"
     if tt in T.String or tt in T.Literal.String: return "ts"
@@ -202,46 +216,86 @@ def lokale_texte(wurzel, basis, bis, d):
     neu = git(wurzel, "show", f"{bis}:{d['neu']}", check=False) if d["status"] != "gelöscht" else ""
     return alt, neu
 
-def datei_html(n, d, alt_text, neu_text):
-    name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
-    kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
-            f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
-            f'<span class="m">−{d["minus"]}</span></summary>')
-    auf = f'<details open class="datei" id="d{n}">{kopf}'
+def zeilenzahl(text):
+    if not text:
+        return 0
+    return text.count("\n") + (0 if text.endswith("\n") else 1)
+
+def luecken_von(d, bn):
+    """Ausgeblendete Bereiche der neuen Seite: {hunk-index: (von, bis, delta)}, -1 = nach dem letzten Hunk.
+    delta = alte Zeile − neue Zeile (zwischen Hunks konstant)."""
+    if d["status"] in ("neu", "gelöscht") or not d["hunks"] or not bn:
+        return {}
+    out, ea, eb = {}, 1, 1
+    for i, h in enumerate(d["hunks"]):
+        if h["b"] > eb:
+            out[i] = (eb, h["b"] - 1, h["a"] - h["b"])
+        ea = h["a"] + sum(1 for t, _ in h["z"] if t != "+")
+        eb = h["b"] + sum(1 for t, _ in h["z"] if t != "-")
+    if bn >= eb:
+        out[-1] = (eb, bn, ea - eb)
+    return out
+
+def luecke_tr(von, bis, delta, sbs):
+    return (f'<tr class="lu" data-von="{von}" data-bis="{bis}" data-d="{delta}"><td class="n"></td>'
+            f'<td colspan="{3 if sbs else 2}" class="lu-k">⋯ {bis - von + 1} Zeile(n)</td></tr>')
+
+GENERIERT = re.compile(r"(\.Designer\.cs|ModelSnapshot\.cs|\.min\.(js|css)|\.snap|(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock))$")
+SPAETER_ZEILEN, SPAETER_BYTES = 3000, 300_000
+
+def spaeter_grund(d):
+    """Große oder generierte Datei: Diff erst auf Klick laden (wie „collapsed“ in GitLab). None = sofort zeigen."""
+    if not d["hunks"] or d["binaer"]:
+        return None
+    if GENERIERT.search(d["neu"]):
+        return "generierte Datei"
+    zeilen = sum(len(h["z"]) for h in d["hunks"])
+    groesse = sum(len(t) for h in d["hunks"] for _, t in h["z"])
+    if zeilen > SPAETER_ZEILEN or groesse > SPAETER_BYTES:
+        return f"großer Diff ({zeilen} Zeilen, {groesse // 1024} KB)"
+    return None
+
+def datei_tabelle(d, alt_text, neu_text, luecken=False):
+    """Diff einer Datei als Tabelle (nebeneinander). Die Inline-Ansicht baut der Browser daraus (JS inlBauen)."""
     if d["binaer"]:
-        return f'{auf}<div class="leer">Binärdatei</div></details>'
+        return '<div class="leer">Binärdatei</div>'
     if not d["hunks"]:
-        return f'{auf}<div class="leer">{html.escape(d.get("leer") or "keine Inhaltsänderung")}</div></details>'
+        return f'<div class="leer">{html.escape(d.get("leer") or "keine Inhaltsänderung")}</div>'
+    lu = luecken_von(d, zeilenzahl(neu_text)) if luecken else {}
     ta_tok = zeilen_tokens(alt_text, d["alt"])
     tb_tok = zeilen_tokens(neu_text, d["neu"])
-    sbs, inl = [], []
-    for h in d["hunks"]:
+    sbs = []
+    for hi, h in enumerate(d["hunks"]):
+        if hi in lu:
+            sbs.append(luecke_tr(*lu[hi], True))
         hk = html.escape(f'@@ -{h["a"]} +{h["b"]} @@ {h["kopf"]}')
         sbs.append(f'<tr class="hk"><td></td><td colspan="3">{hk}</td></tr>')
-        inl.append(f'<tr class="hk"><td></td><td></td><td>{hk}</td></tr>')
-        rows = hunk_zeilen(h, ta_tok, tb_tok)
-        weg, dazu = [], []
-        def leeren():
-            for na, x in weg: inl.append(f'<tr data-a="{na}"><td class="n">{na}</td><td class="n"></td><td class="c weg">{x}</td></tr>')
-            for nb, x in dazu: inl.append(f'<tr data-b="{nb}"><td class="n"></td><td class="n">{nb}</td><td class="c dazu">{x}</td></tr>')
-            weg.clear(); dazu.clear()
-        for typ, na, ha, nb, hb in rows:
+        for typ, na, ha, nb, hb in hunk_zeilen(h, ta_tok, tb_tok):
             if typ == "ctx":
                 sbs.append(f'<tr data-a="{na}" data-b="{nb}"><td class="n">{na}</td><td class="c">{ha}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
-                leeren()
-                inl.append(f'<tr data-a="{na}" data-b="{nb}"><td class="n">{na}</td><td class="n">{nb}</td><td class="c">{hb}</td></tr>')
                 continue
             la = f'<td class="n">{na}</td><td class="c weg">{ha}</td>' if ha is not None else '<td class="n"></td><td class="c nix"></td>'
             lb = f'<td class="n">{nb}</td><td class="c dazu">{hb}</td>' if hb is not None else '<td class="n"></td><td class="c nix"></td>'
             attr = (f' data-a="{na}"' if ha is not None else "") + (f' data-b="{nb}"' if hb is not None else "")
             sbs.append(f"<tr{attr}>{la}{lb}</tr>")
-            if ha is not None: weg.append((na, ha))
-            if hb is not None: dazu.append((nb, hb))
-        leeren()
+    if -1 in lu:
+        sbs.append(luecke_tr(*lu[-1], True))
     cs = '<colgroup><col class="cn"><col><col class="cn"><col></colgroup>'
-    ci = '<colgroup><col class="cn"><col class="cn"><col></colgroup>'
-    return (f'{auf}<table class="sbs">{cs}{"".join(sbs)}</table>'
-            f'<table class="inl">{ci}{"".join(inl)}</table></details>')
+    return f'<table class="sbs">{cs}{"".join(sbs)}</table>'
+
+def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
+    name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
+    kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
+            f'<b>{html.escape(name)}</b> <span class="p">+{d["plus"]}</span> '
+            f'<span class="m">−{d["minus"]}</span></summary>')
+    # content-visibility (CSS): nur sichtbare Dateien werden gerendert; geschätzte Höhe hält Scrollbalken/Sprünge stabil
+    hoehe = 40 if spaeter or not d["hunks"] else 40 + 19 * (sum(len(h["z"]) for h in d["hunks"]) + 2 * len(d["hunks"]))
+    auf = (f'<details open class="datei" id="d{n}" data-pfad="{html.escape(d["neu"])}" '
+           f'style="contain-intrinsic-size:auto {hoehe}px">{kopf}')
+    if spaeter:
+        return (f'{auf}<div class="leer spaet">{html.escape(spaeter)} – '
+                f'<button class="laden">Diff laden</button></div></details>')
+    return f'{auf}{datei_tabelle(d, alt_text, neu_text, luecken)}</details>'
 
 CSS = """
 :root{--bg:#fff;--fg:#1f2328;--muted:#656d76;--rand:#d0d7de;--kopf:#f6f8fa;--weg:#ffebe9;--wegs:#ffb8b0;
@@ -269,7 +323,7 @@ overflow:auto;border:1px solid var(--rand);border-radius:6px;font-size:13px}
 #liste a:hover{background:var(--kopf)} #liste a.akt{background:var(--akt);border-left-color:var(--tn)}
 #liste .ord{color:var(--muted)} #liste .zahl{float:right;margin-left:6px;font-size:12px}
 main{min-width:0}
-.datei{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;scroll-margin-top:calc(var(--kopfh,60px) + 8px)}
+.datei{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;scroll-margin-top:calc(var(--kopfh,60px) + 8px);content-visibility:auto}
 .datei summary{position:sticky;top:var(--kopfh,60px);z-index:2;background:var(--kopf);padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--rand);border-radius:6px 6px 0 0}
 .st{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--rand);color:var(--muted)}
 .st-neu{color:var(--p)} .st-gelöscht{color:var(--m)}
@@ -314,10 +368,28 @@ document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPU
  const k=aktuell();
  if(e.key==='j'||e.key==='ArrowRight'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top>kopf.offsetHeight+30?k:k+1)}
  else if(e.key==='k'||e.key==='ArrowLeft'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top<kopf.offsetHeight-5?k:k-1)}
- else if(e.key==='i'){document.body.classList.toggle('inline');try{localStorage.inline=document.body.classList.contains('inline')?1:''}catch(_){}}
+ else if(e.key==='i'){if(!document.body.classList.contains('inline'))inlBauen();document.body.classList.toggle('inline');try{localStorage.inline=document.body.classList.contains('inline')?1:''}catch(_){}}
  else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu)}
  else if(e.key==='c'){const c=document.getElementById('commits');c.open=!c.open}});
-try{if(localStorage.inline)document.body.classList.add('inline')}catch(_){}
+function inlBauen(nur){ // Inline-Tabelle aus der Tabelle nebeneinander bauen (spart die Hälfte der Seite)
+ const neu=[];
+ (nur?[nur]:ds).forEach(d=>{const s=d.querySelector('table.sbs');if(!s||d.querySelector('table.inl'))return;
+  const out=[],weg=[],dazu=[],leeren=()=>{out.push(...weg,...dazu);weg.length=dazu.length=0};
+  const zeile=(a,b,h,cl,kl)=>'<tr'+(kl?' class="'+kl+'"':'')+(a!=null?' data-a="'+a+'"':'')+(b!=null?' data-b="'+b+'"':'')+'><td class="n">'+(a==null?'':a)
+   +'</td><td class="n">'+(b==null?'':b)+'</td><td class="c'+(cl?' '+cl:'')+'">'+h+'</td></tr>';
+  for(const r of s.rows){const cl=r.classList;
+   if(cl.contains('kr'))continue;
+   if(cl.contains('hk')){leeren();out.push('<tr class="hk"><td></td><td></td><td>'+r.lastElementChild.innerHTML+'</td></tr>');continue}
+   if(cl.contains('lu')){leeren();const x=r.dataset;out.push('<tr class="lu" data-von="'+x.von+'" data-bis="'+x.bis+'" data-d="'+x.d+'"><td class="n"></td><td colspan="2"></td></tr>');continue}
+   const c=r.cells;if(c.length<4)continue;
+   const w=c[1].classList.contains('weg'),z=c[3].classList.contains('dazu');
+   if(!w&&!z&&!c[1].classList.contains('nix')){leeren();out.push(zeile(r.dataset.a,r.dataset.b,c[3].innerHTML,'',r.className));continue}
+   if(w)weg.push(zeile(r.dataset.a,null,c[1].innerHTML,'weg'));
+   if(z)dazu.push(zeile(null,r.dataset.b,c[3].innerHTML,'dazu'))}
+  leeren();const t=document.createElement('table');t.className='inl';
+  t.innerHTML='<colgroup><col class="cn"><col class="cn"><col></colgroup><tbody>'+out.join('')+'</tbody>';s.after(t);neu.push(t)});
+ if(neu.length)document.dispatchEvent(new CustomEvent('inl',{detail:neu}))}
+try{if(localStorage.inline){inlBauen();document.body.classList.add('inline')}}catch(_){}
 """
 
 JS_ZUG = """
@@ -822,6 +894,57 @@ def lokale_klone(mr):
         out.append(k)
     return [o for o in out if os.path.isdir(o)]
 
+def kurzpfad(p):
+    h = os.path.expanduser("~")
+    return "~" + p[len(h):] if p and (p == h or p.startswith(h + os.sep)) else p
+
+def lokal_pruefen(mr, refs, branch):
+    """Ist ein lokaler Klon genau auf dem MR-Stand (Branch, Commit, keine lokalen Änderungen)?
+    Rückgabe (ordner, grund): ordner = nutzbarer Klon, sonst grund (None = kein Klon eingetragen)."""
+    klone, head = lokale_klone(mr), refs.get("head_sha")
+    if not klone:
+        return None, None
+    if not head or not refs.get("base_sha"):
+        return None, "MR-Stand unbekannt"
+    gruende = []
+    for o in dict.fromkeys(os.path.realpath(k) for k in klone):
+        k = kurzpfad(o)
+        akt = (git(o, "rev-parse", "HEAD", check=False) or "").strip()
+        zweig = (git(o, "rev-parse", "--abbrev-ref", "HEAD", check=False) or "").strip()
+        if akt != head or (branch and zweig != branch):
+            gruende.append(f"{k} steht auf {zweig or '?'} {akt[:8]}, der MR auf {branch or '?'} {head[:8]}")
+            continue
+        geaendert = [z for z in (git(o, "status", "--porcelain", "--untracked-files=no",
+                                     "--ignore-submodules=dirty", check=False) or "").splitlines() if z.strip()]
+        if geaendert:
+            gruende.append(f"{k}: {len(geaendert)} Datei(en) mit lokalen Änderungen (git status)")
+            continue
+        if git(o, "cat-file", "-e", refs["base_sha"] + "^{commit}", check=False) is None:
+            gruende.append(f"{k}: Basis-Commit {refs['base_sha'][:8]} fehlt lokal (git fetch)")
+            continue
+        return o, None
+    return None, "; ".join(gruende)
+
+def blobs(ordner, specs):
+    """Viele Dateiinhalte („rev:pfad“) mit einem git-cat-file-Aufruf. None = gibt es nicht."""
+    specs = [s for s in dict.fromkeys(specs) if "\n" not in s]
+    if not specs:
+        return {}
+    r = subprocess.run(["git", "-C", ordner, "cat-file", "--batch"], input=("\n".join(specs) + "\n").encode(),
+                       capture_output=True)
+    out, pos, daten = {}, 0, r.stdout
+    for s in specs:
+        nl = daten.find(b"\n", pos)
+        if nl < 0:
+            break
+        kopf = daten[pos:nl].decode(errors="replace").split(); pos = nl + 1
+        if len(kopf) != 3 or not kopf[2].isdigit():
+            out[s] = None; continue
+        n = int(kopf[2])
+        out[s] = daten[pos:pos + n].decode("utf-8", errors="replace") if kopf[1] == "blob" else None
+        pos += n + 1
+    return out
+
 def paare_und_hunks(d):
     """Je Diffzeile [alt, neu] (None = gibt es auf der Seite nicht) und Hunk-Grenzen [a, b, alen, blen]."""
     paare, hunks = [], []
@@ -851,6 +974,11 @@ def im_diff(f, a, b):
         return any(p[1] == b and (a is None or p[0] == a) for p in f["paare"])
     return any(p[0] == a and p[1] is None for p in f["paare"])
 
+def kontext_zeile(f, a, b):
+    """Unveränderte Zeile außerhalb der Hunks (nachgeladener Kontext)?"""
+    return (a is not None and b is not None and 0 < b <= (f.get("bn") or 0)
+            and not any(p[1] == b for p in f["paare"]) and alt_zeile(f, b) == a)
+
 def api_commit(c):
     msg = (c.get("message") or "").split("\n", 1)
     zeit = c.get("authored_date") or c.get("created_at") or ""
@@ -871,36 +999,52 @@ def mr_seite(mr, meta=None, inline=False):
     host, P = mr["host"], mr_pfad(mr)
     refs = meta.get("diff_refs") or {}
     head = refs.get("head_sha") or meta.get("sha") or "leer"
-    stamm = os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{VERSION}")
+    lokal, grund = lokal_pruefen(mr, refs, meta.get("source_branch", ""))
+    quelle = "lokal" if lokal else "api" + (hashlib.sha1(grund.encode()).hexdigest()[:6] if grund else "")
+    stamm = os.path.join(MR_ORDNER, f"{mr_datei(mr)}-{head[:12]}-{quelle}-{VERSION}")
     if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
         struktur = json.load(open(stamm + ".json", encoding="utf-8"))
     else:
-        eintraege = mr_diffs(host, P) if refs.get("head_sha") else []
-        dateien = []
-        for e in eintraege:
-            kopf = "diff --git a/x b/x\n" + ("new file mode\n" if e.get("new_file") else "") + \
-                   ("deleted file mode\n" if e.get("deleted_file") else "") + \
-                   ("rename from x\n" if e.get("renamed_file") else "")
-            d = zerlegen(kopf + (e.get("diff") or ""))[0]
-            d["alt"], d["neu"] = e.get("old_path") or e.get("new_path"), e.get("new_path") or e.get("old_path")
-            if not d["hunks"] and (e.get("too_large") or e.get("collapsed")):
-                d["leer"] = "Diff zu groß für die API – bitte in GitLab ansehen"
-            dateien.append(d)
+        if lokal:
+            dateien = zerlegen(git(lokal, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
+                                   "-M", "-U3", refs["base_sha"], head))
+        else:
+            dateien = []
+            for e in (mr_diffs(host, P) if refs.get("head_sha") else []):
+                kopf = "diff --git a/x b/x\n" + ("new file mode\n" if e.get("new_file") else "") + \
+                       ("deleted file mode\n" if e.get("deleted_file") else "") + \
+                       ("rename from x\n" if e.get("renamed_file") else "")
+                d = zerlegen(kopf + (e.get("diff") or ""))[0]
+                d["alt"], d["neu"] = e.get("old_path") or e.get("new_path"), e.get("new_path") or e.get("old_path")
+                if not d["hunks"] and (e.get("too_large") or e.get("collapsed")):
+                    d["leer"] = "GitLab liefert für diese Datei keinen Diff (zu groß) – lokalen Klon auf den MR-Stand bringen"
+                    d["ohne_diff"] = True
+                dateien.append(d)
         commits = [api_commit(c) for c in reversed(alle(host, f"{P}/commits"))]
-        def texte(d):
+        def benoetigt(d):
             if d["binaer"] or not d["hunks"]:
                 return None, None
-            return (inhalt(mr, refs["base_sha"], d["alt"]) if d["status"] != "neu" else "",
-                    inhalt(mr, head, d["neu"]) if d["status"] != "gelöscht" else "")
+            return (f'{refs["base_sha"]}:{d["alt"]}' if d["status"] != "neu" else None,
+                    f'{head}:{d["neu"]}' if d["status"] != "gelöscht" else None)
+        if lokal:  # alle Inhalte auf einmal in den Cache
+            for spec, text in blobs(lokal, [s for d in dateien for s in benoetigt(d) if s]).items():
+                sha, _, pfad = spec.partition(":")
+                INHALT[(mr_id(mr), sha, pfad)] = text
+        def texte(d):
+            a, b = benoetigt(d)
+            if a is None and b is None:
+                return None, None
+            return (inhalt(mr, *a.split(":", 1)) if a else "", inhalt(mr, *b.split(":", 1)) if b else "")
         with ThreadPoolExecutor(8) as ex:
             tx = list(ex.map(texte, dateien))
         struktur = {"mr": mr, "refs": {k: refs.get(k) for k in ("base_sha", "start_sha", "head_sha")},
-                    "web_url": meta.get("web_url", ""), "dateien": []}
-        for d in dateien:
+                    "web_url": meta.get("web_url", ""), "quelle": "lokal" if lokal else "api",
+                    "ordner": lokal, "grund": grund, "dateien": []}
+        for d, (_, neu_text) in zip(dateien, tx):
             paare, hunks = paare_und_hunks(d)
             struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
-                                        "paare": paare, "hunks": hunks})
-        ersetzen(stamm + ".html", mr_html(mr, meta, dateien, commits, tx, head))
+                                        "paare": paare, "hunks": hunks, "bn": zeilenzahl(neu_text) or None})
+        ersetzen(stamm + ".html", mr_html(mr, meta, dateien, commits, tx, head, struktur))
         ersetzen(stamm + ".json", json.dumps(struktur, ensure_ascii=False))
     with SPERRE:
         st = review_laden(mr)
@@ -910,8 +1054,20 @@ def mr_seite(mr, meta=None, inline=False):
         review_speichern(mr, st)
     return stamm + ".html", struktur, mr
 
-def mr_html(mr, meta, dateien, commits, texte, head):
+def quelle_html(struktur, dateien):
+    if struktur.get("quelle") == "lokal":
+        return f'<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>'
+    ohne = sum(1 for d in dateien if d.get("ohne_diff"))
+    grund = struktur.get("grund") or "kein lokaler Klon unter [repos] eingetragen"
+    teile = ["Diff über die GitLab-API" + (f": <b>{ohne} Datei(en) ohne Diff</b>" if ohne else "") + "."]
+    teile.append(f"Lokal nicht möglich – {html.escape(grund)}.")
+    return f'<div id="quelle" class="warn">{" ".join(teile)}</div>'
+
+def mr_html(mr, meta, dateien, commits, texte, head, struktur):
     slug = mr_id(mr)
+    qh = quelle_html(struktur, dateien)
+    band = qh if qh.startswith("<div") else ""
+    lokal = struktur.get("quelle") == "lokal"  # nur lokal lassen sich Dateien einzeln nachladen
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     web = meta.get("web_url", "")
     autor = (meta.get("author") or {}).get("name", "")
@@ -929,16 +1085,17 @@ def mr_html(mr, meta, dateien, commits, texte, head):
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>!{mr["iid"]} {html.escape(meta.get("title", ""))}</title>
-<style>{CSS}{CSS_REVIEW}</style><script src="/mrzug.js?akt={enc(slug)}"></script></head><body class="gl">
+<style>{CSS}{CSS_REVIEW}</style></head><body class="gl">
 <header id="kopf"><div id="zug"></div><div class="zeile"><h1>{entwurf}{html.escape(meta.get("title", ""))}</h1>
 <a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>
 <span class="sub">{html.escape(meta.get("source_branch", ""))} → {html.escape(meta.get("target_branch", ""))} · {html.escape(autor)} ·
-{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
+{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{"" if band else qh}
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
 <button id="fertig" title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
-<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details></header>
-<div class="rahmen"><nav id="liste">{hilfe}<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
-<main>{leer}{"".join(datei_html(n, d, *texte[n]) for n, d in enumerate(dateien))}</main></div>
+<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{band}</header>
+<div class="rahmen"><nav id="liste">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details>
+<h2>Dateien ({len(dateien)})</h2>{"".join(fl)}</nav>
+<main>{leer}{"".join(datei_html(n, d, *texte[n], luecken=True, spaeter=lokal and spaeter_grund(d)) for n, d in enumerate(dateien))}</main></div>
 <script>const MR={daten};{JS}{JS_ZUG}{JS_REVIEW}</script></body></html>"""
 
 # ---------------------------------------------------------------- Review-Zustand
@@ -992,7 +1149,41 @@ def datei_index(struktur, pfad):
 
 # ---------------------------------------------------------------- Agent-Hinweise (review-markers.json)
 
-HINWEIS_FELDER = {"finding", "path", "needle", "text", "rationale", "resolved_when", "line"}
+HINWEIS_FELDER = {"finding", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
+
+def pfad_norm(p):
+    p = str(p or "").strip().replace("\\", "/")
+    return p[2:] if p.startswith("./") else p
+
+def see_also_aufloesen(mr, head, eintraege, tag):
+    """see_also: Liste aus "pfad", "pfad:zeile" oder {"path", "line"|"needle", "label"} → Zeilen im MR-Stand.
+    Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars."""
+    if isinstance(eintraege, (str, dict)):
+        eintraege = [eintraege]
+    out = []
+    for e in eintraege if isinstance(eintraege, list) else []:
+        if isinstance(e, str):
+            m = re.fullmatch(r"(.+?)(?::(\d+))?", e.strip())
+            e = {"path": m.group(1), "line": int(m.group(2)) if m.group(2) else None} if m else {}
+        if not isinstance(e, dict):
+            continue
+        path, zeile, problem = pfad_norm(e.get("path")), None, None
+        if isinstance(e.get("line"), int) and e["line"] > 0:
+            zeile = e["line"]
+        if not path:
+            problem = "kein Pfad"
+        elif head:
+            t = inhalt(mr, head, path)
+            if t is None:
+                problem = "Datei nicht im MR-Stand"
+            elif zeile and zeile > zeilenzahl(t):
+                problem = f"Zeile {zeile} gibt es nicht ({zeilenzahl(t)} Zeilen)"
+            elif not zeile and e.get("needle"):
+                z = needle_zeilen(t, str(e["needle"]), tag)
+                zeile = z[0] if z else None
+                problem = None if z else "needle nicht gefunden"
+        out.append({"path": path, "zeile": zeile, "label": e.get("label"), "problem": problem})
+    return out
 _HW_CACHE = {}
 
 def hinweise_lesen(pfad):
@@ -1065,17 +1256,16 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
         for m in h["markers"]:
             text = str(m.get("text") or "").strip()
             fid = str(m.get("finding") or text.split()[0])
-            path = str(m.get("path") or "").strip().replace("\\", "/")
-            if path.startswith("./"):
-                path = path[2:]
+            path = pfad_norm(m.get("path"))
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
-                     "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name}
+                     "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
+                     "see_also": see_also_aufloesen(mr, head, m.get("see_also"), tag)}
             zeilen, problem = [], None
-            if isinstance(m.get("line"), int) and m["line"] > 0:
+            if not path:
+                pass  # allgemeiner Hinweis zum MR
+            elif isinstance(m.get("line"), int) and m["line"] > 0:
                 zeilen = [m["line"]]
-            elif not path:
-                problem = "kein Pfad"
             elif not head:
                 problem = "MR-Stand unbekannt"
             else:
@@ -1123,9 +1313,60 @@ def review_daten(mr):
         f = struktur["dateien"][i] if i is not None else None
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
-                    "finding": k.get("finding"), "status": k_status(k)})
+                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
             "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st)}
+
+def datei_nachladen(mr, i):
+    """Diff einer zunächst ausgelassenen (großen/generierten) Datei – nur im lokalen Modus."""
+    with SPERRE:
+        st = review_laden(mr)
+    struktur = struktur_laden(st)
+    try:
+        if i < 0:
+            raise IndexError
+        f = struktur["dateien"][i]
+    except (TypeError, IndexError):
+        return {"ok": False, "text": "unbekannte Datei – Seite neu laden"}
+    if struktur.get("quelle") != "lokal" or not struktur.get("ordner"):
+        return {"ok": False, "text": "nur im lokalen Modus möglich"}
+    refs = struktur["refs"]
+    out = git(struktur["ordner"], "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U3",
+              refs["base_sha"], refs["head_sha"], "--", *dict.fromkeys([f["alt"], f["neu"]]), check=False)
+    d = next((x for x in zerlegen(out or "") if x["neu"] == f["neu"]), None)
+    if d is None:
+        return {"ok": False, "text": "Diff nicht gefunden"}
+    alt = inhalt(mr, refs["base_sha"], d["alt"]) if d["status"] != "neu" else ""
+    neu = inhalt(mr, refs["head_sha"], d["neu"]) if d["status"] != "gelöscht" else ""
+    return {"ok": True, "html": datei_tabelle(d, alt, neu, luecken=True)}
+
+_TOKENS = {}
+
+def zeilen_daten(mr, pfad, von, bis):
+    """Zeilen von..bis (neue Seite, MR-Stand) als HTML – zum Nachladen von Kontext und fürs Popup."""
+    with SPERRE:
+        st = review_laden(mr)
+    struktur = struktur_laden(st)
+    head = ((struktur or {}).get("refs") or {}).get("head_sha")
+    if not head:
+        return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
+    pfad = pfad_norm(pfad)
+    text = inhalt(mr, head, pfad)
+    if text is None:
+        return {"ok": False, "text": f"{pfad} gibt es im MR-Stand {head[:8]} nicht"}
+    zeilen = text.replace("\r\n", "\n").split("\n")
+    if zeilen and zeilen[-1] == "":
+        zeilen.pop()
+    k = (mr_id(mr), head, pfad)
+    if k not in _TOKENS:
+        if len(_TOKENS) > 40:
+            _TOKENS.clear()
+        _TOKENS[k] = zeilen_tokens(text, pfad)
+    toks = _TOKENS[k]
+    von = max(1, von); bis = min(len(zeilen), bis, von + 4999)
+    return {"ok": True, "n": len(zeilen), "von": von, "bis": bis, "sha": head,
+            "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
+                       for i in range(von, bis + 1)]}
 
 def kommentar_aktion(mr, d):
     """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
@@ -1154,7 +1395,7 @@ def kommentar_aktion(mr, d):
                     return False, "unbekannte Datei"
                 a = int(d["a"]) if d.get("a") is not None else None
                 b = int(d["b"]) if d.get("b") is not None else None
-                if (a is None and b is None) or not im_diff(f, a, b):
+                if (a is None and b is None) or not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
                     return False, "Zeile nicht im Diff"
                 k.update(text=text, path=f["neu"], old_path=f["alt"], a=a, b=b)
             else:
@@ -1364,6 +1605,26 @@ body.gl td.n:not(:empty){cursor:pointer} body.gl td.n:not(:empty):hover{color:va
 #allgemein>.kk{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #liste .kz{color:var(--tf);margin-right:6px}
 #meldung a{color:var(--tn)}
+tr.lu td{background:var(--hk);color:var(--muted);padding:2px 8px;font:12px system-ui,sans-serif}
+.spaet button,tr.lu button,#popup button{font:12px system-ui,sans-serif;padding:0 8px;margin-left:6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
+#popup button:disabled{opacity:.4;cursor:default}
+tr.blink td{animation:blink 1.8s ease-out} @keyframes blink{0%,30%{background:var(--akt)}}
+#quelle{font-size:13px;margin-top:4px} .quelle-ok{color:var(--p);font-size:13px}
+.sa{margin-top:4px;font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.sa a,a.ortlink{color:var(--tn);cursor:pointer;font:12px ui-monospace,monospace} .sa a:hover,a.ortlink:hover{text-decoration:underline}
+#schleier{position:fixed;inset:0;z-index:49;background:rgba(0,0,0,.3)}
+#popup{position:fixed;z-index:50;left:50%;top:7vh;transform:translateX(-50%);width:min(1100px,94vw);max-height:84vh;display:flex;flex-direction:column;
+background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+#popup .pk{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand);border-radius:8px 8px 0 0;font-size:13px}
+#popup .pb{overflow:auto} #popup tr.ziel td{background:var(--akt)}
+body.gl #zug{min-height:92px}
+#kliste{border-bottom:1px solid var(--rand)} #kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
+#kliste>div{max-height:38vh;overflow:auto}
+.ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px;border-left:3px solid transparent}
+.ke:hover{background:var(--kopf)} .ke.hw{border-left-color:var(--tf)} .ke.km{border-left-color:var(--tn)}
+.ke b{flex:none} .ke .ko{flex:none;color:var(--muted);font:11px ui-monospace,monospace} .ke .kt2{overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.ke .ki{flex:none;font-size:11px}
+.kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}
 """
 
 JS_REVIEW = r"""
@@ -1375,7 +1636,7 @@ const qs=()=>'mr='+encodeURIComponent(MR.id)+'&k='+MR.k;
 function post(pfad,d){return fetch(pfad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({mr:MR.id,k:MR.k,sha:MR.sha},d))})
  .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar – merge-train erneut aufrufen'}))}
 function antwort(d){if(!d.ok){meld.textContent=d.text||'Fehler';return d}meld.textContent='';if(d.review){Object.assign(RV,d.review);zeichnen()}return d}
-function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen()})
+function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
  .catch(()=>{meld.textContent='merge-train-Server nicht erreichbar'})}
 const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)','b-ok'],geaendert:['geändert – wird aktualisiert','b-geaendert'],
  loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok']};
@@ -1389,16 +1650,100 @@ function bearbeiten(box,text,speichern,abbruch){
   el('span',{class:'knoepfe'},el('button',{onclick:zu},'abbrechen'),el('button',{class:'haupt',onclick:ok},'speichern'))));
  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}
 function speichernAls(d){return post('/api/kommentar',d).then(r=>{const x=antwort(r);return x})}
+// ---- Kontext nachladen, Zeile zeigen, Popup
+const PROJ=(MR.web_url||'').split('/-/merge_requests/')[0];
+function zeilenHolen(pfad,von,bis){return fetch('/api/zeilen?'+qs()+'&pfad='+encodeURIComponent(pfad)+'&von='+von+'&bis='+bis)
+ .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar'}))}
+function trAus(h){const t=document.createElement('tbody');t.innerHTML=h;return t.firstElementChild}
+function luKnoepfe(tr){const v=+tr.dataset.von,b=+tr.dataset.bis,n=b-v+1,kn=[el('span',{},'⋯ '+n+' Zeile(n) ausgeblendet')];
+ if(n>30){if(v>1)kn.push(el('button',{title:'20 Zeilen unter dem sichtbaren Teil darüber',onclick:()=>aufklappen(tr,v,v+19)},'▼ 20'));
+  if(tr.nextElementSibling)kn.push(el('button',{title:'20 Zeilen über dem sichtbaren Teil darunter',onclick:()=>aufklappen(tr,b-19,b)},'▲ 20'))}
+ kn.push(el('button',{onclick:()=>aufklappen(tr,v,b)},n>30?'alle '+n:'aufklappen'));tr.lastElementChild.replaceChildren(...kn)}
+function luTeil(lu,v,b){const t=lu.cloneNode(true);t.dataset.von=v;t.dataset.bis=b;return t}
+function aufklappen(tr,x,y){const d=tr.closest('.datei'),v=tr.dataset.von,b=tr.dataset.bis,delta=+tr.dataset.d;x=Math.max(x,+v);y=Math.min(y,+b);
+ return zeilenHolen(d.dataset.pfad,x,y).then(r=>{if(!r.ok){meld.textContent=r.text;return false}
+  d.querySelectorAll('tr.lu[data-von="'+v+'"][data-bis="'+b+'"]').forEach(lu=>{const sbs=lu.closest('table').classList.contains('sbs'),neu=[];
+   if(x>+v)neu.push(luTeil(lu,+v,x-1));
+   r.zeilen.forEach((h,i)=>{const nb=x+i,na=nb+delta;neu.push(trAus(sbs
+    ?`<tr class="kx" data-a="${na}" data-b="${nb}"><td class="n">${na}</td><td class="c">${h}</td><td class="n">${nb}</td><td class="c">${h}</td></tr>`
+    :`<tr class="kx" data-a="${na}" data-b="${nb}"><td class="n">${na}</td><td class="n">${nb}</td><td class="c">${h}</td></tr>`))});
+   if(y<+b)neu.push(luTeil(lu,y+1,+b));
+   lu.replaceWith(...neu);neu.forEach(t=>{if(t.classList.contains('lu'))luKnoepfe(t)})});
+  zeichnen();return true})}
+function aufblitzen(r){r.scrollIntoView({block:'center'});r.classList.remove('blink');void r.offsetWidth;r.classList.add('blink')}
+function dateiLaden(d){const p=d.querySelector('.spaet');if(!p)return Promise.resolve(true);if(p.dataset.laedt)return p.laedt;
+ const b=p.querySelector('button');if(b){b.disabled=true;b.textContent='lädt …'}p.dataset.laedt=1;
+ return p.laedt=fetch('/api/datei?'+qs()+'&i='+ds.indexOf(d)).then(r=>r.json()).then(r=>{
+  if(!r.ok){meld.textContent=r.text;delete p.dataset.laedt;if(b){b.disabled=false;b.textContent='Diff laden'}return false}
+  const t=document.createElement('div');t.innerHTML=r.html;p.replaceWith(...t.childNodes);d.querySelectorAll('tr.lu').forEach(luKnoepfe);
+  if(document.body.classList.contains('inline'))inlBauen(d);zeichnen();return true})
+  .catch(()=>{meld.textContent='merge-train-Server nicht erreichbar';delete p.dataset.laedt;return false})}
+function autoLaden(){[...RV.kommentare,...RV.hinweise].forEach(x=>{const d=x.datei!=null&&ds[x.datei];if(d&&d.querySelector('.spaet'))dateiLaden(d)})}
+document.querySelector('main').addEventListener('click',e=>{const b=e.target.closest('button.laden');if(b)dateiLaden(b.closest('.datei'))});
+document.addEventListener('inl',e=>{e.detail.forEach(t=>t.querySelectorAll('tr.lu').forEach(luKnoepfe));zeichnen()});
+function zeigen(x,ohnePopup){ // Zeile im Diff zeigen (Kontext/Datei dafür nachladen), sonst Popup. Promise: true = Zeile im Diff
+ const z=x.b||x.a,sonst=()=>{if(x.path&&!ohnePopup)popup(x.path,z);return false};
+ if(x.datei!=null&&ds[x.datei]&&z){const d=ds[x.datei];d.open=true;
+  if(d.querySelector('.spaet'))return dateiLaden(d).then(ok=>ok?zeigen(x,ohnePopup):sonst());
+  const tab=d.querySelector(document.body.classList.contains('inline')?'table.inl':'table.sbs'),r=tab&&zeileFinden(tab,x.a,x.b);
+  if(!tab)return Promise.resolve(sonst());
+  if(r){aufblitzen(r);return Promise.resolve(true)}
+  const lu=x.b&&[...tab.querySelectorAll('tr.lu')].find(t=>+t.dataset.von<=x.b&&x.b<=+t.dataset.bis);
+  if(lu)return aufklappen(lu,x.b-6,x.b+6).then(ok=>{const r2=ok&&zeileFinden(tab,x.a,x.b);if(r2)aufblitzen(r2);return !!r2})}
+ return Promise.resolve(sonst())}
+function sichtbar(sel){return [...document.querySelectorAll(sel)].find(e=>e.getClientRects().length)}
+function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/Datei nachladen)
+ const hin=()=>{const b=sichtbar('.kbox[data-id="'+i.id+'"]');if(!b)return false;b.scrollIntoView({block:'center'});
+  b.classList.remove('blink');void b.offsetWidth;b.classList.add('blink');return true};
+ if(hin())return;
+ (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
+function kliste(){const k=document.getElementById('kliste');if(!k)return;
+ const ort=x=>x.path?x.path.split('/').pop()+(x.b||x.a?':'+(x.b||x.a):''):'allgemein';
+ const items=[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
+  ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))]
+  .sort((p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0)));
+ k.querySelector('summary').textContent='Kommentare ('+items.length+')';
+ k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||''),f=i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t;
+  return el('div',{class:'ke '+i.art,title:ort(i.x)+'\n'+t,onclick:()=>springen(i)},
+   el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
+   i.f?el('b',{},i.f):null,el('span',{class:'ko'},ort(i.x)),el('span',{class:'kt2'},f))}))}
+function ortLink(x){return x.path?el('a',{class:'ortlink',title:'im Code zeigen',onclick:()=>zeigen(x)},ort(x)):el('code',{},ort(x))}
+function siehe(sa){if(!sa||!sa.length)return null;
+ return el('div',{class:'sa'},el('span',{},'Siehe auch:'),...sa.map(s=>{const wo=s.path+(s.zeile?':'+s.zeile:'');
+  return s.problem?el('span',{class:'warn',title:s.problem},(s.label?s.label+' · ':'')+wo+' ('+s.problem+')')
+   :el('a',{title:wo,onclick:()=>popup(s.path,s.zeile,s.label)},s.label||(s.path.split('/').pop()+(s.zeile?':'+s.zeile:'')))}))}
+function schliessen(){['popup','schleier'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}
+function popup(pfad,zeile,label){schliessen();
+ const st={von:Math.max(1,(zeile||1)-12),bis:(zeile||1)+12},tb=el('tbody'),info=el('span',{class:'sub'}),pb=el('div',{class:'pb'});
+ const hoch=el('button',{onclick:()=>{st.von=Math.max(1,st.von-30);lade('oben')}},'▲ mehr'),runter=el('button',{onclick:()=>{st.bis+=30;lade('unten')}},'▼ mehr');
+ const di=ds.findIndex(d=>d.dataset.pfad===pfad);
+ const gl=PROJ?el('a',{class:'gl-link',target:'_blank',rel:'noopener',href:PROJ+'/-/blob/'+MR.sha+'/'+pfad.split('/').map(encodeURIComponent).join('/')+(zeile?'#L'+zeile:'')},'GitLab ↗'):null;
+ pb.append(el('table',{},el('colgroup',{},el('col',{class:'cn'}),el('col',{})),tb));
+ document.body.append(el('div',{id:'schleier',onclick:schliessen}),el('div',{id:'popup'},el('div',{class:'pk'},
+  el('b',{},(label?label+' – ':'')+pfad+(zeile?':'+zeile:'')),info,el('span',{class:'knoepfe'},hoch,runter,
+   di>=0&&zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,
+   el('button',{title:'schließen (Esc)',onclick:schliessen},'✕'))),pb));
+ function lade(wie){const rest=pb.scrollHeight-pb.scrollTop;
+  zeilenHolen(pfad,st.von,st.bis).then(r=>{if(!r.ok){tb.replaceChildren(el('tr',{},el('td',{},''),el('td',{class:'warn'},r.text)));return}
+   Object.assign(st,{von:r.von,bis:r.bis});
+   tb.replaceChildren(...r.zeilen.map((h,i)=>{const nr=r.von+i;return trAus(`<tr${nr===zeile?' class="ziel"':''}><td class="n">${nr}</td><td class="c">${h}</td></tr>`)}));
+   hoch.disabled=st.von<=1;runter.disabled=st.bis>=r.n;info.textContent=r.n+' Zeilen · Stand '+r.sha.slice(0,8);
+   if(wie==='erst'){const z=tb.querySelector('tr.ziel');if(z)pb.scrollTop=z.offsetTop-pb.clientHeight/2}
+   else if(wie==='oben')pb.scrollTop=pb.scrollHeight-rest})}
+ lade('erst')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('popup')){e.preventDefault();schliessen()}});
+document.querySelectorAll('tr.lu').forEach(luKnoepfe);
 function kommentarBox(k,mitOrt){
- const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':'')}),kn=el('span',{class:'knoepfe'});
+ const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
  if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
  else kn.append(k.status==='weg'?null:el('button',{onclick:()=>bearbeiten(box,k.text,t=>speichernAls({aktion:'aendern',id:k.id,text:t}))},'✎ bearbeiten'),
   el('button',{onclick:()=>{if(k.status==='neu'&&!confirm('Kommentar löschen?'))return;speichernAls({aktion:'loeschen',id:k.id})}},'🗑 löschen'));
  box.append(el('div',{class:'kk'},el('span',{class:'badge '+cl},st),k.finding?el('span',{class:'badge b-agent'},'aus Agent '+k.finding):null,
-  mitOrt?el('code',{},ort(k)):null,kn),el('div',{class:'kt'},k.text));
+  mitOrt?ortLink(k):null,kn),el('div',{class:'kt'},k.text));
+ const h=k.hinweis&&RV.hinweise.find(x=>x.key===k.hinweis),sa=h&&siehe(h.see_also);if(sa)box.append(sa);
  return box}
 function hinweisBox(h,mitOrt){
- const box=el('div',{class:'kbox hw'+(h.status==='verworfen'?' weg':'')}),kn=el('span',{class:'knoepfe'});
+ const box=el('div',{class:'kbox hw'+(h.status==='verworfen'?' weg':''),'data-id':h.key}),kn=el('span',{class:'knoepfe'});
  if(h.status==='verworfen')kn.append(el('button',{onclick:()=>post('/api/hinweis',{aktion:'zurueck',key:h.key}).then(antwort)},'zurückholen'));
  else kn.append(el('button',{class:'haupt',title:'als Review-Kommentar übernehmen',onclick:()=>speichernAls({aktion:'neu',hinweis:h.key})},'übernehmen'),
   el('button',{onclick:()=>bearbeiten(box,h.text,t=>speichernAls({aktion:'neu',hinweis:h.key,text:t}))},'✎ anpassen & übernehmen'),
@@ -1407,8 +1752,9 @@ function hinweisBox(h,mitOrt){
  const det=[['Problem',ex.problem],['Entscheidung',ex.decision],['Begründung',h.rationale],['Behoben, wenn',h.resolved_when],
   ...Object.entries(ex).filter(([k])=>k!=='problem'&&k!=='decision').map(([k,v])=>[NAMEN[k]||k,v])].filter(x=>x[1]!=null&&x[1]!=='');
  box.append(el('div',{class:'kk'},el('span',{class:'badge b-agent'},'🤖 Agent '+(h.finding||'')),el('span',{},h.quelle||''),
-  mitOrt?el('code',{},ort(h)):null,h.mehrfach?el('span',{},'(passt auf '+h.mehrfach+' Zeilen)'):null,h.problem?el('span',{class:'warn'},h.problem):null,ex.status?el('span',{class:'badge'},'Status: '+ex.status):null,kn),
+  mitOrt?ortLink(h):null,h.mehrfach?el('span',{},'(passt auf '+h.mehrfach+' Zeilen)'):null,h.problem?el('span',{class:'warn'},h.problem):null,ex.status?el('span',{class:'badge'},'Status: '+ex.status):null,kn),
   el('div',{class:'kt'},h.text));
+ const sa=siehe(h.see_also);if(sa)box.append(sa);
  if(det.length){const d=el('details',{},el('summary',{},'Details'));det.forEach(([k,v])=>d.append(el('div',{},el('b',{},k+': '),typeof v==='string'?v:JSON.stringify(v,null,1))));box.append(d)}
  return box}
 function zeileFinden(tab,a,b){for(const r of tab.querySelectorAll('tr[data-a],tr[data-b]')){if(b!=null?r.dataset.b==String(b):(r.dataset.a==String(a)&&r.dataset.b==null||tab.classList.contains('sbs')&&r.dataset.a==String(a)))return r}return null}
@@ -1419,13 +1765,13 @@ function zeichnen(){
  if(document.querySelector('.kbox textarea')){wartet=true;return}wartet=false;
  document.querySelectorAll('tr.kr').forEach(r=>r.remove());
  const allg=[],zahl={};
- const platz=(x,mach)=>{if(x.datei==null||!x.im_diff||!ds[x.datei])return false;let ok=false;
+ const platz=(x,mach)=>{if(x.datei==null||!ds[x.datei]||!(x.a||x.b))return false;let ok=false;
   ds[x.datei].querySelectorAll('table').forEach(tab=>{const r=zeileFinden(tab,x.a,x.b);if(r){einfuegen(r,mach(),tab);ok=true}});
   if(ok)zahl[x.datei]=(zahl[x.datei]||0)+1;return ok};
  RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
  RV.hinweise.filter(h=>h.status==='offen'||(RV.zeigVerworfen&&h.status==='verworfen'))
   .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
- allgemein(allg);ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
+ allgemein(allg);kliste();ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
  const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
  document.getElementById('rvstand').textContent=n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':'');kh()}
 function allgemein(allg){
@@ -1452,6 +1798,11 @@ knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='übert
   fetch('/api/mrzug?akt='+encodeURIComponent(MR.id)).then(r=>r.json()).then(z=>{ZUG=z.wagen||[];zug();kh()}).catch(()=>{})})});
 setInterval(()=>{if(document.hidden)return;fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&d.stand!==RV.stand)laden()}).catch(()=>{})},4000);
 laden();
+// MR-Zug nebenbei holen (braucht GitLab-Abfragen – soll den Seitenaufbau nicht blockieren)
+// Bis die Antwort da ist: der zuletzt gesehene Zug aus dem Browser (sonst hält #zug nur den Platz frei, nichts springt)
+try{if(!ZUG.length){ZUG=JSON.parse(localStorage.mrzug||'[]');zug();kh()}}catch(_){}
+fetch('/api/mrzug?akt='+encodeURIComponent(MR.id)).then(r=>r.json()).then(z=>{ZUG=z.wagen||[];zug();kh();
+ try{localStorage.mrzug=JSON.stringify(ZUG)}catch(_){}}).catch(()=>{});
 """
 
 # ---------------------------------------------------------------- Server (nur bei Bedarf)
@@ -1535,10 +1886,21 @@ def server():
                             return self.json_senden(200, {"wagen": wagen})
                         return self.senden(200, "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";",
                                            "text/javascript; charset=utf-8")
-                    if pfad in ("api/review", "api/stand"):
+                    if pfad in ("api/review", "api/stand", "api/zeilen", "api/datei"):
                         if q.get("k") != schluessel():
                             return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                         mr = mr_aus_id(q.get("mr", ""))
+                        if pfad == "api/datei":
+                            try:
+                                return self.json_senden(200, datei_nachladen(mr, int(q.get("i", -1))))
+                            except ValueError:
+                                return self.json_senden(400, {"ok": False, "text": "i ungültig"})
+                        if pfad == "api/zeilen":
+                            try:
+                                von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
+                            except ValueError:
+                                return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
+                            return self.json_senden(200, zeilen_daten(mr, q.get("pfad", ""), von, bis))
                         if pfad == "api/stand":
                             return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
                         return self.json_senden(200, review_daten(mr))
@@ -1650,6 +2012,8 @@ def agent_main(argv):
         p = sub.add_parser(name, help=hilfe, description=hilfe)
         p.add_argument("datei", help="Hinweis-Datei (JSON)")
         p.add_argument("--mr", help="MR-URL, '!42' oder gruppe/projekt!42 (sonst Feld „mr“ oder der offene MR zu „branch“)")
+        p.add_argument("--seit", nargs="?", const="", metavar="COMMIT",
+                       help="Review-Update: Stand der Einträge seit COMMIT (ohne Wert: reviewed_commit der JSON)")
         if name == "zeigen":
             p.add_argument("--nicht-oeffnen", action="store_true", help="Browser nicht öffnen, nur URL ausgeben")
     o = ap.parse_args(argv)
@@ -1662,39 +2026,82 @@ def agent_main(argv):
         print(f"merge-train: {o.datei} nicht lesbar: {e}", file=sys.stderr); return 2
     try:
         mr, ordner = mr_fuer_hinweise(pfad, daten, o.mr)
+        with SPERRE:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
+            st = review_laden(mr)
+            try:
+                if remote_info(ordner)[1].lower() == (mr["projekt"] or "").lower() and st.get("klon") != ordner:
+                    st["klon"] = ordner; review_speichern(mr, st)
+            except GitLabFehler:
+                pass
         _, struktur, mr = mr_seite(mr)
     except GitLabFehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2
     with SPERRE:
         st = review_laden(mr)
-        if o.befehl == "zeigen":
-            if pfad not in st["hinweis_dateien"]:
-                st["hinweis_dateien"].append(pfad)
-            try:
-                if remote_info(ordner)[1].lower() == mr["projekt"].lower():
-                    st["klon"] = ordner  # Dateiinhalte künftig lokal lesen
-            except GitLabFehler:
-                pass
+        if o.befehl == "zeigen" and pfad not in st["hinweis_dateien"]:
+            st["hinweis_dateien"].append(pfad)
             review_speichern(mr, st)
+    head = struktur["refs"].get("head_sha") or ""
+    geaendert, seit = None, None
+    if o.seit is not None:
+        seit = o.seit or str(daten.get("reviewed_commit") or "")
+        if not seit:
+            print("merge-train: --seit ohne Commit und kein reviewed_commit in der JSON", file=sys.stderr); return 2
+        try:
+            geaendert = geaenderte_dateien(mr, seit, head)
+        except GitLabFehler as e:
+            print(f"merge-train: {e}", file=sys.stderr); return 2
     hinweise, _ = hinweise_aufloesen(mr, st, struktur, nur=[pfad])
-    print(f'{mr["projekt"]}!{mr["iid"]} · Stand {struktur["refs"].get("head_sha", "")[:8]} · {len(daten["markers"])} Einträge')
+    print(f'{mr["projekt"]}!{mr["iid"]} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
+    if struktur.get("quelle") == "lokal":
+        print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
+    else:
+        print(f'Quelle: GitLab-API – lokal nicht möglich: {struktur.get("grund") or "kein lokaler Klon bekannt"}')
+    if geaendert is not None:
+        print(f"seit {seit}: {len(geaendert)} Datei(en) geändert")
     schlecht = 0
     for h in hinweise:
         ort = f'{h["path"]}:{h["zeile"]}' if h["zeile"] else (h["path"] or "-")
-        if h["im_diff"]:
+        fehlt = not h["zeile"] and h["path"]
+        if geaendert is not None and h["path"]:
+            if h["problem"] == "Datei nicht im MR-Stand":
+                zustand = "WEG: Datei gibt es nicht mehr → Diff gegen resolved_when prüfen"
+            elif fehlt:
+                zustand = f'GEÄNDERT: {h["problem"]} → Diff gegen resolved_when prüfen'
+            else:
+                zustand = "offen* (Datei geändert)" if h["path"] in geaendert else "offen (Datei unverändert)"
+            fehlt = False
+        elif not h["path"]:
+            zustand = "allgemeiner MR-Kommentar"
+        elif h["im_diff"]:
             zustand = "im Diff"
         elif h["zeile"]:
             zustand = f'{h["problem"]} → wird allgemeiner Kommentar mit Link'
         else:
-            zustand = f'FEHLT: {h["problem"]}'; schlecht += 1
+            zustand = f'FEHLT: {h["problem"]}'
+        schlecht += bool(fehlt)
         if h["mehrfach"]:
             zustand += f' (needle passt {h["mehrfach"]}×)'
         if h["status"] != "offen":
             zustand += f' [{h["status"]}]'
         print(f'{h["finding"]:<5} {ort:<60} {zustand}')
+        for s in h["see_also"]:
+            if s["problem"]:
+                print(f'{"":<5}   siehe auch {s["path"] or "-"}: FEHLT: {s["problem"]}'); schlecht += 1
     if o.befehl == "zeigen":
         im_browser("/mr/" + mr_id(mr), nur_url=o.nicht_oeffnen)
-    return 1 if schlecht else 0
+    if schlecht:
+        return 1
+    return 3 if struktur.get("quelle") != "lokal" else 0
+
+def geaenderte_dateien(mr, von, bis):
+    """Pfade (alt und neu), die sich zwischen von und bis geändert haben: lokal, sonst über die API."""
+    for o in lokale_klone(mr):
+        out = git(o, "-c", "core.quotepath=false", "diff", "--name-status", "-M", von, bis, check=False)
+        if out is not None:
+            return {p for z in out.splitlines() for p in z.split("\t")[1:]}
+    r = glab(mr["host"], f'projects/{enc(mr["projekt"])}/repository/compare?from={enc(von)}&to={enc(bis)}')
+    return {p for d in (r or {}).get("diffs", []) for p in (d.get("old_path"), d.get("new_path")) if p}
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
