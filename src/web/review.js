@@ -2,8 +2,10 @@ const RV={kommentare:[],hinweise:[],quellen:[],stand:null,zeigVerworfen:false};l
 function post(pfad,d){return fetch(pfad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({mr:MR.id,k:MR.k,sha:MR.sha,ansicht:MR.ansicht||''},d))})
  .then(r=>r.json()).catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar – merge-train erneut aufrufen'}))}
 function antwort(d){if(!d.ok){meld.textContent=d.text||'Fehler';return d}meld.textContent='';if(d.review){Object.assign(RV,d.review);zeichnen()}return d}
-function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
- .catch(()=>{meld.textContent='merge-train-Server nicht erreichbar'})}
+const WEG='merge-train-Server nicht erreichbar – versucht es weiter …';
+function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(meld.textContent===WEG)meld.textContent=''; // Server war kurz weg (Neustart nach ./bauen)
+ if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
+ .catch(()=>{meld.textContent=WEG})}
 const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)','b-ok'],geaendert:['geändert – wird aktualisiert','b-geaendert'],
  loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok'],
  // Gespräch (lokales Projekt)
@@ -126,5 +128,6 @@ if(GL)knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='
   meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
   if(d.review){Object.assign(RV,d.review);zeichnen()}
   zugHolen()})});
-setInterval(()=>{if(document.hidden)return;fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&d.stand!==RV.stand)laden()}).catch(()=>{})},4000);
+setInterval(()=>{if(document.hidden)return;fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
+ .catch(()=>{meld.textContent=WEG})},4000);
 laden();

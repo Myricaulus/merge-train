@@ -147,6 +147,8 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
 
 def stand(mr, st):
     teile = [st.get("struktur") or ""]
+    if mr.get("lokal"):  # „🎧 Claude hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+        teile.append("horcht" if horcht(mr["lokal"]) else "")
     for p in [review_datei(mr)] + hinweis_dateien(mr, st):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")

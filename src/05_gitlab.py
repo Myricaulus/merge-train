@@ -295,8 +295,8 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
 
 def gleise_html(gitlab):
     """Kopf: links der Güterbahnhof (GitLab nur auf Knopfdruck), rechts der Zug."""
-    if not gitlab:
-        return '<div id="zug"></div>'
+    if not gitlab:  # Güterbahnhof nur als Vorschau (#laden), z. B. für einen Screenshot
+        return f'<template id="bahnhof-vorschau"><div id="bahnhof" title="Güterbahnhof (Vorschau)">{BAHNHOF_SVG}</div></template><div id="zug"></div>'
     fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
     def knopf(g, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
         if fehlt:

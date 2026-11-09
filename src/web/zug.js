@@ -50,6 +50,9 @@ function zug(){const box=document.getElementById('zug');if(!box)return;box.inner
  svg.innerHTML=s;box.appendChild(svg);
  svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w&&w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
  const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
+(()=>{const t=document.getElementById('bahnhof-vorschau'),z=document.getElementById('zug'); // lokale Seite: Güterbahnhof nur mit #laden
+ if(!t||location.hash!=='#laden'||!z)return;const g=document.createElement('div');g.className='gleise';z.before(g);
+ g.append(t.content.cloneNode(true),z);document.getElementById('bahnhof').classList.add('laedt')})();
 zug();kh();
 const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
 const ich=ZUG.find(w=>w.p===MR.projekt);
