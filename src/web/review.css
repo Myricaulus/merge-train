@@ -46,8 +46,24 @@ body.gl #zug{min-height:92px}
 .ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
 .gleise{display:flex;align-items:flex-end;gap:8px} .gleise #zug{flex:1;min-width:0}
-#bahnhof{flex:none;display:flex;flex-direction:column;gap:3px;padding:4px 8px;margin-bottom:6px;border:1px dashed var(--rand);border-radius:6px;font-size:12px;background:var(--bg)}
+#bahnhof{flex:none;display:flex;align-items:flex-end;gap:4px;margin-bottom:6px;font-size:12px}
+#bahnhof .bh-bild{display:block}
+.bh-knoepfe{display:flex;flex-direction:column;gap:3px;padding:4px 8px;margin-bottom:8px;border:1px solid var(--rand);border-radius:6px;background:var(--bg)}
 #bahnhof b{font-size:11px;color:var(--muted);font-weight:600} #bahnhof button{font-size:12px;padding:1px 6px} #bahnhof .sub{margin:0;font-size:11px}
+/* Umschlagbahnhof für Schüttgut (Zeichnung in gleise_html) */
+.bh-schiene{stroke:var(--muted);stroke-width:2;opacity:.6}
+.bh-haufen{fill:#a08a68} .bh-korn{fill:#6f5c42} .bh-ladung{fill:#a08a68}
+.bh-band{stroke:#3b3f45;stroke-width:3.5;stroke-linecap:round} .bh-rolle{fill:#c9c9c9}
+.bh-stuetze,.bh-bein{stroke:#7d848c;stroke-width:2} .bh-bein.duenn{stroke-width:1}
+.bh-silo{fill:#b8b6ac;stroke:#7d7b72;stroke-width:1} .bh-dach{fill:#7d7b72}
+.bh-schrift{font:700 9px system-ui,sans-serif;fill:#5c5a52}
+.bh-wagen{fill:#7a3b2e;stroke:#4e241b;stroke-width:1} .bh-rand{fill:#4e241b} .bh-rippe{stroke:#4e241b;stroke-width:1}
+.bh-rad{fill:var(--muted)}
+.bh-strom{fill:#6f5c42;opacity:0}
+#bahnhof.laedt .bh-strom{animation:rieseln .6s linear infinite} #bahnhof.laedt .bh-band{stroke-dasharray:4 3;animation:band .4s linear infinite}
+@keyframes rieseln{0%{opacity:1;transform:translateY(0)}100%{opacity:1;transform:translateY(12px)}}
+@keyframes band{to{stroke-dashoffset:-7}}
+@media (prefers-reduced-motion:reduce){#bahnhof.laedt .bh-strom,#bahnhof.laedt .bh-band{animation:none}}
 #popup .datei{margin:0;border:0;content-visibility:visible} #popup .datei>summary{position:static} /* ausgeliehene Datei */ #popup tr.ziel td.n{background:var(--tn);color:var(--bg)}
 /* Gespräch (lokaler Modus): Verlauf wie in einem Messenger, eigene Nachrichten rechts */
 .gs .verlauf{display:flex;flex-direction:column;gap:6px;margin:4px 0}
