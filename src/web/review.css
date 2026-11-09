@@ -45,10 +45,11 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 .ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
 /* Güterbahnhof im Kopf: Kulisse (Bild), Anlage (SVG aus zug.js), Leitstand mit Knöpfen, Zug. Der Himmel (--himmel)
-   rutscht beim Scrollen weg, Band und Zug bleiben stehen. Panorama (myr) auf 400 px Höhe = 3620 px breit, Sonne bei ~1300 px; Horizont bei 64 % → y=176. */
+   rutscht beim Scrollen weg, Band und Zug bleiben stehen. Panorama (myr, 7014×775) über die volle Breite, mindestens 2480 px (sonst Lücke über dem Bild, dann seitlich abschneiden);
+   Horizont bei 64 % der Bildhöhe (= .0711 × Breite) immer auf y=176. */
 #kopf:has(.szene){--himmel:96px;top:calc(-1*var(--himmel))}
-.szene{--bb:auto 400px;--bpos:-700px -80px;position:relative;height:212px;margin:-8px -16px 6px;overflow:hidden;
- background:#7d7268 var(--bild) repeat-x;background-size:var(--bb);background-position:var(--bpos)}
+.szene{--bw:max(100vw,2480px);--bb:var(--bw) auto;--bpos:center calc(176px - .0711*var(--bw));position:relative;height:212px;margin:-8px -16px 6px;overflow:hidden;
+ background:#7d7268 var(--bild) no-repeat;background-size:var(--bb);background-position:var(--bpos)}
 #anlage{position:absolute;inset:0;width:100%;height:100%}
 .szene #zug{position:absolute;left:0;right:0;bottom:0;z-index:2;margin:0;overflow-x:auto;scrollbar-width:none}
 .szene #zug::-webkit-scrollbar{display:none} .szene #zug .schiene{display:none}
