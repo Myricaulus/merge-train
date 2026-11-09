@@ -238,6 +238,29 @@ def zeilen_daten(struktur, pfad, von, bis):
             "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
                        for i in range(von, bis + 1)]}
 
+def zeile_aus_klick(struktur, d, ansicht):
+    """Klick auf eine Zeilennummer (datei, a, b, sha der Seite) → (fehler, {path, old_path, a, b}) im MR-Stand."""
+    if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
+        return "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden.", None
+    seite = ansicht_struktur(struktur, ansicht) if ansicht else struktur
+    try:
+        f = seite["dateien"][int(d["datei"])]
+    except (ValueError, IndexError, TypeError):
+        return "unbekannte Datei", None
+    a = int(d["a"]) if d.get("a") is not None else None
+    b = int(d["b"]) if d.get("b") is not None else None
+    if (a is None and b is None) or not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
+        return "Zeile nicht im Diff", None
+    if ansicht:  # „seit“: rechts ist der MR-Stand → Zeile im MR-Diff bestimmen
+        i = datei_index(struktur, f["neu"])
+        if b is None or i is None:
+            return "Hier nur auf der rechten Seite (MR-Stand) kommentierbar", None
+        f = struktur["dateien"][i]
+        a = alt_zeile(f, b)
+        if not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
+            return "Zeile lässt sich im MR nicht zuordnen", None
+    return None, {"path": f["neu"], "old_path": f["alt"], "a": a, "b": b}
+
 NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
 
 def kommentar_aktion(mr, d):
@@ -264,26 +287,10 @@ def kommentar_aktion(mr, d):
                          hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
                 st["hinweise"][h["key"]] = "uebernommen"
             elif d.get("datei") is not None:
-                if not struktur or d.get("sha") != struktur["refs"].get("head_sha"):
-                    return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."
-                seite = ansicht_struktur(struktur, ansicht) if ansicht else struktur
-                try:
-                    f = seite["dateien"][int(d["datei"])]
-                except (ValueError, IndexError):
-                    return False, "unbekannte Datei"
-                a = int(d["a"]) if d.get("a") is not None else None
-                b = int(d["b"]) if d.get("b") is not None else None
-                if (a is None and b is None) or not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
-                    return False, "Zeile nicht im Diff"
-                if ansicht:  # „seit“: rechts ist der MR-Stand → Zeile im MR-Diff bestimmen
-                    i = datei_index(struktur, f["neu"])
-                    if b is None or i is None:
-                        return False, "Hier nur auf der rechten Seite (MR-Stand) kommentierbar"
-                    f = struktur["dateien"][i]
-                    a = alt_zeile(f, b)
-                    if not (im_diff(f, a, b) or kontext_zeile(f, a, b)):
-                        return False, "Zeile lässt sich im MR nicht zuordnen"
-                k.update(text=text, path=f["neu"], old_path=f["alt"], a=a, b=b)
+                fehler, ort = zeile_aus_klick(struktur, d, ansicht)
+                if fehler:
+                    return False, fehler
+                k.update(text=text, **ort)
             else:
                 k.update(text=text, path=None, a=None, b=None)
             if not k["text"]:

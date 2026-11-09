@@ -5,7 +5,9 @@ function antwort(d){if(!d.ok){meld.textContent=d.text||'Fehler';return d}meld.te
 function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
  .catch(()=>{meld.textContent='merge-train-Server nicht erreichbar'})}
 const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)','b-ok'],geaendert:['geändert – wird aktualisiert','b-geaendert'],
- loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok']};
+ loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok'],
+ // Gespräch (lokales Projekt)
+ entwurf:['Entwurf – noch nicht gesendet','b-entwurf'],wartet:['wartet auf Claude','b-wartet'],antwort:['Claude hat geantwortet','b-antwort'],erledigt:['erledigt','b-erledigt']};
 const ort=x=>x.path?x.path+(x.b?':'+x.b:(x.a?':'+x.a+' (alt)':'')):'allgemein';
 function bearbeiten(box,text,speichern,abbruch){
  const ta=el('textarea',{}),alt=[...box.childNodes];ta.value=text||'';
@@ -17,7 +19,29 @@ function bearbeiten(box,text,speichern,abbruch){
  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}
 function speichernAls(d){return post('/api/kommentar',d).then(r=>{const x=antwort(r);return x})}
 function autoLaden(){[...RV.kommentare,...RV.hinweise].forEach(x=>{const d=x.datei!=null&&ds[x.datei];if(d&&d.querySelector('.spaet'))dateiLaden(d)})}
+function uhr(iso){if(!iso)return'';const d=new Date(iso),hm=d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+ return d.toDateString()===new Date().toDateString()?hm:d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})+' '+hm}
+function fadenBox(k,mitOrt){ // Gespräch: Verlauf wie im Messenger, eigene Nachrichten rechts
+ const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km gs st-'+k.status+(k.status==='erledigt'?' erledigt':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
+ const offen=!LESEN&&!k.lesen;
+ if(offen)kn.append(el('button',{onclick:()=>{const b=el('div',{class:'msg ich entwurf'});v.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'antworten',id:k.id,text:t}),()=>b.remove())}},'↩ antworten'),
+  k.status==='erledigt'?el('button',{onclick:()=>speichernAls({aktion:'oeffnen',id:k.id})},'wieder öffnen')
+   :el('button',{title:'Gespräch als erledigt markieren',onclick:()=>speichernAls({aktion:'erledigt',id:k.id})},'✓ erledigt'),
+  el('button',{title:'ganzes Gespräch löschen',onclick:()=>{if(confirm('Ganzes Gespräch löschen?'))speichernAls({aktion:'loeschen',id:k.id})}},'🗑'));
+ const er=k.erledigt?el('span',{},'· erledigt von '+(k.erledigt.von==='claude'?'Claude':'dir')+' '+uhr(k.erledigt.zeit)):null;
+ box.append(el('div',{class:'kk'},el('span',{class:'badge '+cl},st),er,mitOrt?ortLink(k):null,kn));
+ if(k.zeile_text&&k.problem)box.append(el('div',{class:'alt',title:'die Zeile, als der Kommentar geschrieben wurde'},'damals: '+k.zeile_text.trim()));
+ const v=el('div',{class:'verlauf'});
+ k.nachrichten.forEach(m=>{const ich=m.von==='ich',ent=ich&&!m.gesendet,mb=el('div',{class:'msg '+(ich?'ich':'claude')+(ent?' entwurf':'')});
+  const haken=!ich?null:ent?el('span',{},'Entwurf'):el('span',{class:'haken'+(m.abgeholt?' abgeholt':''),
+   title:m.abgeholt?'von Claude abgeholt um '+uhr(m.abgeholt):'gesendet, noch nicht abgeholt'},m.abgeholt?'✓✓':'✓');
+  const mk=el('div',{class:'mk'},el('b',{},ich?'Du':'🤖 Claude'),el('span',{},uhr(m.gesendet||m.zeit)),haken);
+  if(ent&&offen)mk.append(el('button',{onclick:()=>bearbeiten(mb,m.text,t=>speichernAls({aktion:'aendern',id:k.id,nid:m.id,text:t}))},'✎'),
+   el('button',{onclick:()=>speichernAls({aktion:'loeschen',id:k.id,nid:m.id})},'🗑'));
+  mb.append(mk,el('div',{class:'mt'},m.text));v.append(mb)});
+ box.append(v);return box}
 function kommentarBox(k,mitOrt){
+ if(!GL)return fadenBox(k,mitOrt);
  const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
  if(LESEN||k.lesen);
  else if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
@@ -65,14 +89,25 @@ function zeichnen(){
   .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false))&&!unter(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
  allgemein(allg);kliste();ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
  const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
+ if(!GL){gsStand();kh();return}
  document.getElementById('rvstand').textContent=n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':'');kh()}
+const TITEL=document.title,fb=document.getElementById('feedback'),sst=document.getElementById('starten');
+function gsStand(){const f=RV.kommentare,z=s=>f.filter(k=>k.status===s).length,neu=z('antwort'),w=z('wartet'),e=RV.ausstehend;
+ document.getElementById('rvstand').textContent=[f.length?f.length+' Gespräch(e)':null,e?e+(e>1?' Entwürfe':' Entwurf'):null,w?w+' wartet auf Claude':null,
+  neu?neu+' neue Antwort(en)':null,RV.horcht?'🎧 Claude hört zu':null].filter(Boolean).join(' · ');
+ fb.disabled=!e;fb.textContent=e?'Feedback senden ('+e+')':'Feedback senden';sst.hidden=!RV.todo||RV.horcht;
+ document.title=(neu?'('+neu+') ':'')+TITEL}
+if(!GL){
+ fb.addEventListener('click',()=>{fb.disabled=true;meld.textContent='sendet …';post('/api/gespraech',{aktion:'senden'}).then(d=>{meld.textContent=d.text||'';
+  if(d.review){Object.assign(RV,d.review);zeichnen()}else gsStand()})});
+ sst.addEventListener('click',()=>{sst.disabled=true;post('/api/gespraech',{aktion:'starten'}).then(d=>{sst.disabled=false;meld.textContent=d.text||''})})}
 function allgemein(allg){
  let s=document.getElementById('allgemein');if(!s){s=el('section',{id:'allgemein'});document.querySelector('main').prepend(s)}
  const verw=RV.hinweise.filter(h=>h.status==='verworfen').length;
- s.replaceChildren(el('div',{class:'kk'},el('b',{},'Review'),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
+ s.replaceChildren(el('div',{class:'kk'},el('b',{},GL?'Review':'Gespräch mit Claude'),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
   el('span',{class:'knoepfe'},verw?el('button',{onclick:()=>{RV.zeigVerworfen=!RV.zeigVerworfen;zeichnen()}},RV.zeigVerworfen?'verworfene ausblenden':verw+' verworfene Hinweise zeigen'):null,
-   LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'neu',text:t}),()=>b.remove())}},'＋ allgemeiner Kommentar'))),
-  RV.ausserhalb?el('div',{class:'sub'},RV.ausserhalb+' weitere(r) Kommentar(e)/Hinweis(e) in Dateien, die diese Ansicht nicht ändert – siehe ganzer MR'):null);
+   LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>speichernAls({aktion:'neu',text:t}),()=>b.remove())}},GL?'＋ allgemeiner Kommentar':'＋ allgemeine Frage'))),
+  RV.ausserhalb?el('div',{class:'sub'},RV.ausserhalb+' weitere(r) Kommentar(e)/Hinweis(e) in Dateien, die diese Ansicht nicht ändert – siehe ganzer MR'):'');
  RV.quellen.forEach(q=>{const d=el('details',{class:'quelle'},el('summary',{},'🤖 '+(q.key||q.datei)+(q.reviewed_commit?' · geprüft '+q.reviewed_commit:'')+(q.reviewed_at?' am '+q.reviewed_at:'')+' · '+q.anzahl+' Hinweis(e)'),
   q.fehler?el('div',{class:'warn'},q.fehler):null,q.alt?el('div',{class:'warn'},'geprüft auf Stand '+q.reviewed_commit+', der MR steht auf '+MR.sha.slice(0,8)+' – Hinweise evtl. veraltet'):null,el('div',{},q.datei),q.notes?el('div',{class:'kt'},q.notes):null,
   q.failing_tests?el('div',{},el('b',{},'failing_tests: '),JSON.stringify(q.failing_tests,null,1)):null);
@@ -86,7 +121,7 @@ document.addEventListener('click',e=>{const td=e.target.closest('main td.n,#popu
  if(SEIT&&b==null){meld.textContent='In dieser Ansicht nur rechts (MR-Stand) kommentierbar';return}
  const box=el('div',{class:'kbox km'}),zr=einfuegen(tr,box,tab);
  bearbeiten(box,'',t=>speichernAls({aktion:'neu',datei:n,a,b,text:t}),()=>zr.remove())});
-knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
+if(GL)knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
  post('/api/abschliessen',{}).then(d=>{knopf.disabled=false;
   meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
   if(d.review){Object.assign(RV,d.review);zeichnen()}

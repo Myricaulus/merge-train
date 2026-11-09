@@ -107,6 +107,11 @@ def projekt_seite(wurzel, von=None, bis=None, ansicht=None):
                                  lambda *a: projekt_html(projekt, von, bis, *a), ansicht)
     if not ansicht:
         ersetzen(projekt_zeiger(projekt), praefix_json(praefix))
+        with SPERRE:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
+            st = review_laden({"lokal": projekt})
+            if st.get("struktur") != praefix_json(praefix):
+                st["struktur"] = praefix_json(praefix)
+                review_speichern({"lokal": projekt}, st)
     return pfad, struktur
 
 def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
@@ -122,16 +127,20 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
         if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
     daten = seiten_daten("projekt:" + projekt, head, len(dateien), ans, projekt=projekt)
-    hilfe = ('<div class="hilfe"><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
+    klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
+    hilfe = (f'<div class="hilfe">{klick}<br><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
-<style>{CSS}{CSS_REVIEW}</style><script src="/zug.js"></script></head><body>
+<style>{CSS}{CSS_REVIEW}</style><script src="/zug.js"></script></head><body class="kom">
 <header id="kopf">{gleise_html(False)}<div class="zeile"><h1>{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}</h1>
 <span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
-<span id="meldung"></span><button id="fertig"{" hidden" if lesen else ""} title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
+<span id="rvstand" class="sub"></span><span id="meldung"></span>
+<button id="feedback" disabled title="Entwürfe (Fragen/Kommentare) an Claude schicken">Feedback senden</button>
+<button id="starten" hidden title="Konsole mit Claude im Projekt öffnen (todo los)">▶ Session starten</button>
+<button id="fertig"{" hidden" if lesen else ""} title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
 <details id="commits"><summary>Commits</summary><div class="liste">{cl}</div>{td}</details>{ah}</header>
-<div class="rahmen"><aside class="seite"><div class="box">{hilfe}</div><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
+<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
 <main>{leer}{dateien_html(dateien, texte)}</main></div>
-<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}</script></body></html>"""
+<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}</script></body></html>"""

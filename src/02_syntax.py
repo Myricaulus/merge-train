@@ -120,6 +120,21 @@ def intraline(a, b):
 
 
 _AUFTRAEGE, _LEX_SPERRE = [], threading.Lock()
+SERVER_SOCKET = None  # setzt server(): Lexer-Kinder schließen ihre geerbte Kopie
+
+def _kind_start():
+    """Im geforkten Lexer-Prozess: Port nicht festhalten und mit dem Elternprozess sterben (sonst bleibt der Port
+    nach einem Server-Ende mitten im Lexen belegt und der neue Server startet nicht)."""
+    if SERVER_SOCKET is not None:
+        try:
+            SERVER_SOCKET.close()
+        except OSError:
+            pass
+    try:
+        import ctypes, signal
+        ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass
 
 def _lexen(nummern):
     return [zeilen_tokens(*_AUFTRAEGE[i]) for i in nummern]  # Texte erbt das Kind beim fork, nur Nummern reisen
@@ -153,7 +168,8 @@ def _vorab_lexen(pakete, auftraege):
     kerne = min(os.cpu_count() or 1, 16)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)  # fork im Server mit Threads: Kinder lexen nur
-        with ProcessPoolExecutor(min(kerne, len(pakete)), mp_context=multiprocessing.get_context("fork")) as ex:
+        with ProcessPoolExecutor(min(kerne, len(pakete)), mp_context=multiprocessing.get_context("fork"),
+                                 initializer=_kind_start) as ex:
             for paket, erg in zip(pakete, ex.map(_lexen, pakete)):
                 for n, tok in zip(paket, erg):
                     _VORAB[(auftraege[n][1], auftraege[n][0])] = tok

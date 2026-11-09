@@ -21,7 +21,8 @@ def mr_fuer_hinweise(pfad, daten, ref=None):
 
 def agent_main(argv):
     ap = argparse.ArgumentParser(prog="merge-train agent",
-                                 description="Agent-Hinweise (tasks/<KEY>-review-markers.json) einem GitLab-MR zuordnen und anzeigen")
+                                 description="Agent-Hinweise (tasks/<KEY>-review-markers.json) einem GitLab-MR zuordnen und anzeigen; "
+                                             "im lokalen Modus: Gespräch mit dem Nutzer (feedback, antworten, horchen)")
     sub = ap.add_subparsers(dest="befehl")
     for name, hilfe in (("zeigen", "Datei beim MR anmelden, Zuordnung ausgeben und den MR im Browser öffnen"),
                         ("pruefen", "nur prüfen: auf welche Zeilen des MR-Stands die Hinweise fallen (Exit 1 bei Problemen)")):
@@ -32,9 +33,43 @@ def agent_main(argv):
                        help="Review-Update: Stand der Einträge seit COMMIT (ohne Wert: reviewed_commit der JSON)")
         if name == "zeigen":
             p.add_argument("--nicht-oeffnen", action="store_true", help="Browser nicht öffnen, nur URL ausgeben")
+    gs = "Gespräch im lokalen Modus (Fragen/Feedback des Nutzers aus merge-train): "
+    p = sub.add_parser("feedback", help="Gespräch: Fragen/Feedback des Nutzers abholen",
+                       description=gs + "Fäden ausgeben, die auf eine Antwort warten (markiert sie als abgeholt)")
+    p.add_argument("projekt", nargs="?", help="Projektordner oder Name unter ~/Projects (Standard: aktuelles Repo)")
+    p.add_argument("--alle", action="store_true", help="auch beantwortete Fäden zeigen")
+    p = sub.add_parser("antworten", help="Gespräch: auf einen Faden antworten",
+                       description=gs + "auf einen Faden antworten; der Nutzer sieht die Antwort sofort in merge-train")
+    p.add_argument("id", help="id des Fadens (aus „agent feedback“, Anfang genügt)")
+    p.add_argument("text", nargs="?", default="", help="Antwort (Markdown-artig, mehrzeilig erlaubt); - = von stdin")
+    p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
+    p.add_argument("-p", "--projekt", help="Projekt (Standard: aktuelles Repo)")
+    p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
+                       description=gs + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
+                                        "und beenden (im Hintergrund laufen lassen, danach neu starten)")
+    p.add_argument("projekt", nargs="?", help="Projektordner oder Name (Standard: aktuelles Repo)")
+    p.add_argument("--timeout", type=int, default=0, metavar="S", help="nach S Sekunden aufgeben (Exit 1)")
     o = ap.parse_args(argv)
     if not o.befehl:
         ap.print_help(); return 2
+    if o.befehl in ("feedback", "antworten", "horchen"):
+        try:
+            projekt, wurzel = g_projekt(o.projekt)
+            if o.befehl == "feedback":
+                text, _ = g_abholen(projekt, wurzel, alle=o.alle)
+                print(text); return 0
+            if o.befehl == "horchen":
+                text, n = g_horchen(projekt, wurzel, o.timeout)
+                print(text); return 0 if n else 1
+            text = sys.stdin.read().strip() if o.text == "-" else o.text.strip()
+            if not text and not o.erledigt:
+                print("merge-train: Antworttext fehlt", file=sys.stderr); return 2
+            fid, rest = g_antworten(projekt, o.id, text, o.erledigt)
+            print(f"[{fid}] beantwortet" + (" und erledigt" if o.erledigt else "")
+                  + (f" · {rest} weitere(r) wartet/warten noch" if rest else " · nichts mehr offen"))
+            return 0
+        except GitLabFehler as e:
+            print(f"merge-train: {e}", file=sys.stderr); return 2
     pfad = os.path.abspath(o.datei)
     try:
         daten = hinweise_lesen(pfad)

@@ -15,7 +15,8 @@ tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
 .kbox details,.quelle{margin-top:4px;color:var(--muted);font-size:12px} .kbox details div,.quelle div{white-space:pre-wrap;margin:2px 0}
 .kbox summary,.quelle summary{cursor:pointer}
 .warn{color:var(--m)}
-body.gl td.n:not(:empty){cursor:pointer} body.gl td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
+body.gl td.n:not(:empty),body.kom td.n:not(:empty){cursor:pointer}
+body.gl td.n:not(:empty):hover,body.kom td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
 #allgemein{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;padding:8px 12px}
 #allgemein>.kk{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #liste .kz{color:var(--tf);margin-right:6px}
@@ -48,3 +49,20 @@ body.gl #zug{min-height:92px}
 #bahnhof{flex:none;display:flex;flex-direction:column;gap:3px;padding:4px 8px;margin-bottom:6px;border:1px dashed var(--rand);border-radius:6px;font-size:12px;background:var(--bg)}
 #bahnhof b{font-size:11px;color:var(--muted);font-weight:600} #bahnhof button{font-size:12px;padding:1px 6px} #bahnhof .sub{margin:0;font-size:11px}
 #popup .datei{margin:0;border:0;content-visibility:visible} #popup .datei>summary{position:static} /* ausgeliehene Datei */ #popup tr.ziel td.n{background:var(--tn);color:var(--bg)}
+/* Gespräch (lokaler Modus): Verlauf wie in einem Messenger, eigene Nachrichten rechts */
+.gs .verlauf{display:flex;flex-direction:column;gap:6px;margin:4px 0}
+.gs .msg{max-width:min(720px,88%);padding:5px 9px 4px;border-radius:10px;border:1px solid var(--rand);background:var(--bg)}
+.gs .msg.ich{align-self:flex-end;border-bottom-right-radius:3px;background:var(--akt)}
+.gs .msg.claude{align-self:flex-start;border-bottom-left-radius:3px;border-left:3px solid var(--tf)}
+.gs .msg.entwurf{border-style:dashed;opacity:.85}
+.gs .mk{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin-bottom:1px}
+.gs .mk button{font-size:11px;padding:0 5px}
+.gs .mt{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg)}
+.gs .haken{color:var(--tn)} .gs .haken.abgeholt{color:var(--p)}
+.gs .alt{font:12px ui-monospace,monospace;color:var(--muted);white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.kbox.gs.erledigt{opacity:.6} .kbox.gs.st-antwort{border-left-color:var(--tf)}
+.b-wartet{color:var(--tn)} .b-antwort{color:var(--tf);font-weight:600} .b-erledigt{color:var(--p)} .b-entwurf{color:var(--tb)}
+#feedback,#starten{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
+#feedback:not(:disabled){background:var(--tn);color:var(--bg)} #feedback:disabled{opacity:.45;cursor:default;border-color:var(--rand);color:var(--muted)}
+.gs .msg:has(textarea){width:100%;max-width:none}
+body.kom #feedback{margin-left:auto} body.kom #fertig{margin-left:0}

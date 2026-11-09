@@ -33,7 +33,7 @@ function zug(){const box=document.getElementById('zug');if(!box)return;box.inner
  let s=`<line x1="0" y1="${yr}" x2="${breite}" y2="${yr}" class="schiene"/>`;
  ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
   const nm=w.name||w.p,name=esc(nm.length>23?nm.slice(0,22)+'…':nm),ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
-  const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':(todos.length?'● todo '+todos.length:'● offen')));
+  const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':w.gs_neu?'💬 '+w.gs_neu+' neu':w.gs?'💬 '+w.gs:(todos.length?'● todo '+todos.length:'● offen')));
   const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\ntodos: '+todos.join(', '):''}`);
   const zmax=Math.max(6,24-marke.length);
   const z2=w.zeile2!=null?`<tspan class="klein">${esc(w.zeile2.length>zmax?w.zeile2.slice(0,zmax-1)+'…':w.zeile2)}</tspan>`:`<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
@@ -81,6 +81,8 @@ if(knopf&&!GL){
  if(ich&&ich.status==='fertig'){knopf.textContent='✓ fertig';knopf.classList.add('erledigt');knopf.disabled=true;weiter()}
  else if(!MR.dateien){knopf.style.display='none'}
  knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
+  if(typeof RV!=='undefined'){const o=RV.kommentare.filter(k=>k.status==='wartet'||k.status==='antwort').length,e=RV.ausstehend;
+   if((o||e)&&!confirm((o?o+' Gespräch(e) noch offen':'')+(o&&e?', ':'')+(e?e+(e>1?' Entwürfe':' Entwurf')+' nicht gesendet':'')+' – trotzdem fertig?')){knopf.disabled=false;meld.textContent='';return}}
   if(location.protocol.startsWith('http')){
    fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projekt:MR.projekt,sha:MR.sha,k:MR.k})})
     .then(r=>r.json()).then(d=>{if(!d.ok){knopf.disabled=false;meld.textContent=d.text;return}

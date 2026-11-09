@@ -70,6 +70,15 @@ def drafts():
     except FileNotFoundError:
         return []
 
+FAKE_TODO = """#!/bin/sh
+# Ersatz für todo: protokolliert, legt bei „neu“ den Eintrag t1 an, „erledigt“ nimmt ihn weg
+echo "$*" >> "$TODO_LOG"
+case "$1" in
+  neu) touch "$TODO_DIR/offen/t1.md"; echo t1;;
+  erledigt) rm -f "$TODO_DIR/offen/$2.md";;
+esac
+"""
+
 def lokal_test():
     """Lokaler Projekt-Diff (claude gegen reviewed): gleiche Seite wie im GitLab-Modus, ohne glab."""
     proj = f"{T}/Projects/proj"
@@ -85,7 +94,11 @@ def lokal_test():
     c1 = g("rev-parse", "HEAD")
     open(f"{proj}/a.py", "a").write("y = 1\n")
     g("commit", "-qam", "Zweiter Schritt")
-    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal")
+    os.makedirs(f"{T}/bin"); os.makedirs(f"{T}/todo/offen")
+    open(f"{T}/bin/todo", "w").write(FAKE_TODO); os.chmod(f"{T}/bin/todo", 0o755)
+    open(f"{T}/bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/bin/notify-send", 0o755)  # keine Desktop-Meldungen
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal",
+               PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
     open(env["MERGE_TRAIN_CONFIG"], "w").write(f'lokal = true\ngitlab = false\nprojekte = "{T}/Projects"\nport = 8798\nbrowser = "true"\n')
     srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
     try:
@@ -110,8 +123,76 @@ def lokal_test():
         s2 = hol(f"/proj.html?seit={c1}")
         pruefe('id="ansicht"' in s2 and 'id="d1"' not in s2 and 'data-b="41"' in s2 and 'data-b="20"' not in s2,
                "lokal: Seit-Ansicht zeigt nur den zweiten Schritt")
+        gespraech_test(proj, env, k, hol, g)
     finally:
         srv.terminate(); srv.wait()
+
+def gespraech_test(proj, env, k, hol, g):
+    """Gespräch im lokalen Modus: Frage an einer Zeile → Feedback senden → Agent holt ab und antwortet."""
+    port = 8798
+    def post_l(pfad, d):
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{pfad}", json.dumps(d).encode(),
+                                     {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+    agent = lambda *a, **kw: subprocess.run([sys.executable, SKRIPT, "agent", *a], cwd=proj, env=env, capture_output=True,
+                                            text=True, **kw)
+    head = g("rev-parse", "claude")
+    seite = hol("/proj.html")
+    pruefe('id="feedback"' in seite and 'id="kliste"' in seite and 'class="kom"' in seite, "Gespräch: Knöpfe und Kommentarliste auf der Seite")
+    basis = {"mr": "projekt:proj", "k": k, "sha": head}
+    r = post_l("/api/kommentar", dict(basis, aktion="neu", datei=0, a=None, b=20, text="Warum mal zwei?"))
+    pruefe(r["ok"] and r["review"]["kommentare"][0]["status"] == "entwurf" and r["review"]["ausstehend"] == 1, "Gespräch: Frage an Zeile 20 als Entwurf")
+    fid = r["review"]["kommentare"][0]["id"]
+    pruefe(not post_l("/api/kommentar", dict(basis, aktion="neu", datei=0, a=5, b=6, text="x"))["ok"], "Gespräch: unstimmige Zeile abgelehnt")
+    post_l("/api/kommentar", dict(basis, aktion="neu", text="Allgemein: sieht gut aus?"))
+    r = agent("feedback")
+    pruefe("(nichts offen)" in r.stdout, "Gespräch: Entwürfe sieht der Agent noch nicht")
+    r = post_l("/api/gespraech", dict(basis, aktion="senden"))
+    log = open(env["TODO_LOG"]).read()
+    pruefe(r["ok"] and "2 Nachricht(en) gesendet" in r["text"] and "als todo eingetragen" in r["text"] and r["todo"] == "t1",
+           "Gespräch: Feedback senden → todo-Eintrag, weil niemand zuhört")
+    pruefe("neu merge-train: Fragen/Feedback zu proj" in log and "heute t1" in log and "--prompt" in log, "Gespräch: todo neu + heute mit Prompt")
+    r = agent("feedback")
+    pruefe(f"[{fid}] a.py:20" in r.stdout and "x20 = 40" in r.stdout and "Nutzer (" in r.stdout and "Warum mal zwei?" in r.stdout
+           and "allgemein" in r.stdout and "2 Gespräch(e) warten" in r.stdout, "Gespräch: agent feedback zeigt Ort, Code und Verlauf")
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    pruefe(f1["status"] == "wartet" and f1["nachrichten"][0]["abgeholt"], "Gespräch: abgeholt (✓✓) auf der Seite")
+    r = agent("antworten", fid[:6], "Weil der Test das so will.")
+    pruefe(r.returncode == 0 and "1 weitere(r) wartet" in r.stdout, "Gespräch: agent antworten (Anfang der id genügt)")
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    pruefe(f1["status"] == "antwort" and f1["nachrichten"][-1]["von"] == "claude", "Gespräch: Antwort auf der Seite")
+    zug = hol("/zug.js")
+    pruefe('"gs_neu": 1' in zug, "Gespräch: Zug zeigt neue Antwort")
+    # Rückfrage des Nutzers, Agent hört zu
+    post_l("/api/kommentar", dict(basis, aktion="antworten", id=fid, text="Und warum nicht drei?"))
+    lauscher = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", "--timeout", "30"], cwd=proj, env=env,
+                                stdout=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("horcht"):
+            break
+        time.sleep(0.1)
+    r = post_l("/api/gespraech", dict(basis, aktion="senden"))
+    pruefe(r["ok"] and "zuhört" in r["text"] and r["todo"] is None, "Gespräch: Session hört zu → kein neuer todo-Eintrag")
+    aus, _ = lauscher.communicate(timeout=30)
+    pruefe(lauscher.returncode == 0 and "Und warum nicht drei?" in aus and "Weil der Test" in aus, "Gespräch: horchen gibt neue Nachricht samt Verlauf aus")
+    allg = next(x for x in rv["kommentare"] if x["id"] != fid)["id"]
+    agent("antworten", allg, "Ja.", "--erledigt")
+    r = agent("antworten", fid, "Drei wäre zu viel.", "--erledigt")
+    pruefe("nichts mehr offen" in r.stdout and "erledigt t1" in open(env["TODO_LOG"]).read(), "Gespräch: alles beantwortet → todo abgehakt")
+    # neuer Commit: Zeile wandert mit
+    alt = open(f"{proj}/a.py").read()
+    open(f"{proj}/a.py", "w").write("# Kopf\n# noch einer\n" + alt)
+    g("commit", "-qam", "Kopfzeilen")
+    hol("/proj.html")  # Seite zum neuen Stand; die Fäden werden auf den Stand der Seite umgerechnet
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    pruefe(f1["b"] == 22 and f1["im_diff"], "Gespräch: nach neuem Commit steht der Faden an Zeile 22")
+    r = post_l("/fertig", {"projekt": "proj", "sha": g("rev-parse", "claude"), "k": k})
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    pruefe(r["ok"] and not rv["kommentare"], "Gespräch: fertig räumt erledigte Fäden weg")
 
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)

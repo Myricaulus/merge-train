@@ -87,9 +87,17 @@ def mr_vollstaendig(mr):
     return mr_normalisieren(glab("", mr_pfad(mr)), mr)
 
 def mr_id(mr):
+    if mr.get("lokal"):
+        return "projekt:" + mr["lokal"]
     return f'{mr["host"]}/{mr["projekt"]}/{mr["iid"]}'
 
 def mr_aus_id(s):
+    """Seiten-Kennung → Ref. „projekt:name“ = lokales Projekt ({"lokal": name}), sonst GitLab-MR."""
+    if str(s).startswith("projekt:"):
+        name = str(s)[8:]
+        if not name or any(t in ("", ".", "..") for t in name.split("/")):
+            raise GitLabFehler(f"ungültige Projekt-Kennung: {s}")
+        return {"lokal": name}
     teile = str(s).split("/")
     if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
        or any(t in ("", ".", "..") for t in teile[1:-1]):

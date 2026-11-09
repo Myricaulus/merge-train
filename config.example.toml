@@ -23,6 +23,10 @@
 
 # port = 8771
 
+# Lokaler Modus, „Feedback senden“, wenn keine Claude-Session zuhört: leer = todo-Eintrag (falls „todo“ da ist).
+# Sonst ein Befehl mit {ordner}, {projekt}, {prompt}, z. B. "konsole --workdir {ordner} -e claude {prompt}"
+# feedback_befehl = ""
+
 # Lokale Klone der GitLab-Projekte: Diff, Dateien und Commits kommen nur von dort.
 # Muss am Ende stehen: alles nach [repos] gehört zu dieser Tabelle. Schlüssel = Projektpfad in GitLab.
 # [repos]

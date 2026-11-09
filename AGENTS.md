@@ -20,3 +20,9 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 
 `python3 tests/test_gitlab.py` (GitLab-Modus mit `tests/fake-glab`, Port 8799). Nicht `pkill -f "merge-train --server"`:
 das trifft auch den Server des Nutzers auf Port 8771.
+
+## Gespräch im lokalen Modus
+
+Der Nutzer stellt Fragen und Wünsche zum Code direkt in merge-train (siehe README, „Gespräch mit Claude“).
+Abholen mit `merge-train agent feedback`, antworten mit `merge-train agent antworten <id> "…"` (`--erledigt`, wenn
+umgesetzt). Soll die Session zuhören: `merge-train agent horchen` im Hintergrund starten und nach jeder Ausgabe neu starten.

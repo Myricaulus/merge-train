@@ -3,7 +3,8 @@
 Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nur schneller. Zwei Modi:
 
 - **Lokaler Projekt-Diff**: Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen. Jedes Projekt ist ein Waggon im Zug.
-  „fertig“ setzt `reviewed` auf den gesehenen Stand.
+  „fertig“ setzt `reviewed` auf den gesehenen Stand. Fragen und Wünsche zum Code gehen per Klick auf die Zeilennummer
+  an Claude, Antworten erscheinen als Gespräch an der Zeile (siehe [Gespräch mit Claude](#gespräch-mit-claude-lokaler-modus)).
 - **GitLab-MR-Review**: Diff eines MR mit eigenen Kommentaren und Agent-Hinweisen.
   „Review abschließen“ legt die Kommentare als **Entwürfe** im MR an. Veröffentlicht wird danach in GitLab.
 
@@ -27,9 +28,41 @@ merge-train --mrs               # MRs, bei denen ich Reviewer bin
 merge-train agent pruefen tasks/PROJ-824-review-markers.json   # siehe docs/agent-hinweise.md
 merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-Update seit reviewed_commit
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
+merge-train agent feedback [projekt]        # Agent: Fragen/Feedback aus dem lokalen Modus abholen
+merge-train agent antworten <id> "…" [--erledigt]
+merge-train agent horchen [projekt]         # Agent: warten, bis „Feedback senden“ gedrückt wird
 ```
 
 In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion.
+
+## Gespräch mit Claude (lokaler Modus)
+
+Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ein Review-Kommentar:
+
+1. **Klick auf eine Zeilennummer** (oder „＋ allgemeine Frage“): Die Nachricht ist zunächst ein **Entwurf**.
+   Man kann mehrere sammeln, bearbeiten oder löschen.
+2. **„Feedback senden“** schickt alle Entwürfe ab. ✓ heißt gesendet, ✓✓ heißt von Claude abgeholt.
+3. Claude holt sie mit `merge-train agent feedback` ab (Ort im aktuellen Stand, Code drumherum, Verlauf), beantwortet
+   Fragen bzw. setzt Wünsche auf `claude` um und antwortet je Faden mit `merge-train agent antworten <id> "…"`
+   (`--erledigt`, wenn umgesetzt). Die Antwort erscheint sofort an der Zeile (die Seite fragt alle 4 s nach),
+   dazu eine Desktop-Meldung. Im Zug zeigt der Waggon „💬 n neu“, der Tab-Titel „(n)“.
+4. Mit **„↩ antworten“** geht das Gespräch weiter, „✓ erledigt“ schließt einen Faden.
+
+Nach neuen Commits wandern die Fäden mit ihrer Zeile mit. Wurde die Zeile selbst geändert, steht der Faden unter dem
+Dateinamen, mit dem damaligen Zeilentext. „fertig“ warnt bei offenen Fäden oder ungesendeten Entwürfen und räumt
+erledigte Fäden weg. Offene bleiben für den nächsten Stand.
+
+**Wer bekommt das Feedback?**
+
+- **Eine Claude-Session hört zu**: Läuft in einer Session `merge-train agent horchen` (im Hintergrund), geht das
+  Feedback direkt dorthin. Oben steht dann „🎧 Claude hört zu“. Dazu genügt es, der Session zu sagen: „hör auf merge-train“.
+- **Keine hört zu**: „Feedback senden“ legt einen `todo`-Eintrag im Projekt an (mit Startprompt), und das Panel pulsiert.
+  „▶ Session starten“ auf der Seite öffnet ihn mit `todo los` (Konsole im Projekt, Enter startet Claude).
+  Weitere Nachrichten hängen sich als Notiz an denselben Eintrag. Sind alle Fäden beantwortet, hakt merge-train ihn ab.
+- **Eigener Befehl**: `feedback_befehl` in der Einstellung startet stattdessen etwas Eigenes, z. B.
+  `feedback_befehl = "konsole --workdir {ordner} -e claude {prompt}"` (Platzhalter `{ordner}`, `{projekt}`, `{prompt}`).
+
+Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
 
 ## GitLab-Review
 

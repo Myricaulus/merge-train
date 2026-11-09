@@ -97,6 +97,16 @@ def server():
                     except ValueError:
                         return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
                     return self.json_senden(200, zeilen_daten(struktur, q.get("pfad", ""), von, bis))
+                if pfad in ("api/review", "api/stand"):  # Review (GitLab-MR) bzw. Gespräch (lokales Projekt)
+                    if q.get("k") != schluessel():
+                        return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
+                    mr = mr_aus_id(q.get("mr", ""))
+                    if not KONF["lokal" if mr.get("lokal") else "gitlab"]:
+                        return self.senden(404, "nicht gefunden", "text/plain")
+                    if pfad == "api/stand":
+                        return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
+                    ansicht = ansicht_lesen(q.get("ansicht"))
+                    return self.json_senden(200, g_daten(mr, ansicht) if mr.get("lokal") else review_daten(mr, ansicht))
                 if KONF["gitlab"]:
                     if pfad in ("mrs", "") and not KONF["lokal"] or pfad == "mrs":
                         return self.senden(200, startseite())
@@ -112,14 +122,6 @@ def server():
                         return self.senden(200, open(datei, "rb").read())
                     if pfad == "api/mrzug":  # aus dem Cache, keine GitLab-Anfrage
                         return self.json_senden(200, {"wagen": mr_wagen(q.get("akt")), "zeit": mr_liste()[1]})
-                    if pfad in ("api/review", "api/stand"):
-                        if q.get("k") != schluessel():
-                            return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
-                        mr = mr_aus_id(q.get("mr", ""))
-                        ansicht = ansicht_lesen(q.get("ansicht"))
-                        if pfad == "api/stand":
-                            return self.json_senden(200, {"stand": stand(mr, review_laden(mr))})
-                        return self.json_senden(200, review_daten(mr, ansicht))
                 if KONF["lokal"]:
                     repos = {dateiname(projektname(r)): r for r in finde_repos()}
                     if pfad == "zug.js":
@@ -153,10 +155,26 @@ def server():
                     ok, text = fertig(str(d.get("projekt", "")), str(d.get("sha", "")), str(d.get("k", "")))
                     wagen = json.loads(open(os.path.join(ORDNER, "zug.js")).read()[len("window.MR_ZUG="):-1])["wagen"]
                     return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": wagen})
-                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gitlab") or not KONF["gitlab"]:
+                lokal = str(d.get("mr", "")).startswith("projekt:")
+                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gitlab", "/api/gespraech") \
+                        or not KONF["lokal" if lokal else "gitlab"]:
                     return self.senden(404, "nicht gefunden", "text/plain")
                 if str(d.get("k", "")) != schluessel():
                     return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
+                if lokal:  # Gespräch mit dem Agenten
+                    mr = mr_aus_id(d.get("mr", ""))
+                    ansicht = ansicht_lesen(d.get("ansicht"))
+                    tid = None
+                    if self.path == "/api/kommentar":
+                        ok, text = g_aktion(mr, d)
+                    elif self.path == "/api/gespraech" and d.get("aktion") == "senden":
+                        ok, text, tid = feedback_senden(mr)
+                    elif self.path == "/api/gespraech" and d.get("aktion") == "starten":
+                        ok, text = session_starten(mr)
+                    else:
+                        return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
+                    return self.json_senden(200, {"ok": ok, "text": text, "todo": tid,
+                                                  "review": g_daten(mr, ansicht) if ok else None})
                 if self.path == "/api/gitlab":  # Güterbahnhof: GitLab nur auf Knopfdruck
                     if d.get("aktion") == "mrliste":
                         items, _ = mr_liste_holen()
@@ -180,6 +198,8 @@ def server():
                 self.json_senden(500, {"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"})
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    global SERVER_SOCKET
+    SERVER_SOCKET = srv.socket
     beobachtet = [os.path.realpath(__file__), KONFIG_DATEI]
     def mtimes():
         out = []

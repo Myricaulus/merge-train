@@ -17,6 +17,7 @@ STANDARD = {
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
     "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"
     "port": 8771,
+    "feedback_befehl": "",    # lokaler Modus: Befehl, wenn keine Session zuhört (sonst todo-Eintrag)
 }
 
 def _toml_einfach(text):
@@ -135,6 +136,8 @@ def zug_schreiben(stats):
     offen = {w["p"] for w in wagen}
     wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
+    for w in wagen:  # Gespräch: offene Fäden / neue Antworten des Agenten
+        w["gs"], w["gs_neu"] = g_zahlen(w["p"])
     ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
     return wagen
 
@@ -204,6 +207,7 @@ def fertig(projekt, sha, k):
     log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", VON, sha)
+    g_archivieren(projekt)
     with SPERRE:
         r = runde_laden()
         r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
