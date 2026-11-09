@@ -1,7 +1,8 @@
 const ds=[...document.querySelectorAll('.datei')],ls=[...document.querySelectorAll('#liste a')],kopf=document.getElementById('kopf');
-function kh(){document.documentElement.style.setProperty('--kopfh',kopf.offsetHeight+'px')}
+function kopfH(){return kopf.offsetHeight-(parseFloat(getComputedStyle(kopf).getPropertyValue('--himmel'))||0)} // ohne den weggerutschten Himmel
+function kh(){document.documentElement.style.setProperty('--kopfh',kopfH()+'px')}
 kh();addEventListener('resize',kh);document.getElementById('commits').addEventListener('toggle',kh);
-function aktuell(){const g=kopf.offsetHeight+20;let k=0;ds.forEach((d,j)=>{if(!d.closest('#popup')&&d.getBoundingClientRect().top<=g)k=j});return k}
+function aktuell(){const g=kopf.getBoundingClientRect().bottom+20;let k=0;ds.forEach((d,j)=>{if(!d.closest('#popup')&&d.getBoundingClientRect().top<=g)k=j});return k}
 let FEST=null;['wheel','touchmove','keydown','mousedown'].forEach(t=>addEventListener(t,()=>{FEST=null},{passive:true,capture:true}));
 function markiere(){const k=FEST!=null&&ds[FEST]?FEST:aktuell();ls.forEach((a,j)=>a.classList.toggle('akt',j===k));const a=ls[k],nav=a&&a.closest('nav');
  if(nav){const r=a.getBoundingClientRect(),p=nav.getBoundingClientRect(),h=nav.querySelector('h2'),oben=p.top+(h?h.offsetHeight:0);
@@ -10,8 +11,8 @@ addEventListener('scroll',markiere,{passive:true});markiere();
 function geh(k){if(!ds.length)return;k=Math.max(0,Math.min(ds.length-1,k));ds[k].open=true;ds[k].scrollIntoView({block:'start'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||/INPUT|TEXTAREA/.test(e.target.tagName))return;
  const k=aktuell();
- if(e.key==='j'||e.key==='ArrowRight'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top>kopf.offsetHeight+30?k:k+1)}
- else if(e.key==='k'||e.key==='ArrowLeft'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top<kopf.offsetHeight-5?k:k-1)}
+ if(e.key==='j'||e.key==='ArrowRight'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top>kopfH()+30?k:k+1)}
+ else if(e.key==='k'||e.key==='ArrowLeft'){e.preventDefault();geh(ds[k]&&ds[k].getBoundingClientRect().top<kopfH()-5?k:k-1)}
  else if(e.key==='i'){if(!document.body.classList.contains('inline'))inlBauen();document.body.classList.toggle('inline');try{localStorage.inline=document.body.classList.contains('inline')?1:''}catch(_){}}
  else if(e.key==='z'){const zu=ds.some(d=>d.open);ds.forEach(d=>d.open=!zu)}
  else if(e.key==='c'){const c=document.getElementById('commits');c.open=!c.open}});

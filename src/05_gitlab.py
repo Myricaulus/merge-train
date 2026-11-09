@@ -294,44 +294,24 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
 <script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""
 
 def gleise_html(gitlab):
-    """Kopf: links der Güterbahnhof (GitLab nur auf Knopfdruck), rechts der Zug."""
-    if not gitlab:  # Güterbahnhof nur als Vorschau (#laden), z. B. für einen Screenshot
-        return f'<template id="bahnhof-vorschau"><div id="bahnhof" title="Güterbahnhof (Vorschau)">{BAHNHOF_SVG}</div></template><div id="zug"></div>'
-    fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
-    def knopf(g, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
-        if fehlt:
-            return f'<button data-g="{g}" disabled title="glab fehlt ({html.escape(KONF["glab"])}) – siehe README">{text}</button>'
-        return f'<button data-g="{g}" title="{titel}">{text}</button>'
-    return ('<div class="gleise"><div id="bahnhof" title="Güterbahnhof: GitLab wird nur hier (und beim Abschließen) gefragt">'
-            + BAHNHOF_SVG + '<div class="bh-knoepfe"><b>Güterbahnhof</b>' + knopf("mrliste", "↻ MRs",
-            "MRs, bei denen ich Reviewer bin, aus GitLab holen") + knopf("mrdaten", "↻ MR-Daten",
-            "Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen") +
-            '<span class="sub" id="bhzeit"></span></div></div><div id="zug"></div></div>')
+    """Kopf: der Güterbahnhof über die ganze Breite. Kulisse (bahnhof.webp), davor Verladegebäude und Förderband
+    (zeichnet zug.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Die Knöpfe sitzen im
+    Leitstand des Gebäudes: GitLab nur auf Knopfdruck, lokal schauen sie nach neuen Änderungen."""
+    if gitlab:
+        fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
+        def knopf(g, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
+            if fehlt:
+                return f'<button data-g="{g}" disabled title="glab fehlt ({html.escape(KONF["glab"])}) – siehe README">{text}</button>'
+            return f'<button data-g="{g}" title="{titel}">{text}</button>'
+        knoepfe = (knopf("mrliste", "↻ MRs", "MRs, bei denen ich Reviewer bin, aus GitLab holen")
+                   + knopf("mrdaten", "↻ MR-Daten", "Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen"))
+        titel = "Güterbahnhof: GitLab wird nur hier (und beim Abschließen) gefragt"
+    else:
+        knoepfe = '<button data-l="neu" title="Nach neuen lokalen Änderungen schauen">↻ Änderungen</button>'
+        titel = "Güterbahnhof"
+    return (f'<div class="gleise szene" style="--bild:url(data:image/webp;base64,{BAHNHOF_BILD})">'
+            '<svg id="anlage" aria-hidden="true"></svg>'
+            f'<div id="bahnhof" title="{titel}"><div class="bh-knoepfe">{knoepfe}</div><span id="bhzeit"></span></div>'
+            '<div id="zug"></div></div>')
 
-def _bahnhof_svg():
-    """Umschlagbahnhof für Schüttgut: Haufen, Förderband hinauf zum Verladesilo, darunter ein offener Schüttgutwagen.
-    Gleis bei y=88 wie im Zug, damit die Schiene durchläuft. Beim Holen aus GitLab rieselt Schüttgut (CSS .laedt)."""
-    rollen = "".join(f'<circle cx="{25 + i * 9.4:.1f}" cy="{71 - i * 8.2:.1f}" r="1.6" class="bh-rolle"/>' for i in range(8))
-    koerner = "".join(f'<circle cx="{x}" cy="{y}" r="1.1" class="bh-korn"/>' for x, y in
-                      ((10, 84), (16, 79), (22, 82), (28, 76), (19, 72), (25, 70), (31, 83), (36, 80), (14, 86), (27, 86),
-                       (92, 55), (100, 52), (108, 51), (116, 52), (124, 54), (104, 55), (120, 56)))
-    strom = "".join(f'<circle cx="{109 + (i % 2) * 2 - 1}" cy="{47}" r="1.3" class="bh-strom" style="animation-delay:{i * .12:.2f}s"/>'
-                    for i in range(5))
-    return f"""<svg class="bh-bild" width="156" height="92" viewBox="0 0 156 92" aria-hidden="true">
-<line x1="0" y1="88" x2="156" y2="88" class="bh-schiene"/>
-<path d="M0,88 Q20,58 44,88 Z" class="bh-haufen"/>
-<line x1="34" y1="88" x2="34" y2="64" class="bh-stuetze"/><line x1="62" y1="88" x2="62" y2="39" class="bh-stuetze"/>
-<line x1="22" y1="74" x2="92" y2="12" class="bh-band"/>{rollen}
-<line x1="93" y1="30" x2="93" y2="88" class="bh-bein"/><line x1="125" y1="30" x2="125" y2="88" class="bh-bein"/>
-<line x1="93" y1="60" x2="125" y2="40" class="bh-bein duenn"/><line x1="93" y1="40" x2="125" y2="60" class="bh-bein duenn"/>
-<rect x="89" y="4" width="40" height="26" rx="2" class="bh-silo"/><rect x="89" y="4" width="40" height="5" class="bh-dach"/>
-<polygon points="89,30 129,30 113,42 105,42" class="bh-silo"/><rect x="106" y="42" width="6" height="4" class="bh-dach"/>
-<text x="109" y="22" text-anchor="middle" class="bh-schrift">MR</text>
-{strom}
-<path d="M84,62 Q109,46 134,62 Z" class="bh-ladung"/>
-<polygon points="80,58 138,58 132,78 86,78" class="bh-wagen"/><rect x="78" y="56" width="62" height="3" class="bh-rand"/>
-<line x1="100" y1="60" x2="97" y2="76" class="bh-rippe"/><line x1="118" y1="60" x2="121" y2="76" class="bh-rippe"/>
-{koerner}
-<circle cx="94" cy="82" r="5" class="bh-rad"/><circle cx="124" cy="82" r="5" class="bh-rad"/></svg>"""
-
-BAHNHOF_SVG = _bahnhof_svg()
+BAHNHOF_BILD = r"""@einbetten web/bahnhof.webp@"""

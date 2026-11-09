@@ -4,11 +4,11 @@
   ./bauen            src/*.py der Reihe nach aneinanderhängen, web/*.css|js einbetten → ./merge-train
   ./bauen --pruefen  nur vergleichen: Exit 1, wenn ./merge-train nicht zum Stand in src/ passt
 
-In den Python-Teilen bettet `NAME = r\"\"\"@einbetten web/datei.js@\"\"\"` die Datei als String ein.
+In den Python-Teilen bettet `NAME = r\"\"\"@einbetten web/datei.js@\"\"\"` die Datei als String ein (Bilder .webp/.png als Base64).
 Die gebaute Datei ist nicht eingecheckt (.gitignore). ~/.local/bin/merge-train zeigt darauf; die Git-Hooks
 aus install.sh bauen nach pull/checkout/rebase neu. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
 """
-import os, re, sys
+import base64, os, re, sys
 
 HIER = os.path.dirname(os.path.realpath(__file__))
 SRC = os.path.join(HIER, "src")
@@ -17,6 +17,8 @@ ZIEL = os.path.join(HIER, "merge-train")
 
 def einbetten(m):
     pfad = m.group(1)
+    if pfad.endswith((".webp", ".png")):  # Bilder als Base64 (für data:-URLs)
+        return 'r"""' + base64.b64encode(open(os.path.join(SRC, pfad), "rb").read()).decode() + '"""'
     text = open(os.path.join(SRC, pfad), encoding="utf-8").read()
     if '"""' in text:
         sys.exit(f"{pfad}: enthält \"\"\" und lässt sich nicht einbetten")

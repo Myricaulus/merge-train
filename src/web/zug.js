@@ -26,7 +26,7 @@ function lok(){ // bayerische S 3/6 (Vorbild 3673), Fahrtrichtung rechts; lokale
  ${rad(12,64,6)}${rad(38,64,6)}${rad(88,63,7)}${rad(106,59,11)}${rad(130,59,11)}${rad(154,59,11)}${rad(174,64,6)}${rad(188,64,6)}
  <line x1="106" y1="62" x2="154" y2="62" stroke="#c9c9c9" stroke-width="2.2" stroke-linecap="round"/>
  <line x1="154" y1="62" x2="170" y2="52" stroke="#c9c9c9" stroke-width="1.8"/>`}
-function zug(){const box=document.getElementById('zug');if(!box)return;box.innerHTML='';if(!ZUG.length)return; // leer: altes Bild weg (sonst zeigen dessen Waggons ins Leere)
+function zug(){const box=document.getElementById('zug');if(!box)return;box.innerHTML='';if(!ZUG.length){anlage();return} // leer: altes Bild weg (sonst zeigen dessen Waggons ins Leere)
  const W=170,H=56,G=14,y=22,LW=200,yr=y+H+10,ns='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(ns,'svg'),breite=4+ZUG.length*(W+G)+LW+6;
  svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
@@ -49,11 +49,42 @@ function zug(){const box=document.getElementById('zug');if(!box)return;box.inner
  s+=`<g transform="translate(${4+ZUG.length*(W+G)},${yr-70})">${lok()}</g>`;
  svg.innerHTML=s;box.appendChild(svg);
  svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w&&w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
- const a=svg.querySelector('.akt');if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x-box.clientWidth/2+W/2)}}
-(()=>{const t=document.getElementById('bahnhof-vorschau'),z=document.getElementById('zug'); // lokale Seite: Güterbahnhof nur mit #laden
- if(!t||location.hash!=='#laden'||!z)return;const g=document.createElement('div');g.className='gleise';z.before(g);
- g.append(t.content.cloneNode(true),z);document.getElementById('bahnhof').classList.add('laedt')})();
-zug();kh();
+ const cx=anlage(),a=svg.querySelector('.akt')||[...svg.querySelectorAll('.wg')].pop();
+ if(cx!=null){svg.style.marginLeft=cx+'px';svg.style.marginRight=(box.clientWidth-cx)+'px'}
+ if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x+W/2-(cx!=null?0:box.clientWidth/2))}}
+function anlage(){ // Verladegebäude links, Förderband bis zur Mitte über dem vordersten Wagen, Gleis; liefert die Bandmitte
+ const sv=document.getElementById('anlage');if(!sv)return null;
+ const B=sv.clientWidth,H=sv.clientHeight,gl=H-4,cx=Math.round(Math.max(B/2,330)),r=n=>n.toFixed(1);
+ let s=`<rect x="0" y="${gl-4}" width="${B}" height="8" class="bh-schotter"/>`;
+ for(let x=3;x<B;x+=11)s+=`<rect x="${x}" y="${gl-1}" width="7" height="3" class="bh-schwelle"/>`;
+ // Gebäude: Bandturm, Halle mit Leitstand (Knöpfe als HTML darüber), Schild, Tor fürs Gleis
+ s+=`<rect x="112" y="30" width="66" height="50" class="bh-turm"/><rect x="108" y="25" width="74" height="6" class="bh-dach"/>
+  <rect x="120" y="38" width="12" height="13" class="bh-fenster"/><rect x="139" y="38" width="12" height="13" class="bh-fenster"/><rect x="158" y="38" width="12" height="13" class="bh-fenster"/>
+  <rect x="118" y="58" width="54" height="13" rx="1.5" class="bh-schild"/><text x="145" y="67.5" text-anchor="middle" class="bh-schrift">MERGE-TRAIN</text>
+  <rect x="6" y="84" width="172" height="${gl-84}" class="bh-wand"/>`;
+ for(let x=10;x<178;x+=5)s+=`<line x1="${x}" y1="144" x2="${x}" y2="${gl}" class="bh-welle"/>`;
+ s+=`<rect x="2" y="78" width="180" height="7" class="bh-dach"/><rect x="12" y="93" width="160" height="46" rx="2" class="bh-glas"/>`;
+ for(let x=52;x<172;x+=40)s+=`<line x1="${x}" y1="94" x2="${x}" y2="138" class="bh-sprosse"/>`;
+ s+=`<rect x="6" y="139" width="172" height="5" class="bh-dach"/>
+  <path d="M28,${gl} V166 Q92,154 156,166 V${gl} Z" class="bh-tor"/><path d="M28,166 Q92,154 156,166" class="bh-torrand"/>
+  <rect x="172" y="143" width="10" height="16" class="bh-tor"/>`;
+ // Band: aus der Halle schräg hinauf bis zur Mitte, Fachwerkbrücke, Stützen bis zum Boden, Bandkopf mit Schurre über dem Wagen
+ const x0=180,y0=150,x1=cx,y1=106,dy=(y1-y0)/(x1-x0),y=x=>y0+(x-x0)*dy,T=10;
+ let fw=`M${x0},${y0}`;for(let x=x0,k=0;x<x1;x+=16,k++){const xn=Math.min(x+16,x1);fw+=` L${r(xn)},${r(y(xn)+(k%2?0:T))}`}
+ for(let x=x0+110;x<x1-60;x+=160){const yb=y(x)+T;
+  s+=`<path d="M${r(x-12)},${gl-4} L${r(x-3)},${r(yb)} M${r(x+12)},${gl-4} L${r(x+3)},${r(yb)} M${r(x-9)},${r(gl-4-(gl-yb)*.3)} H${r(x+9)} M${r(x-6)},${r(gl-4-(gl-yb)*.65)} H${r(x+6)}" class="bh-stuetze"/>`}
+ s+=`<path d="M${x1-14},${gl-4} L${x1-8},${y1+T} M${x1+14},${gl-4} L${x1+8},${y1+T} M${x1-12},${gl-40} H${x1+12} M${x1-10},${gl-70} H${x1+10}" class="bh-stuetze"/>
+  <g class="bh-band"><line x1="${x0}" y1="${y0+T}" x2="${x1}" y2="${y1+T}" class="bh-fachwerk"/><path d="${fw}" class="bh-fachwerk"/>
+  <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" class="bh-gurt"/>
+  <line x1="${x0+3}" y1="${r(y(x0+3)-3.5)}" x2="${x1-5}" y2="${r(y(x1-5)-3.5)}" class="bh-gut"/>
+  <circle cx="${x1}" cy="${y1}" r="5" class="bh-trommel"/></g>
+  <polygon points="${x1-2},${y1+3} ${x1+12},${y1+3} ${x1+7},${y1+24} ${x1+1},${y1+24}" class="bh-schurre"/>
+  <line x1="${x1+4}" y1="${y1+24}" x2="${x1+4}" y2="${y1+38}" class="bh-strahl"/>`;
+ s+=`<line x1="0" y1="${gl}" x2="${B}" y2="${gl}" class="bh-schiene"/>`;
+ sv.innerHTML=s;return cx+4}
+zug();kh();addEventListener('resize',zug);
+if(location.hash==='#laden'){const z=document.querySelector('.szene');if(z)z.classList.add('laedt')} // Vorschau: Band läuft dauerhaft
+document.querySelectorAll('#bahnhof button[data-l]').forEach(b=>b.addEventListener('click',()=>location.reload())); // lokal: neue Änderungen
 const knopf=document.getElementById('fertig'),meld=document.getElementById('meldung');
 const ich=ZUG.find(w=>w.p===MR.projekt);
 function feier(){ // letzter Waggon fertig: Zug fährt ab, Daumen-Regen, großer Daumen
