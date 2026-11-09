@@ -178,6 +178,13 @@ def gespraech_test(proj, env, k, hol, g):
     pruefe(r["ok"] and "zuhört" in r["text"] and r["todo"] is None, "Gespräch: Session hört zu → kein neuer todo-Eintrag")
     aus, _ = lauscher.communicate(timeout=30)
     pruefe(lauscher.returncode == 0 and "Und warum nicht drei?" in aus and "Weil der Test" in aus, "Gespräch: horchen gibt neue Nachricht samt Verlauf aus")
+    # Nutzer schiebt etwas nach, während der Agent antwortet: antworten lehnt ab, feedback zeigt es
+    post_l("/api/kommentar", dict(basis, aktion="antworten", id=fid, text="Nachtrag"))
+    post_l("/api/gespraech", dict(basis, aktion="senden"))
+    r = agent("antworten", fid, "Blind")
+    pruefe(r.returncode == 2 and "Nachtrag" in r.stderr, "Gespräch: antworten lehnt ab, wenn Ungelesenes im Faden liegt")
+    r = agent("feedback")
+    pruefe("Nachtrag" in r.stdout and "Blind" not in r.stdout, "Gespräch: feedback zeigt den Nachtrag")
     allg = next(x for x in rv["kommentare"] if x["id"] != fid)["id"]
     agent("antworten", allg, "Ja.", "--erledigt")
     r = agent("antworten", fid, "Drei wäre zu viel.", "--erledigt")

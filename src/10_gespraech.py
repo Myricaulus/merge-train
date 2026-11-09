@@ -292,7 +292,7 @@ def g_abholen(projekt, wurzel, alle=False, markieren=True):
     with SPERRE:
         st = review_laden(mr)
         faeden = [k for k in g_faeden(st) if g_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
-        zeigen = [k for k in faeden if alle or g_status(k) == "wartet"]
+        zeigen = [k for k in faeden if alle or g_status(k) == "wartet" or g_ungelesen(k)]
         if markieren:
             for k in zeigen:
                 for m in k["nachrichten"]:
@@ -309,6 +309,10 @@ def g_abholen(projekt, wurzel, alle=False, markieren=True):
                  'Code-Zeilen beziehen sich auf den aktuellen Stand von ' + BIS + '.')
     return "\n".join(teile), len(zeigen)
 
+def g_ungelesen(k):
+    """Gesendete Nachrichten des Nutzers, die der Agent noch nicht abgeholt hat (auch nach einer Antwort nachgeschoben)."""
+    return [m for m in k["nachrichten"] if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt")]
+
 def g_antworten(projekt, fid, text, erledigt=False):
     mr = {"lokal": projekt}
     with SPERRE:
@@ -316,6 +320,11 @@ def g_antworten(projekt, fid, text, erledigt=False):
         k = next((k for k in g_faeden(st) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))), None)
         if not k:
             raise GitLabFehler(f"Gespräch {fid} gibt es in {projekt} nicht (merge-train agent feedback --alle)")
+        neu = g_ungelesen(k)
+        if neu:  # der Nutzer hat inzwischen nachgelegt: nicht blind abhaken
+            raise GitLabFehler(f'In [{k["id"]}] gibt es {len(neu)} neue Nachricht(en), die du noch nicht gelesen hast – '
+                               f'erst „merge-train agent feedback“, dann antworten:\n' +
+                               "\n".join(f'    Nutzer ({g_zeit(m["gesendet"])}): {m["text"]}' for m in neu))
         if text:
             k["nachrichten"].append(g_nachricht("claude", text, gesendet=True))
         if erledigt:
