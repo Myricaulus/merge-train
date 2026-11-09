@@ -4,6 +4,7 @@ function zugHolen(){return fetch('/api/mrzug?akt='+encodeURIComponent(MR.id)).th
  try{localStorage.mrzug=JSON.stringify(ZUG)}catch(_){}}).catch(()=>{})}
 try{if(!ZUG.length){ZUG=JSON.parse(localStorage.mrzug||'[]');zug();kh()}}catch(_){}
 zugHolen();
+if(location.hash==='#laden')document.getElementById('bahnhof').classList.add('laedt'); // Vorschau: Band läuft dauerhaft
 document.querySelectorAll('#bahnhof button').forEach(b=>{if(b.dataset.g==='mrdaten'&&!MR.id)b.hidden=true;
  const bh=document.getElementById('bahnhof');
  b.addEventListener('click',()=>{b.disabled=true;meld.textContent='frage GitLab …';bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet

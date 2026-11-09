@@ -297,10 +297,15 @@ def gleise_html(gitlab):
     """Kopf: links der Güterbahnhof (GitLab nur auf Knopfdruck), rechts der Zug."""
     if not gitlab:
         return '<div id="zug"></div>'
+    fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
+    def knopf(g, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
+        if fehlt:
+            return f'<button data-g="{g}" disabled title="glab fehlt ({html.escape(KONF["glab"])}) – siehe README">{text}</button>'
+        return f'<button data-g="{g}" title="{titel}">{text}</button>'
     return ('<div class="gleise"><div id="bahnhof" title="Güterbahnhof: GitLab wird nur hier (und beim Abschließen) gefragt">'
-            + BAHNHOF_SVG + '<div class="bh-knoepfe"><b>Güterbahnhof</b>'
-            '<button data-g="mrliste" title="MRs, bei denen ich Reviewer bin, aus GitLab holen">↻ MRs</button>'
-            '<button data-g="mrdaten" title="Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen">↻ MR-Daten</button>'
+            + BAHNHOF_SVG + '<div class="bh-knoepfe"><b>Güterbahnhof</b>' + knopf("mrliste", "↻ MRs",
+            "MRs, bei denen ich Reviewer bin, aus GitLab holen") + knopf("mrdaten", "↻ MR-Daten",
+            "Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen") +
             '<span class="sub" id="bhzeit"></span></div></div><div id="zug"></div></div>')
 
 def _bahnhof_svg():
