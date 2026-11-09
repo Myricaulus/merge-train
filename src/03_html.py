@@ -8,8 +8,8 @@ def hunk_zeilen(h, ta_tok, tb_tok):
     while i < len(z):
         if z[i][0] == " ":
             t = z[i][1]
-            rows.append(("ctx", a, darstellen(tok(ta_tok, a), t, [], ""),
-                         b, darstellen(tok(tb_tok, b), t, [], "")))
+            hb = darstellen(tok(tb_tok, b), t, [], "")  # Kontext: links derselbe Text wie rechts
+            rows.append(("ctx", a, hb, b, hb))
             a += 1; b += 1; i += 1
             continue
         weg, dazu = [], []
@@ -72,7 +72,7 @@ def datei_tabelle(d, alt_text, neu_text, luecken=False):
     if not d["hunks"]:
         return f'<div class="leer">{html.escape(d.get("leer") or "keine Inhaltsänderung")}</div>'
     lu = luecken_von(d, zeilenzahl(neu_text)) if luecken else {}
-    ta_tok = zeilen_tokens(alt_text, d["alt"])
+    ta_tok = zeilen_tokens(alt_text, d["alt"]) if d["minus"] else None  # alte Seite nur für gelöschte Zeilen
     tb_tok = zeilen_tokens(neu_text, d["neu"])
     sbs = []
     for hi, h in enumerate(d["hunks"]):

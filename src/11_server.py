@@ -30,6 +30,23 @@ def server_sicherstellen():
             return True
     return False
 
+_VORBAU = threading.Lock()
+
+def vorbauen(repos):
+    """Nach dem Abruf einer Projektseite die übrigen offenen im Hintergrund bauen (für „n“/Klick im Zug)."""
+    def los():
+        if not _VORBAU.acquire(blocking=False):
+            return
+        try:
+            for r in repos.values():
+                if statistik(r)["dateien"]:
+                    projekt_seite(r)
+        except Exception:
+            pass
+        finally:
+            _VORBAU.release()
+    threading.Thread(target=los, daemon=True).start()
+
 def server():
     """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
     und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage."""
@@ -117,7 +134,10 @@ def server():
                         return self.weiterleiten("/" + offen[0]["datei"])
                     if pfad in repos:
                         datei, _ = projekt_seite(repos[pfad], ansicht=ansicht)
-                        return self.senden(200, open(datei, "rb").read())
+                        self.senden(200, open(datei, "rb").read())
+                        if not ansicht:
+                            vorbauen(repos)
+                        return
                 self.senden(404, "nicht gefunden", "text/plain")
             except GitLabFehler as e:
                 self.senden(502, f"merge-train: {e}", "text/plain; charset=utf-8")

@@ -62,9 +62,13 @@ def _klasse(tt):
     if tt in T.Generic.Heading or tt in T.Generic.Subheading: return "tk"
     return ""
 
+_VORAB = {}
+
 def zeilen_tokens(text, pfad):
     """Ganze Datei lexen (damit mehrzeilige Kommentare/Strings stimmen),
     Ergebnis: Liste je Zeile von (klasse, text)."""
+    if text is not None and (pfad, text) in _VORAB:
+        return _VORAB.pop((pfad, text))
     lx = lexer_fuer(pfad, text)
     if lx is None or text is None or len(text) > 2_000_000:
         return None
@@ -114,3 +118,42 @@ def intraline(a, b):
             if j2 > j1: rb.append((j1, j2))
     return ra, rb
 
+
+_AUFTRAEGE, _LEX_SPERRE = [], threading.Lock()
+
+def _lexen(nummern):
+    return [zeilen_tokens(*_AUFTRAEGE[i]) for i in nummern]  # Texte erbt das Kind beim fork, nur Nummern reisen
+
+def vorab_lexen(auftraege):
+    """Viele Dateien parallel lexen (Pygments ist reines Python, ein Kern schafft ~1 MB/s). Danach liefert
+    zeilen_tokens das Ergebnis aus _VORAB. Nur bei viel Text: Prozesse anlegen kostet ~50 ms."""
+    auftraege = [(t, p) for t, p in dict.fromkeys(auftraege) if t and len(t) <= 2_000_000 and lexer_fuer(p, t)]
+    gesamt = sum(len(t) for t, _ in auftraege)
+    kerne = min(os.cpu_count() or 1, 16)
+    if gesamt < 300_000 or kerne < 2 or len(auftraege) < 2:
+        return
+    # gleich große Pakete (nach Textmenge), größte Dateien zuerst verteilen
+    pakete = [[] for _ in range(min(kerne * 2, len(auftraege)))]
+    groesse = [0] * len(pakete)
+    for n in sorted(range(len(auftraege)), key=lambda n: -len(auftraege[n][0])):
+        i = groesse.index(min(groesse)); pakete[i].append(n); groesse[i] += len(auftraege[n][0])
+    global _AUFTRAEGE
+    with _LEX_SPERRE:  # Seiten werden auch in Threads gebaut; _AUFTRAEGE gehört dem, der gerade forkt
+        _AUFTRAEGE = auftraege
+        try:
+            _vorab_lexen(pakete, auftraege)
+        except Exception:
+            _VORAB.clear()  # dann eben nacheinander
+        finally:
+            _AUFTRAEGE = []
+
+def _vorab_lexen(pakete, auftraege):
+    import multiprocessing, warnings
+    from concurrent.futures import ProcessPoolExecutor
+    kerne = min(os.cpu_count() or 1, 16)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork im Server mit Threads: Kinder lexen nur
+        with ProcessPoolExecutor(min(kerne, len(pakete)), mp_context=multiprocessing.get_context("fork")) as ex:
+            for paket, erg in zip(pakete, ex.map(_lexen, pakete)):
+                for n, tok in zip(paket, erg):
+                    _VORAB[(auftraege[n][1], auftraege[n][0])] = tok

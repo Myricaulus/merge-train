@@ -169,13 +169,24 @@ def main():
     wurzel = None
     if o.ordner:  # ohne Projekt: immer der ganze Zug
         ordner = o.ordner
-        if o.ordner and not os.path.exists(ordner):
+        if not os.path.isdir(ordner):  # im Projektordner ist „merge-train“ auch die gebaute Datei
             ordner = os.path.join(PROJEKTE, o.ordner)
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
             sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")
     if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False) for b in (o.von, o.bis)):
         sys.exit(f"merge-train: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
+    if not (o.nur_datei or o.von != VON or o.bis != BIS or o.inline) and server_sicherstellen():
+        # Der Server baut die Seite beim Abruf (und danach die übrigen offenen im Hintergrund)
+        if wurzel:
+            return im_browser("/" + dateiname(projektname(wurzel)))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(8) as ex:
+            wagen = zug_schreiben(list(ex.map(statistik, finde_repos())))
+        offen = [w for w in wagen if w["status"] == "offen"]
+        if not offen:
+            print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
+        return im_browser("/" + offen[0]["datei"])
     repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
     if wurzel:
         ziel, _ = projekt_seite(wurzel, o.von, o.bis)
@@ -189,10 +200,8 @@ def main():
         if not o.nur_datei:
             oeffnen(ziel)
         return
-    url = f"http://127.0.0.1:{PORT}/{dateiname(projektname(wurzel)) if wurzel else offen[0]['datei']}" \
-        if server_sicherstellen() else ziel
-    print(url)
-    oeffnen(url)
+    print(ziel)  # Server startet nicht: Datei direkt öffnen („fertig“ geht dann nicht)
+    oeffnen(ziel)
 
 if __name__ == "__main__":
     main()

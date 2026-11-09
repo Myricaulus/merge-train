@@ -53,6 +53,8 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
             return None, None
         return (inhalt(ordner, *a.split(":", 1)) or "" if a else "", inhalt(ordner, *b.split(":", 1)) or "" if b else "")
     tx = [texte(d) for d in dateien]
+    vorab_lexen([(t, d[k]) for d, (a, b) in zip(dateien, tx) if d["hunks"] and not spaeter_grund(d)
+                 for t, k in ((a if d["minus"] else None, "alt"), (b, "neu")) if t])
     struktur = {"id": sid, "refs": refs, "ordner": ordner, "praefix": praefix, "ansicht": ans, "dateien": []}
     for d, (_, neu_text) in zip(dateien, tx):
         paare, hunks = paare_und_hunks(d)

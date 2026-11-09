@@ -47,6 +47,32 @@ Im Browser:
 8. **Inline-Ansicht 4,4 s → 0,2 s**: Nach jeder der 139 gebauten Tabellen lief ein komplettes `zeichnen()`.
    Jetzt einmal am Ende, und die Zeilen werden als ein HTML-String pro Tabelle gebaut statt Zeile für Zeile.
 
+## Synthetische MRs unter Linux (9.11.2026, Desktop, 24 Kerne, CachyOS)
+
+Erzeugt mit echtem Code (Python aus `/usr/lib/python3*`, C# aus mono-source-libs, Markdown aus `/usr/share`),
+jeweils ~+16.000/−2.800. Browser: Chromium 156 headless, frisches Profil je Runde (`perf/cdp_messung.py`).
+
+| Projekt | Dateien | HTML | Seite bauen, kalt: vorher → jetzt | DOM fertig (frischer Browser) |
+|---|---|---|---|---|
+| groß: 130 C#, 6 große `.md` | 136 | 4,3 MB | 3,2 s → 0,7 s | 0,48 s |
+| gemischt: 100 geändert, 40 neu (Python) | 140 | 4,9 MB | 2,5 s → 0,6 s | 0,45 s |
+| klein: 600 Dateien à ~30 Zeilen | 600 | 8,3 MB | 2,8 s → 0,7 s | 0,69 s |
+| groß: 6 Dateien à ~2.800 neue Zeilen | 6 | 0,6 MB | 0,2 s | 0,52 s |
+| merge-train selbst (+3.100/−1.800) | 39 | 1,8 MB | 0,7 s → 0,4 s | 0,45 s |
+
+Firefox headless (Start + Screenshot, frisches Profil): merge-train-Seite ~0,4 s länger als eine leere Seite.
+
+- **Im Browser ist es unter Linux schnell** (0,45–0,7 s). Die ~2 s unten treten also unter WSL/Software-Rendering auf,
+  nicht wegen der Seite an sich.
+- **Gekostet hat der Seitenaufbau kalt** (also nach jedem neuen Commit): 90 % Pygments, das ganze Dateien lext.
+  Jetzt lexen bis zu 16 Prozesse parallel (`vorab_lexen`, fork, nur Nummern reisen zu den Kindern), ab 300 KB Text.
+  Die alte Seite wird nur noch gelext, wenn die Datei gelöschte Zeilen hat. Kontextzeilen nehmen links das Ergebnis von rechts.
+- **CLI**: `merge-train [projekt]` hat vor dem Öffnen alle offenen Projektseiten gebaut (hier 1,5 s kalt). Jetzt öffnet es
+  sofort, der Server baut die Seite beim Abruf und die übrigen offenen danach im Hintergrund (`vorbauen`).
+
+Projekte erzeugen: Skripte im Stil von `erzeugen.py` (je ein Repo mit `reviewed`/`claude`), dann eigene Einstellung mit
+`projekte = "<ordner>"`, `port = 8797` und `python3 perf/cdp_messung.py http://127.0.0.1:8797/<projekt>.html --runden 3`.
+
 ## Offen: ~2 s beim ersten Laden in einem frischen Browser
 
 Beim ersten Laden in einem frisch gestarteten Headless-Chromium vergehen zwischen dem Eintreffen des HTML
@@ -82,7 +108,8 @@ Ideen für die weitere Suche:
 
 ## Messskripte
 
-Alle in `perf/`. Sie nutzen das Puppeteer aus der npx-Installation von `chrome-devtools-mcp` und Playwrights
+`perf/cdp_messung.py` braucht nur Python und Chromium (DevTools über `--remote-debugging-pipe`, mit `--trace`
+für die Summe der längsten Event-Arten, `--fenster` mit GPU). Die `.mjs`-Skripte nutzen das Puppeteer aus der npx-Installation von `chrome-devtools-mcp` und Playwrights
 Headless-Shell. Pfade über `PUPPETEER` (Pfad zu `…/chrome-devtools-mcp/build/src/third_party/index.js`) und
 `CHROME` (Browser-Binary) überschreibbar.
 

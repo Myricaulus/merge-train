@@ -28,4 +28,4 @@ Kommentarliste und Kästen (`review.js`). Was fehlen würde:
 - **Eigene MRs**, die andere reviewen, im Zug zeigen und deren Kommentare per Güterbahnhof nachladen.
 - **main-Merges** aus „seit diesem“ und aus der Ansicht eines Merge-Commits herausrechnen
   (`git merge-tree --write-tree` mit der aktuellen Basis).
-- **Erstes Laden in frischem Browser** (~2 s Layout), siehe [performance.md](performance.md).
+- **Erstes Laden in frischem Browser** (~2 s Layout, nur unter WSL; unter Linux 0,5 s), siehe [performance.md](performance.md).
