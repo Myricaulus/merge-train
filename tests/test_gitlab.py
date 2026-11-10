@@ -468,12 +468,18 @@ def mr_gespraech_test(mr, k, basis, struktur):
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
     pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
-    if shutil.which("node"):  # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt
+    # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt: node --check, sonst biome
+    pruefer = (["node", "--check"] if shutil.which("node") else
+               ["biome", "lint", "--only=correctness/noUnreachable"] if shutil.which("biome") else None)
+    if pruefer:
         m = alles_laden(SKRIPT)
         js = os.path.join(T, "seite.js")
         open(js, "w", encoding="utf-8").write("const MR={};" + m["JS"])
-        r = subprocess.run(["node", "--check", js], capture_output=True, text=True)
-        pruefe(r.returncode == 0, "Seiten-Skript ohne Syntaxfehler" + (": " + r.stderr.strip().splitlines()[-1] if r.returncode else ""))
+        r = subprocess.run(pruefer + [js], capture_output=True, text=True)
+        meldung = (r.stderr + r.stdout).strip()
+        pruefe(r.returncode == 0, f"Seiten-Skript ohne Syntaxfehler ({pruefer[0]})" + (": " + meldung[:300] if r.returncode else ""))
+    else:
+        print("—    Seiten-Skript nicht geprüft (weder node noch biome)")
     repo_anlegen()
     os.makedirs(f"{T}/config/merge-train")
     open(ENV["MERGE_TRAIN_CONFIG"], "w").write(

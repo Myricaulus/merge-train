@@ -220,11 +220,37 @@ steht in `__init__.py`), CSS und JS in `src/merge_train/web/`. `./bauen` bündel
 `install.sh` richtet Git-Hooks ein (post-merge, post-checkout, post-rewrite), die danach `./bauen` ausführen.
 Ein `git pull` genügt also weiterhin zum Aktualisieren.
 
+Bausteine:
+
+- **`Waggon`** (`waggon.py`): Schlüssel eines Vergleichs, `Waggon(lokal="proj")` oder `Waggon(host=…, projekt=…, iid=…)`;
+  daran `.id` (Kennung der Seite), `.name`, `.url`, `.dateiname`, `.kann` (review/fertig/committen). `Fehler` = Meldung
+  für Nutzer oder Agent.
+- **Zustand je Waggon** (`zustand.py`, Aufbau der Datei oben dort): ändern nur mit `with zustand(waggon) as st:` (Sperre,
+  speichert bei Änderung), lesen mit `zustand_lesen`. Unter der Sperre keine GitLab-Anfragen.
+- **Server** (`server.py`): Handler mit `@route(methode, pfad, …)`; Schlüssel, Quelle, Waggon und Fehler behandelt
+  `bearbeiten()` an einer Stelle.
+- **Seiten-Skripte** (`web/*.js`, Liste und Reihenfolge in `web.py`): jede Datei in eigener Funktion, gemeinsam nur über
+  `App` (`app.js`); oben in jeder Datei, was sie braucht und bereitstellt.
+
+Prüfwerkzeuge nach dem Verschieben von Python-Funktionen:
+
+```sh
+python3 werkzeug/imports_richten.py                                              # Import-Zeilen neu, meldet Rückwärts-Abhängigkeiten
+./bauen && MERGE_TRAIN_CONFIG=/nonexistent python3 werkzeug/namen_pruefen.py merge-train   # vergessene Imports
+```
+
+Neue Module in `werkzeug/imports_richten.py` (`REIHENFOLGE`) und `src/merge_train/__init__.py` eintragen; Namen müssen
+paketweit eindeutig sein. Die Seite im Browser ausprobieren: eigenen Server mit eigener Konfig (`port = …`,
+`MERGE_TRAIN_CONFIG=…`) starten, nie den auf 8771.
+
 ## Tests
 
 ```sh
+python3 tests/test_einheiten.py   # Logik einzeln (Zeilen, Stufen, Waggon, Abschließen, Hinweise), ohne Server, < 1 s
 python3 tests/test_gitlab.py      # GitLab-Modus komplett, mit tests/fake-glab statt GitLab
 ```
+
+Die Syntax des Seiten-Skripts prüft `test_gitlab.py` mit `node --check`, ohne node mit `biome`.
 
 `tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien und Draft-Notes.
 Mit `--behalten` bleibt der Testordner liegen.

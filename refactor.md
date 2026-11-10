@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–7 sind
-erledigt, 8 steht aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–8 sind
+erledigt. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -49,7 +49,7 @@ python3 tests/test_gitlab.py                                             # Ende-
   Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
   nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
 
-## Stand nach den Schritten 1–7
+## Stand nach den Schritten 1–8
 
 | Commit | Inhalt |
 |---|---|
@@ -62,6 +62,7 @@ python3 tests/test_gitlab.py                                             # Ende-
 | Schritt 5 | Server als Routen-Tabelle (`@route`, `bearbeiten`, `Antwort`/`Anfrage`, `beobachten`), Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
 | Schritt 6 | Abschließen: `abschluss_planen` (rein) → `schritt_ausfuehren` (GitLab, ohne Sperre) → `schritt_eintragen` (je Schritt kurz unter der Sperre); `entwuerfe_abgleichen(st, vorhanden, eigene_texte)` rein, Texte vorher per `abgleich_vorbereiten`; Umformulieren: `umformulieren_ziel_finden` → `hinweis_text_aendern` / `draft_daneben` |
 | Schritt 7 | JS: Formatierung (7a), dann Namen, `App`, Dateien `app.js`, `navigation.js` (war `basis.js`), `zeichnungen.js`, `hud.js`, `toasts.js` (7b) |
+| Schritt 8 | `tests/test_einheiten.py` (24 Tests, < 1 s); Syntaxprüfung des Seiten-Skripts ohne node mit biome |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
@@ -321,6 +322,11 @@ eintragen: `python3 tests/test_einheiten.py` (schnell, zuerst) und `python3 test
 
 **Fertig, wenn** die Einzeltests die genannten Funktionen abdecken und beide Testdateien grün sind. Commit:
 „Einzeltests für Zeilen, Stufen, Waggon, Hinweise …“.
+
+**Erledigt.** Für Zeilen, `zerlegen` und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an (echte Diffs statt
+handgeschriebener). Zusätzlich `schritt_eintragen` (Nutzer tippt/löscht/stellt wieder her, während gesendet wird) und
+`entwuerfe_abgleichen`. Bleibendes steht schon in README („Entwicklung“, „Tests“) und AGENTS.md; die Namensfrage auch
+in `docs/ideen.md`.
 
 ---
 

@@ -4,6 +4,10 @@ Noch nicht entschieden, nur geparkt.
 
 ## Weitere geparkte Punkte
 
+- **Aussagekräftigere Namen**: „zustand“ ist zu allgemein – Zustand wovon? Gemeint ist die Review-/Gesprächsdatei eines
+  Waggons. Rein mechanisch umbenennen (z. B. `with waggon_daten(waggon) as daten:`), dasselbe Maß an andere allgemeine
+  Namen anlegen (`st`, `d`, `r`, `rv`).
+
 - **Branch wechseln aus merge-train**, wenn mehrere MRs anstehen. Müsste jira-review vorher übernehmen (testen,
   bauen), braucht noch Überlegung im Detail.
 - **Eigene MRs**, die andere reviewen, im Zug zeigen und deren Kommentare per Güterbahnhof nachladen.
