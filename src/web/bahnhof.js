@@ -10,7 +10,9 @@ document.querySelectorAll('#bahnhof button[data-g]').forEach(b=>{if(b.dataset.g=
  b.addEventListener('click',()=>{b.disabled=true;meld.textContent='frage GitLab …';bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet
   fetch('/api/gitlab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aktion:b.dataset.g,mr:MR.id,k:MR.k})})
    .then(r=>r.json()).then(d=>{b.disabled=false;bh.classList.remove('laedt');meld.textContent=d.text||'';if(!d.ok)return;
-    if(b.dataset.g==='mrdaten'){try{sessionStorage.meldung=d.text||''}catch(_){}location.reload()}else zugHolen()})
+    if(b.dataset.g==='mrdaten'&&(d.neu_laden||typeof laden!=='function')){try{sessionStorage.meldung=d.text||''}catch(_){}location.reload();return}
+    if(b.dataset.g==='mrdaten')laden(); // Seite unverändert: nur Kommentare/Entwürfe auffrischen
+    zugHolen()})
    .catch(()=>{b.disabled=false;bh.classList.remove('laedt');meld.textContent='merge-train-Server nicht erreichbar'})})});
 // Himmel rutscht weg (#kopf klebt bei top:-96px): Kulisse um bis zu 36 px nach unten schieben, Horizont landet am Unterrand
 {const k=document.getElementById('kopf'),sz=document.querySelector('.szene');

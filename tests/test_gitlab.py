@@ -553,6 +553,19 @@ def main():
         pruefe(r["ok"] and len(drafts()) == 2 and any(x["note"] == weg for x in drafts()), "verworfener Entwurf wird neu gesendet")
         rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
         pruefe(next(x for x in rv["kommentare"] if x["text"] == "Insgesamt sehr gut.")["status"] == "weg", "veröffentlichter bleibt sent")
+        # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
+        rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]
+        zst = json.load(open(rp0)); zst["meta"]["_zeit"] = "01.01. 00:00"; json.dump(zst, open(rp0, "w"))
+        get(f"/mr/{mr}")
+        pruefe(json.load(open(rp0))["struktur"] == vor, "MR-Daten: andere Abrufzeit baut die Seite nicht neu")
+        r1 = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        r2 = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        pruefe(r1["ok"] and r2["ok"] and r2["neu_laden"] is False, "MR-Daten unverändert: Seite muss nicht neu laden")
+        zst = json.load(open(rp0)); zst["meta"]["title"] = "Alter Titel"; json.dump(zst, open(rp0, "w"))
+        get(f"/mr/{mr}")
+        r = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        pruefe(r["ok"] and r["neu_laden"] is True and "Alter Titel" not in get(f"/mr/{mr}"), "MR-Daten geändert (Titel): Seite lädt neu")
         # früher als „weg“ markiert, aber gar nicht veröffentlicht (altes Verhalten) → MR-Daten holt ihn zurück
         rp = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         zst = json.load(open(rp))

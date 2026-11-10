@@ -160,16 +160,24 @@ def server():
                         return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
                     if d.get("aktion") == "mrdaten":
                         mr = mr_aus_id(d.get("mr", ""))
-                        mr_meta_holen(mr)
+                        vorher = review_laden(mr).get("struktur")
+                        _, vorhanden = meta_und_entwuerfe(mr)
+                        if isinstance(vorhanden, GitLabFehler):
+                            raise vorhanden
                         with SPERRE:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
                             st = review_laden(mr)
-                            pub, verw = entwuerfe_abgleichen(mr, st)
+                            pub, verw = entwuerfe_abgleichen(mr, st, vorhanden)
                             if pub or verw:
                                 review_speichern(mr, st)
+                        try:  # Seite gleich bauen: neu laden muss der Browser nur, wenn sie sich geändert hat
+                            mr_seite(mr)
+                            neu_laden = review_laden(mr).get("struktur") != vorher
+                        except GitLabFehler:
+                            neu_laden = True
                         text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
                                                     "„Review abschließen“ sendet sie neu" if verw else "") + \
                             (f" · {pub} in GitLab veröffentlicht" if pub else "")
-                        return self.json_senden(200, {"ok": True, "text": text})
+                        return self.json_senden(200, {"ok": True, "text": text, "neu_laden": neu_laden})
                     return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                 if self.path == "/fertig":
                     g = schluessel_von(d.get("mr") or "projekt:" + str(d.get("projekt", "")))

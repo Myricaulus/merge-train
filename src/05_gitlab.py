@@ -242,7 +242,11 @@ def mr_seite(mr, ansicht=None):
         raise MetaFehlt(f'Für {mr["projekt"]}!{mr["iid"]} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
                         "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
     ordner, refs = mr_lokal(mr, meta)
-    mh = hashlib.sha1(json.dumps(meta, sort_keys=True).encode()).hexdigest()[:6]
+    # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
+    # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    mh = hashlib.sha1(json.dumps({k: v for k, v in meta.items() if k != "_zeit" or (gl_head and gl_head != refs["head_sha"])},
+                                 sort_keys=True).encode()).hexdigest()[:6]
     praefix = os.path.join(MR_ORDNER, f'{mr_datei(mr)}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
     pfad, struktur = seite_bauen(mr_id(mr), ordner, refs, praefix,
                                  lambda *a: mr_html(mr, meta, *a), ansicht)

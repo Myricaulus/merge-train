@@ -407,6 +407,8 @@ def entwurf_anlegen(mr, k, head, proj_url):
         text = f"**[`{ort}`]({link})**\n\n{text}"
     return glab(host, f"{P}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
 
+_ICH = {}  # GitLab-Benutzer-id je Host
+
 def entwuerfe_abgleichen(mr, st, vorhanden=None):
     """Gesendete Kommentare, deren Draft-Note in GitLab fehlt: als Kommentar veröffentlicht → bleibt sent („weg“);
     sonst in GitLab verworfen (z. B. ganzes Review verworfen) → wieder staged, „Review abschließen“ sendet ihn neu.
@@ -418,7 +420,9 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
     fehlen = [k for k in rk(st) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
     if not fehlen:
         return 0, 0
-    ich = (glab(host, "user") or {}).get("id")
+    if host not in _ICH:  # ändert sich nicht, kostet aber eine eigene Anfrage
+        _ICH[host] = (glab(host, "user") or {}).get("id")
+    ich = _ICH[host]
     texte = [n.get("body") or "" for n in alle(host, f"{P}/notes") if (n.get("author") or {}).get("id") == ich and not n.get("system")]
     pub = verw = 0
     for k in fehlen:
@@ -431,11 +435,23 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
             verw += 1
     return pub, verw
 
+def meta_und_entwuerfe(mr):
+    """MR-Daten und Draft-Notes gleichzeitig holen (zwei unabhängige GitLab-Anfragen). Rückgabe (meta, entwürfe | Fehler)."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(2) as ex:
+        f_meta = ex.submit(mr_meta_holen, mr)
+        f_ent = ex.submit(alle, mr["host"], f"{mr_pfad(mr)}/draft_notes")
+        try:
+            ent = {d.get("id") for d in f_ent.result()}
+        except GitLabFehler as e:
+            ent = e
+        return f_meta.result()[1], ent
+
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
     host, P = mr["host"], mr_pfad(mr)
     head = ((struktur_laden(review_laden(mr)) or {}).get("refs") or {}).get("head_sha")
-    _, meta = mr_meta_holen(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
+    meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
     if head and gl_head and gl_head != head:
         return (False, f"GitLab steht auf {gl_head[:8]}, die Seite auf {head[:8]} – erst den lokalen Stand aktualisieren "
@@ -448,10 +464,8 @@ def abschliessen(mr):
         st = review_laden(mr)
         web = st["mr"].get("web_url", "")
         proj_url = web.split("/-/merge_requests/")[0]
-        try:
-            vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
-        except GitLabFehler as e:
-            return False, f"Entwürfe nicht abrufbar: {e}", web
+        if isinstance(vorhanden, GitLabFehler):
+            return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
         z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0}
         try:
             z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(mr, st, vorhanden)
