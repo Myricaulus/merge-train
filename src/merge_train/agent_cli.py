@@ -11,7 +11,7 @@ from .gitlab import (GitLabFehler, enc, geaenderte_dateien, glab, ist_mr_ref, mr
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
 from .quellen import quelle
-from .zuhoerer import SEITE_WEG_S, _prozess, agent_session, horcht_datei, seite_datei, todo_offen
+from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, seite_datei, todo_offen
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
 from .server import im_browser
@@ -327,6 +327,10 @@ def faeden_horchen(ziele, timeout=0, als=None):
     dateien = [horcht_datei(g) for g in ziele]
     for d in dateien:
         ersetzen(d, f"{os.getpid()} {jetzt()} {als or 'Claude'}\n")
+    sid, sess = os.environ.get("CLAUDE_CODE_SESSION_ID"), agent_session(os.getpid())
+    if sid and sess and re.fullmatch(r"[\w-]+", sid):
+        for g in ziele:
+            ersetzen(agent_datei(g), f"{sess} {sid} {als or 'Claude'}\n")
     def weg(*_):
         for d in dateien:
             try:

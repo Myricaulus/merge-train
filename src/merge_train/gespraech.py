@@ -9,7 +9,7 @@ from .hinweise import see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
 from .quellen import quelle
-from .zuhoerer import horcht, todo_offen
+from .zuhoerer import horcht, kontext, todo_offen
 from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_klick
 
 def wagen_daten(g, ansicht=None):
@@ -22,7 +22,7 @@ def wagen_daten(g, ansicht=None):
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     with SPERRE:
         st = review_laden(g)
-    return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], todo=gs["todo"],
+    return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], kontext=gs["kontext"], todo=gs["todo"],
                 agenten=gs["agenten"], kann=q.kann, stand=stand(g, st), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
 
 
@@ -77,7 +77,8 @@ def gespraech_daten(mr, ansicht=None):
         ausserhalb = vorher - len(kom)
     entwuerfe = sum(1 for k in faeden_von(st) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
     return {"ok": True, "kommentare": kom, "stand": stand(mr, st),
-            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "agenten": gespraech_agenten(mr),
+            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "kontext": kontext(mr),
+            "agenten": gespraech_agenten(mr),
             "todo": st.get("todo_id") if todo_offen(st.get("todo_id")) else None}
 
 

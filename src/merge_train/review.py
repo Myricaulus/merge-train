@@ -11,11 +11,13 @@ from .gitlab import GitLabFehler, alle, glab, mr_aus_id, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
-from .zuhoerer import horcht
+from .zuhoerer import horcht, kontext
 
 def stand(mr, st):
     teile = [st.get("struktur") or ""]
     teile.append(horcht(mr) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+    k = kontext(mr)
+    teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
     for p in [review_datei(mr)] + ([] if mr.get("lokal") else hinweis_dateien(mr, st)):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")

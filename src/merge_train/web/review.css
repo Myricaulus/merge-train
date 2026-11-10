@@ -108,7 +108,7 @@ details.kliste>summary .sortknopf{float:right;font:11px system-ui,sans-serif;pad
 .ke .gesendet{flex:none;color:var(--p);font-size:11px;margin-left:-3px}
 /* HUD: Stellwerk auf Stelzen im Vordergrund (über dem Zug), Inhalt als HTML über der Kabine */
 #hud-bau{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
-#hud{position:absolute;z-index:4;box-sizing:border-box;padding:3px 9px;display:flex;flex-direction:column;justify-content:center;gap:2px;
+#hud{position:absolute;z-index:4;box-sizing:border-box;padding:3px 6px 3px 9px;display:flex;align-items:center;gap:8px;
  font:11px system-ui,sans-serif;color:#e8e2d0;overflow:hidden;white-space:nowrap}
 .hud-kabine{fill:#2b3138;stroke:#15181c;stroke-width:1.5} .hud-dach{fill:#6c655c} .hud-boden{fill:#4b5157}
 .hud-stelze{stroke:#4b5157;stroke-width:2.2;fill:none} .hud-strebe{stroke:#4b5157;stroke-width:1;fill:none}
@@ -118,7 +118,14 @@ details.kliste>summary .sortknopf{float:right;font:11px system-ui,sans-serif;pad
 .hud-led{flex:none;width:9px;height:9px;border-radius:50%;background:#3fb950;box-shadow:0 0 5px #3fb950}
 .hud-led.weg{background:#e5534b;box-shadow:0 0 6px #e5534b;animation:funk 1s steps(2) infinite}
 .hud-led.neu{background:#d4a72c;box-shadow:0 0 6px #d4a72c}
-.hud-stand{font:11px ui-monospace,monospace;color:#c9d1d9} .hud-hoert{margin-left:auto;color:#8b949e} .hud-hoert.an{color:#7ee787}
+.hud-stand{font:11px ui-monospace,monospace;color:#c9d1d9} .hud-hoert{color:#8b949e} .hud-hoert.an{color:#7ee787}
+.hud-links{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+/* Wer zuhört + Kontext-Balken in eigenem Rahmen; der Balken ist so breit wie „🎧 … hört zu“ */
+.hud-agent{flex:none;display:flex;flex-direction:column;gap:2px;padding:1px 5px 2px;border:1px solid #4b5157;border-radius:3px;background:#22272d}
+.hud-ctx{display:block;text-align:center;border-radius:2px;font:10px/12px ui-monospace,monospace;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000}
+.hud-agent.gift{animation:schillern 1.1s linear infinite} .hud-agent.gift .hud-ctx{font-weight:700;box-shadow:0 0 6px #a100ff}
+@keyframes schillern{0%{border-color:#ff2bd6;box-shadow:0 0 3px #ff2bd6,inset 0 0 3px #ff2bd6}25%{border-color:#7a5cff;box-shadow:0 0 5px #7a5cff,inset 0 0 4px #7a5cff}
+ 50%{border-color:#00e5ff;box-shadow:0 0 3px #00e5ff,inset 0 0 3px #00e5ff}75%{border-color:#b4ff39;box-shadow:0 0 5px #b4ff39,inset 0 0 4px #b4ff39}100%{border-color:#ff2bd6;box-shadow:0 0 3px #ff2bd6,inset 0 0 3px #ff2bd6}}
 .hud-trenn{color:#6e7681}
 body.mit-hud #rvstand{display:none}
 /* Toasts und Nachrichten */

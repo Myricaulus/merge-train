@@ -13,7 +13,8 @@ T = tempfile.mkdtemp(prefix="merge-train-test-")
 REPO = os.path.join(T, "repo")
 ENV = dict(os.environ, XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
            MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/config.toml",
-           FAKE_GLAB_REPO=REPO, FAKE_GLAB_STATE=f"{T}/glab")
+           FAKE_GLAB_REPO=REPO, FAKE_GLAB_STATE=f"{T}/glab", CLAUDE_CONFIG_DIR=f"{T}/claude",
+           CLAUDE_CODE_SESSION_ID="sitzung-1")
 fehler = []
 
 def pruefe(bed, text):
@@ -296,6 +297,11 @@ def gespraech_test(proj, env, k, hol, g):
 def horchen_waise_test(proj, env, k, hol):
     """Endet die Agenten-Session, hört horchen auf, und die Seite zeigt niemanden mehr als Zuhörer."""
     os.symlink("/bin/sh", f"{T}/bin/agentx")  # ein „Agent“ mit eigenem Prozessnamen
+    os.makedirs(f"{T}/claude/projects/-proj")  # Transcript der Session: letzte Antwort mit 50k Tokens im Kontext
+    with open(f"{T}/claude/projects/-proj/sitzung-1.jsonl", "w") as f:
+        f.write(json.dumps({"type": "assistant", "isSidechain": False, "message": {"model": "m", "usage": {
+            "input_tokens": 2, "cache_creation_input_tokens": 8000, "cache_read_input_tokens": 41998}}}) + "\n")
+        f.write(json.dumps({"type": "assistant", "isSidechain": True, "message": {"usage": {"input_tokens": 9}}}) + "\n")
     ag = subprocess.Popen([f"{T}/bin/agentx", "-c", f'"{sys.executable}" "{SKRIPT}" agent horchen --als Fake; true'], cwd=proj, env=env)
     wer = None
     for _ in range(50):
@@ -304,6 +310,9 @@ def horchen_waise_test(proj, env, k, hol):
             break
         time.sleep(0.1)
     pruefe(wer == "Fake", "horchen: Seite zeigt den Zuhörer")
+    kx = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("kontext") or {}
+    pruefe(kx.get("tokens") == 50000 and kx.get("prozent") == 25 and kx.get("name") == "Fake" and kx.get("schwellen") == [15, 20, 25, 35],
+           f"horchen: HUD bekommt den Kontext-Füllstand der Session aus dem Transcript ({kx})")
     datei = f"{T}/data/merge-train/lokal/proj.horcht"
     ag.kill(); ag.wait()  # Session hart beendet: horchen ist jetzt verwaist
     for _ in range(50):
@@ -311,7 +320,9 @@ def horchen_waise_test(proj, env, k, hol):
             break
         time.sleep(0.1)
     pruefe(not os.path.exists(datei), "horchen: beendet sich, wenn die Agenten-Session weg ist")
-    pruefe(json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("horcht") is None, "horchen: Seite zeigt danach niemanden")
+    danach = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    pruefe(danach.get("horcht") is None, "horchen: Seite zeigt danach niemanden")
+    pruefe(danach.get("kontext") is None, "horchen: und keinen Kontext-Füllstand mehr")
 
 def horchen_seite_zu_test(proj, env, k, hol):
     """Wird die Seite geschlossen (kein Lebenszeichen mehr), hört horchen auf – aber erst, wenn sie nach dem Start da war."""

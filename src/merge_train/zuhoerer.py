@@ -1,5 +1,5 @@
 """Wer hört zu? Agenten-Sessions, die auf Nachrichten warten, benachrichtigen oder neu starten."""
-import os, shlex, shutil, subprocess
+import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
 from .einstellungen import KONF, SPERRE, ersetzen, jetzt
 from .zustand import faeden_von, review_datei, review_laden, review_speichern
@@ -77,6 +77,95 @@ def horcht(g):
     if agent_session(pid) is None:
         return None
     return " ".join(teile[2:]) or "Claude"
+
+
+# ---- Kontext-Füllstand der Agenten-Session (fürs HUD, ohne Zutun des Agenten)
+# „agent horchen“ merkt sich in <zustand>.agent pid und Session-ID der Agenten-Session (Claude Code setzt
+# CLAUDE_CODE_SESSION_ID). Den Füllstand liest der Server aus deren Transcript: usage der letzten Antwort
+# (input + cache_creation + cache_read) bzw. nach /compact postTokens. Solange die Session lebt, auch während sie
+# arbeitet (dann hört sie gerade nicht zu).
+
+def agent_datei(g):
+    return review_datei(g)[:-5] + ".agent"
+
+_KONTEXT = {}
+
+def claude_dir():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+def _transcript_kontext(pfad):
+    """(tokens, modell) aus dem Ende des Transcripts, None wenn nichts zu finden. Gecacht nach Größe/mtime."""
+    try:
+        s = os.stat(pfad)
+    except OSError:
+        return None
+    alt = _KONTEXT.get(pfad)
+    if alt and alt[0] == (s.st_size, s.st_mtime_ns):
+        return alt[1]
+    erg, block = None, 1 << 20
+    with open(pfad, "rb") as f:
+        for n in (block, 8 * block):  # meist reicht das letzte MB; lange Tool-Ausgaben → mehr
+            f.seek(max(0, s.st_size - n))
+            for zeile in reversed(f.read().split(b"\n")):
+                if b'"usage"' not in zeile and b"compact_boundary" not in zeile:
+                    continue
+                try:
+                    d = json.loads(zeile)
+                except ValueError:
+                    continue
+                if d.get("isSidechain"):
+                    continue
+                if d.get("subtype") == "compact_boundary":
+                    t = (d.get("compactMetadata") or {}).get("postTokens")
+                    if t:
+                        erg = (t, None)
+                        break
+                u = (d.get("message") or {}).get("usage") if d.get("type") == "assistant" else None
+                if u:
+                    erg = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+                           + u.get("cache_read_input_tokens", 0), d["message"].get("model"))
+                    break
+            if erg or s.st_size <= n:
+                break
+    _KONTEXT[pfad] = ((s.st_size, s.st_mtime_ns), erg)
+    return erg
+
+def _kontext_fenster(tokens):
+    if KONF.get("kontext_fenster"):
+        return int(KONF["kontext_fenster"])
+    try:
+        modell = json.load(open(os.path.join(claude_dir(), "settings.json"))).get("model") or ""
+    except (OSError, ValueError):
+        modell = ""
+    return 1_000_000 if "[1m]" in modell or tokens > 200_000 else 200_000
+
+def kontext(g):
+    """{tokens, fenster, prozent, name} der zuletzt horchenden Agenten-Session, solange sie lebt, sonst None."""
+    try:
+        pid, sid, *name = open(agent_datei(g)).read().split()
+        pid = int(pid)
+    except (OSError, ValueError):
+        return None
+    if _prozess(pid) is None:
+        return None
+    pfade = glob.glob(os.path.join(claude_dir(), "projects", "*", sid + ".jsonl"))
+    erg = _transcript_kontext(pfade[0]) if pfade else None
+    if not erg:
+        return None
+    fenster = _kontext_fenster(erg[0])
+    return {"tokens": erg[0], "fenster": fenster, "prozent": round(100 * erg[0] / fenster), "name": " ".join(name) or "Claude",
+            "schwellen": kontext_schwellen()}
+
+def kontext_schwellen():
+    """[grün bis, orange bei, rot bei, giftlila ab] aus kontext_schwellen; ungültig (nicht 4 aufsteigende Zahlen) → Standard."""
+    s = KONF.get("kontext_schwellen")
+    try:
+        s = [float(x) for x in s]
+        if len(s) == 4 and s == sorted(s):
+            return s
+    except (TypeError, ValueError):
+        pass
+    return [15, 20, 25, 35]
 
 
 def todo_offen(tid):

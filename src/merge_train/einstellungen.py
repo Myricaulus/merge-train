@@ -26,6 +26,8 @@ STANDARD = {
     "port": 8771,
     "feedback_befehl": "",    # lokaler Modus: Befehl, wenn keine Session zuhört (sonst todo-Eintrag)
     "agenten": {},            # Gespräch auch im GitLab-Modus: Name = Startbefehl, z. B. copilot = "… copilot -i {prompt}"
+    "kontext_fenster": 0,     # HUD „ctx“: Kontextfenster der Agenten-Session in Tokens; 0 = 200k (1M bei [1m])
+    "kontext_schwellen": [15, 20, 25, 35],  # HUD-Balken in %: bis a grün, bis b → orange, bis c → rot, ab d giftlila
     "log_tage": 7,            # Log der Anfragen an die Quellen (git, GitLab): ~/.cache/merge-train/aussen-<datum>.log; 0 = aus
 }
 

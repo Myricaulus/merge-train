@@ -193,7 +193,8 @@ function hudLage(){if(!HUDX)return;const B=HUDX.sz.clientWidth,H=HUDX.sz.clientH
   `<rect x="${x}" y="${y}" width="${W}" height="${h}" rx="2" class="hud-kabine"/>`+
   `<rect x="${x-6}" y="${y-5}" width="${W+12}" height="6" rx="1" class="hud-dach"/>`+
   `<path d="M${x+W-30},${y-5} V${y-18} M${x+W-36},${y-14} H${x+W-24}" class="hud-antenne"/><circle cx="${x+W-30}" cy="${y-19}" r="1.8" class="hud-funk"/>`}
-function hud(){if(!HUDX)return;hudLage();
+const tk=n=>n>=1e6?(n/1e6).toFixed(n%1e6?1:0)+'M':Math.round(n/1e3)+'k';
+function hud(){if(!HUDX)return;hudLage();const KX=RV.kontext;
  const f=FD(),neu=f.filter(k=>k.status!=='erledigt').length,km=RV.kommentare.filter(k=>k.status!=='loeschen'),
   lokal=RV.ausstehend||0,hw=RV.hinweise.filter(h=>h.status==='offen').length,
   ledT={an:'Server läuft',weg:'Server nicht erreichbar',neu:'neuer Server – Seite lädt neu, sobald kein Eingabefeld offen ist'}[LED];
@@ -202,10 +203,19 @@ function hud(){if(!HUDX)return;hudLage();
  const zl=[RVW?el('span',{title:km.length+' GitLab-Kommentar(e), davon '+lokal+' noch nicht in GitLab'},'💬 '+km.length+(lokal?' ('+lokal+' lokal)':'')):null,
   RVW&&hw?el('span',{title:hw+' Agent-Hinweis(e) offen'},'🤖 '+hw):null,
   f.length?el('span',{title:f.length+' KI-Thread(s)'+(neu?', davon '+neu+' noch offen (nicht erledigt)':', alle erledigt')},'🧵 '+f.length+(neu?' ('+neu+' offen)':'')):null].filter(Boolean);
- HUDX.h.replaceChildren(
-  el('div',{class:'hud-z'},el('span',{class:'hud-led '+LED,title:ledT}),stand,
-   el('span',{class:'hud-hoert'+(RV.horcht?' an':''),title:RV.horcht?RV.horcht+' hört zu – Fragen gehen direkt an die Session':'keine Agenten-Session hört zu'},RV.horcht?'🎧 '+RV.horcht+' hört zu':'🎧 –')),
-  el('div',{class:'hud-z'},...(zl.length?zl.flatMap((e,i)=>i?[el('span',{class:'hud-trenn'},'·'),e]:[e]):[el('span',{},'keine Kommentare')])))}
+ const zeilen=[el('div',{class:'hud-z'},el('span',{class:'hud-led '+LED,title:ledT}),stand),
+  el('div',{class:'hud-z'},...(zl.length?zl.flatMap((e,i)=>i?[el('span',{class:'hud-trenn'},'·'),e]:[e]):[el('span',{},'keine Kommentare')]))];
+ const SW=KX&&KX.schwellen||[15,20,25,35],ag=el('div',{class:'hud-agent'+(KX&&KX.prozent>=SW[3]?' gift':'')},
+  el('span',{class:'hud-hoert'+(RV.horcht?' an':''),title:RV.horcht?RV.horcht+' hört zu – Fragen gehen direkt an die Session':'keine Agenten-Session hört zu'},RV.horcht?'🎧 '+RV.horcht+' hört zu':'🎧 –'));
+ if(KX){const p=Math.min(100,KX.prozent),c=ctxFarbe(KX.prozent,SW);
+  ag.append(el('span',{class:'hud-ctx',style:`background:linear-gradient(to right,${c} ${p}%,rgba(255,255,255,.07) ${p}%)`,
+   title:'Kontext von '+KX.name+': '+tk(KX.tokens)+' von '+tk(KX.fenster)+' Tokens'+(RV.horcht?'':' (arbeitet gerade, hört nicht zu)')+
+    (KX.prozent>=SW[2]?' – im Terminal /compact, wenn ein Thema abgeschlossen ist':'')},KX.prozent+' % ctx'))}
+ HUDX.h.replaceChildren(el('div',{class:'hud-links'},...zeilen),ag)}
+// Balkenfarbe Kontext, Schwellen [a,b,c,d] aus kontext_schwellen: bis a grün, bis b nach orange, bis c nach rot, dann rot,
+// ab d giftlila (Klasse gift, ohne Übergang)
+function ctxFarbe(p,[a,b,c,d]){const G=[63,185,80],O=[240,136,62],R=[248,81,73],mix=(a,b,t)=>'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(',')+')';
+ return p>=d?'#a100ff':p<=a?mix(G,G,0):p<=b?mix(G,O,(p-a)/((b-a)||1)):p<=c?mix(O,R,(p-b)/((c-b)||1)):mix(R,R,0)}
 // Toasts: Meldungen des Servers (alles, was in #meldung landet, außer Fortschritt „… “ und „Server weg“) 10 s gut sichtbar,
 // wegklickbar; die letzten 50 merkt sich der Browser für den Knopf „Nachrichten“.
 const TOASTS=el('div',{id:'toasts'}),NK=el('button',{id:'nachrichten',title:'letzte Meldungen von merge-train'},'🔔');document.body.append(TOASTS,NK);
