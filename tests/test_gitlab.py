@@ -498,11 +498,22 @@ def main():
         pruefe(len(ks) == 4 and ks["#1 Missing null check"]["finding"] == "#1", "4 Kommentare, einer aus Agent #1")
         st = {h["finding"]: h["status"] for h in r["review"]["hinweise"]}
         pruefe(st["#1"] == "uebernommen" and st["#5"] == "verworfen" and st["#4"] == "offen", "Hinweis-Status")
+        # Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        kid = {x["id"]: x for x in rv["kommentare"]}
+        nat = [(kid[i]["datei"] if kid[i]["datei"] is not None else -1, kid[i]["b"] or kid[i]["a"] or 0) for i in rv["reihenfolge"] if i in kid]
+        pruefe(nat == sorted(nat) and len(nat) == 4 and set(rv["reihenfolge"]) >= {h["key"] for h in rv["hinweise"] if h["status"] == "offen"},
+               "Reihenfolge: nach Datei und Zeile, mit offenen Hinweisen")
+        gewuenscht = list(reversed(rv["reihenfolge"]))
+        r = post("/api/kommentar", dict(basis, aktion="reihenfolge", ids=gewuenscht))
+        pruefe(r["ok"] and r["review"]["reihenfolge"] == gewuenscht, "Reihenfolge: vom Nutzer umsortiert und gespeichert")
+        pruefe(not post("/api/kommentar", dict(basis, aktion="reihenfolge", ids="x"))["ok"], "Reihenfolge: ungültige Liste abgelehnt")
         # Abschließen
         r = post("/api/abschliessen", basis)
         print(r["text"])
         d = drafts()
         pruefe(r["ok"] and len(d) == 4, "4 Draft-Notes angelegt")
+        pruefe([x["note"] for x in d] == [kid[i]["text"] for i in gewuenscht if i in kid], "Draft-Notes in der Reihenfolge der Box angelegt")
         pruefe(not any("Was macht Zeile 11" in x["note"] or "Und warum" in x["note"] for x in d),
                "MR-Gespräch: Fragen an den Agenten gehen nicht nach GitLab")
         pos = {x["note"]: x["position"] for x in d}

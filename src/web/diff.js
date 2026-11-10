@@ -53,18 +53,37 @@ function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/
   b.scrollIntoView({block:'center'});markiere();blinken(b);return true};
  if(hin())return;
  (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
+var SORT=false; // Sortiermodus der Box „GitLab-Kommentare“
 function kliste(){ // links: GitLab-Kommentare (Entwürfe, Agent-Hinweise) und KI-Threads (privat) getrennt
  const nach=(p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0));
+ const pos={};(RV.reihenfolge||[]).forEach((id,n)=>pos[id]=n); // vom Server: Sende-Reihenfolge bei „Review abschließen“
  kasten('kliste','GitLab-Kommentare',[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
-  ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))].sort(nach));
+  ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))].sort((p,q)=>((pos[p.id]??1e9)-(pos[q.id]??1e9))||nach(p,q)),
+  RVW&&!LESEN&&!MR.ansicht);
  kasten('kliste-ki','KI-Threads',(RV.faeden||[]).map(x=>({art:'km',id:x.id,x,st:x.status})).sort(nach))}
-function kasten(id,name,items){const k=document.getElementById(id);if(!k)return;
- k.hidden=!items.length;k.querySelector('summary').textContent=name+' ('+items.length+')';
+function reihenfolge(ids){RV.reihenfolge=ids;kliste();speichernAls({aktion:'reihenfolge',ids})}
+function verschieben(id,ziel,unten){const ids=(RV.reihenfolge||[]).filter(x=>x!==id); // ziel: id, 'oben' oder 'unten'
+ if(ziel==='oben')ids.unshift(id);else if(ziel==='unten')ids.push(id);else{const i=ids.indexOf(ziel);if(i<0)return;ids.splice(i+(unten?1:0),0,id)}
+ reihenfolge(ids)}
+function kasten(id,name,items,sortierbar){const k=document.getElementById(id);if(!k)return;
+ k.hidden=!items.length;const sm=k.querySelector('summary'),s=sortierbar&&SORT&&items.length>1;sm.replaceChildren(name+' ('+items.length+')');
+ if(sortierbar&&items.length>1)sm.append(el('button',{class:'sortknopf',title:SORT?'Sortieren beenden':'Reihenfolge ändern – in dieser Reihenfolge gehen die Kommentare an GitLab',
+  onclick:e=>{e.preventDefault();SORT=!SORT;k.open=true;kliste()}},SORT?'✓ fertig':'⇅ sortieren'));
  const titel=x=>x.title||(x.hinweis&&(RV.hinweise.find(h=>h.key===x.hinweis)||{}).title)||null;
  k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||(i.x.nachrichten&&i.x.nachrichten[0]||{}).text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
-  return el('div',{class:'ke '+i.art,title:f,onclick:()=>springen(i)},
+  const e=el('div',{class:'ke '+i.art+(s?' sort':''),title:f,onclick:s?null:()=>springen(i)},
+   s?el('span',{class:'griff',title:'ziehen zum Umsortieren'},'⠿'):null,
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
-   i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f))}))}
+   i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f),
+   s?el('span',{class:'pfeile'},el('button',{title:'ganz nach oben',onclick:()=>verschieben(i.id,'oben')},'⤒'),
+     el('button',{title:'ganz nach unten',onclick:()=>verschieben(i.id,'unten')},'⤓')):null);
+  if(s){e.draggable=true;const weg=()=>e.classList.remove('drop-oben','drop-unten');
+   e.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',i.id);ev.dataTransfer.effectAllowed='move';e.classList.add('zieht')});
+   e.addEventListener('dragend',()=>e.classList.remove('zieht'));
+   e.addEventListener('dragover',ev=>{ev.preventDefault();const r=e.getBoundingClientRect(),u=ev.clientY>=r.top+r.height/2;e.classList.toggle('drop-oben',!u);e.classList.toggle('drop-unten',u)});
+   e.addEventListener('dragleave',weg);
+   e.addEventListener('drop',ev=>{ev.preventDefault();const von=ev.dataTransfer.getData('text/plain'),u=e.classList.contains('drop-unten');weg();if(von&&von!==i.id)verschieben(von,i.id,u)})}
+  return e}))}
 function ortLink(x){return x.path?el('a',{class:'ortlink',title:'im Code zeigen',onclick:()=>zeigen(x)},ort(x)):el('code',{},ort(x))}
 function siehe(sa){if(!sa||!sa.length)return null;
  return el('div',{class:'sa'},el('span',{},'Siehe auch:'),...sa.map(s=>{const wo=s.path+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):'');

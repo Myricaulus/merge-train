@@ -81,7 +81,10 @@ Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
 - **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „GitLab-Kommentare“ (offene Agent-Hinweise 🤖,
-  eigene bzw. übernommene Kommentare 💬) und „KI-Threads“ (Gespräche mit Agenten, privat). Leere Listen sind ausgeblendet. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
+  eigene bzw. übernommene Kommentare 💬) und „KI-Threads“ (Gespräche mit Agenten, privat). Leere Listen sind ausgeblendet.
+  Die Reihenfolge der GitLab-Kommentare ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit
+  „⇅ sortieren“ per Drag & Drop oder ⤒/⤓ (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet
+  an seiner Stelle nach Datei und Zeile, ein übernommener Hinweis behält seinen Platz. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
 - **Commit-Ansichten** (auch im lokalen Projekt-Diff): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
   - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
     Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des MR, außerhalb

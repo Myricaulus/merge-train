@@ -164,6 +164,20 @@ def stand(mr, st):
             teile.append(p + ":-")
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
 
+def gitlab_reihenfolge(st, kom, hinweise):
+    """Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge bei „Review abschließen“: ids der Kommentare und keys
+    der offenen Hinweise. Vom Nutzer sortiert (st["reihenfolge"]), Neues an seiner Stelle nach Datei und Zeile."""
+    nat = lambda x: (x["datei"] if x.get("datei") is not None else -1, x.get("b") or x.get("a") or 0)
+    eintraege = sorted([(x["id"], x) for x in kom if x["status"] != "loeschen"] +
+                       [(h["key"], h) for h in hinweise if h["status"] == "offen"], key=lambda e: nat(e[1]))
+    da = dict(eintraege)
+    out = [i for i in st.get("reihenfolge") or [] if i in da]
+    gesetzt = set(out)
+    for i, x in eintraege:
+        if i not in gesetzt:
+            out.insert(next((j for j, o in enumerate(out) if nat(da[o]) > nat(x)), len(out)), i)
+    return out
+
 def review_daten(mr, ansicht=None):
     with SPERRE:
         st = review_laden(mr)
@@ -179,6 +193,7 @@ def review_daten(mr, ansicht=None):
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
+    reihenfolge = gitlab_reihenfolge(st, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
         ans_st = ansicht_struktur(struktur, ansicht)
@@ -187,7 +202,8 @@ def review_daten(mr, ansicht=None):
         hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
         ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb,
+            "reihenfolge": reihenfolge}
 
 def seiten_struktur(sid, ansicht=None):
     """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
@@ -312,6 +328,7 @@ def kommentar_aktion(mr, d):
                 k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                          hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
                 st["hinweise"][h["key"]] = "uebernommen"
+                st["reihenfolge"] = [k["id"] if i == h["key"] else i for i in st.get("reihenfolge") or []]  # Platz behalten
             elif d.get("datei") is not None:
                 fehler, ort = zeile_aus_klick(struktur, d, ansicht)
                 if fehler:
@@ -322,6 +339,11 @@ def kommentar_aktion(mr, d):
             if not k["text"]:
                 return False, "leerer Kommentar"
             st["kommentare"].append(k)
+        elif aktion == "reihenfolge":  # Box „GitLab-Kommentare“ umsortiert (bestimmt die Sende-Reihenfolge)
+            ids = d.get("ids")
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                return False, "Reihenfolge ungültig"
+            st["reihenfolge"] = ids
         else:
             k = next((k for k in rk(st) if k["id"] == d.get("id")), None)
             if not k:
@@ -394,6 +416,10 @@ def abschliessen(mr):
     if head and gl_head and gl_head != head:
         return (False, f"GitLab steht auf {gl_head[:8]}, die Seite auf {head[:8]} – erst den lokalen Stand aktualisieren "
                        "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or "")
+    try:
+        pos = {i: n for n, i in enumerate(review_daten(mr)["reihenfolge"])}  # wie in der Box „GitLab-Kommentare“
+    except GitLabFehler:
+        pos = {}
     with SPERRE:
         st = review_laden(mr)
         web = st["mr"].get("web_url", "")
@@ -404,7 +430,7 @@ def abschliessen(mr):
             return False, f"Entwürfe nicht abrufbar: {e}", web
         z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "verschwunden": 0}
         fehler = []
-        for k in rk(st):  # Gesprächsfäden bleiben privat
+        for k in sorted(rk(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
             try:
                 if k.get("geloescht"):
                     if k.get("gitlab_id") in vorhanden:
