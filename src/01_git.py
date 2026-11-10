@@ -34,10 +34,10 @@ def aussen_log(quelle, wo, was, dauer, ergebnis):
     except OSError:
         pass
 
-def git(ordner, *a, check=True):
+def git(ordner, *a, check=True, env=None):
     t0 = time.time()
     r = subprocess.run(["git", "-C", ordner, *a], capture_output=True,
-                       text=True, errors="replace")
+                       text=True, errors="replace", env=env)
     aussen_log("git", os.path.basename(str(ordner).rstrip("/")), "git " + " ".join(a)[:200], time.time() - t0,
                f"exit {r.returncode}" if r.returncode else f"ok {len(r.stdout)} B")
     if check and r.returncode:

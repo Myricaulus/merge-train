@@ -2,12 +2,16 @@
 # Ort: ~/.config/merge-train/config.toml  (oder Pfad in $MERGE_TRAIN_CONFIG)
 # Alles optional; auskommentiert = Standardwert.
 
-# Lokaler Projekt-Diff: von/bis-Branches aller Repos unter „projekte“ als Zug.
+# Lokaler Projekt-Diff: bis gegen von in allen Repos aus „projekte“ als Zug.
 # Auf einem Rechner nur für GitLab-MRs: false. Dann öffnet „merge-train“ ohne Argumente die MR-Liste.
 # lokal = true
-# projekte = "~/Projects"
+# projekte = "~/Projects"     # Ordner mit Repos, oder eine Liste aus Ordnern/einzelnen Repos
 # von = "reviewed"
 # bis = "claude"
+# Arbeitsstand eines Agenten (auch nicht Committetes) gegen main, z. B. unter WSL:
+#   projekte = ["~/workspaces/projekt", "~/workspaces/anderes"]
+#   von = "origin/main"
+#   bis = "arbeitsstand"        # Arbeitsverzeichnis statt Branch; „fertig“ gibt es dann nicht
 
 # GitLab-Merge-Requests über glab (vorher einmal: glab auth login --hostname <host>)
 # gitlab = true

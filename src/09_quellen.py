@@ -9,7 +9,11 @@
 
 class Lokal:
     name = "lokal"
-    kann = {"review": False, "fertig": True, "committen": True}
+
+    @property
+    def kann(self):  # „fertig“ setzt den Branch von – nur bei lokalen Branches, nicht gegen origin/… oder den Arbeitsstand
+        fertig = BIS != ARBEITSSTAND and not VON.startswith(("origin/", "refs/remotes/"))
+        return {"review": False, "fertig": fertig, "committen": True}
 
     def an(self):
         return bool(KONF["lokal"])
@@ -28,6 +32,8 @@ class Lokal:
         wurzel = g_wurzel(g["lokal"])
         if not wurzel:
             raise GitLabFehler(f'Projekt {g["lokal"]} nicht gefunden')
+        if BIS == ARBEITSSTAND:
+            return wurzel, arbeitsstand(wurzel)
         head = (git(wurzel, "rev-parse", "--verify", "-q", BIS, check=False) or "").strip()
         if not head:
             raise GitLabFehler(f"Branch {BIS} fehlt in {wurzel}")
@@ -48,9 +54,10 @@ class Lokal:
         return '<button data-l="neu" title="Nach neuen lokalen Änderungen schauen">↻ Änderungen</button>'
 
     def prompt(self, g, wurzel):
+        wo = ("im Arbeitsverzeichnis umsetzen (nicht committen)" if BIS == ARBEITSSTAND else f"auf {BIS} umsetzen und committen")
         return (f"In merge-train liegen Fragen bzw. Feedback des Nutzers zum Code von {g['lokal']} (Diff {BIS} gegen {VON}). "
-                f"Hol sie mit `merge-train agent feedback` ab. Fragen beantworten, Änderungswünsche auf {BIS} umsetzen und "
-                f"committen; zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). "
+                f"Hol sie mit `merge-train agent feedback` ab. Fragen beantworten, Änderungswünsche {wo}; "
+                f"zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). "
                 f"Danach mit `merge-train agent horchen` im Hintergrund auf weitere Nachrichten warten.")
 
 class GitLab:

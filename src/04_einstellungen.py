@@ -57,7 +57,9 @@ def konfig_laden():
 KONF = konfig_laden()
 ORDNER = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "merge-train")
 DATEN = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "merge-train")
-PROJEKTE = os.path.expanduser(KONF["projekte"])
+# projekte: Ordner mit Repos (auch eine Ebene tiefer) oder einzelne Repos – ein Eintrag oder eine Liste
+PROJEKTE_LISTE = [os.path.expanduser(p) for p in (KONF["projekte"] if isinstance(KONF["projekte"], list) else [KONF["projekte"]])]
+PROJEKTE = PROJEKTE_LISTE[0] if PROJEKTE_LISTE else os.path.expanduser("~")
 VON, BIS = KONF["von"], KONF["bis"]
 RUNDE = os.path.join(ORDNER, "runde.json")
 SCHLUESSEL = os.path.join(ORDNER, "schluessel")
@@ -88,28 +90,88 @@ def schluessel():
         return k
 
 def projektname(wurzel):
-    p = PROJEKTE + "/"
-    return os.path.relpath(wurzel, PROJEKTE) if wurzel.startswith(p) else os.path.basename(wurzel)
+    for p in PROJEKTE_LISTE:
+        if wurzel.startswith(p.rstrip("/") + "/"):
+            return os.path.relpath(wurzel, p)
+    return os.path.basename(wurzel)
+
+def projekt_ordner(name):
+    """Projektname → Ordner (unter einem Eintrag von projekte oder ein dort genanntes Repo)."""
+    for p in PROJEKTE_LISTE:
+        if os.path.isdir(os.path.join(p, name)) and not os.path.isdir(os.path.join(p, ".git")):
+            return os.path.join(p, name)
+        if os.path.basename(p.rstrip("/")) == name and os.path.isdir(os.path.join(p, ".git")):
+            return p
+    return os.path.join(PROJEKTE, name)
 
 def dateiname(projekt):
     return projekt.replace("/", "_") + ".html"
 
+ARBEITSSTAND = "arbeitsstand"  # bis = Arbeitsverzeichnis (auch nicht committet), z. B. von = "origin/main"
+_ARBEIT = {}
+
+def arbeitsstand(wurzel):
+    """Das Arbeitsverzeichnis (geänderte, neue nicht ignorierte und gelöschte Dateien) als Commit-Objekt, ohne Index,
+    Branch oder Dateien anzufassen: Kopie des Index, add -A, write-tree, commit-tree mit festen Daten – gleicher Inhalt
+    ergibt denselben sha (die Seite bleibt im Cache). Ohne Änderungen: HEAD."""
+    import tempfile
+    head = git(wurzel, "rev-parse", "HEAD").strip()
+    status = git(wurzel, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False) or ""
+    if not status:
+        return head
+    merkmal = [head, status]
+    for e in status.split("\0"):  # Inhalt kann sich ändern, ohne dass sich der Status ändert: mtime/Größe mitnehmen
+        if len(e) > 3:
+            try:
+                s = os.stat(os.path.join(wurzel, e[3:])); merkmal.append(f"{s.st_mtime_ns}:{s.st_size}")
+            except OSError:
+                merkmal.append("-")
+    k = (wurzel, hashlib.sha1("|".join(merkmal).encode()).hexdigest())
+    if k in _ARBEIT:
+        return _ARBEIT[k]
+    with tempfile.TemporaryDirectory() as t:
+        idx = os.path.join(t, "index")
+        echt = git(wurzel, "rev-parse", "--path-format=absolute", "--git-path", "index", check=False)
+        if echt and os.path.exists(echt.strip()):
+            shutil.copyfile(echt.strip(), idx)  # mit Stat-Cache: nur geänderte Dateien werden neu gelesen
+        env = dict(os.environ, GIT_INDEX_FILE=idx, GIT_AUTHOR_NAME="merge-train", GIT_AUTHOR_EMAIL="merge-train@localhost",
+                   GIT_COMMITTER_NAME="merge-train", GIT_COMMITTER_EMAIL="merge-train@localhost",
+                   GIT_AUTHOR_DATE="2000-01-01T00:00:00+0000", GIT_COMMITTER_DATE="2000-01-01T00:00:00+0000")
+        if not os.path.exists(idx):
+            git(wurzel, "read-tree", "HEAD", env=env)
+        git(wurzel, "add", "-A", env=env)
+        baum = git(wurzel, "write-tree", env=env).strip()
+        sha = head if baum == git(wurzel, "rev-parse", "HEAD^{tree}").strip() else \
+            git(wurzel, "commit-tree", baum, "-p", head, "-m", "Arbeitsstand (nicht committet)", env=env).strip()
+    if len(_ARBEIT) > 200:
+        _ARBEIT.clear()
+    _ARBEIT[k] = sha
+    return sha
+
+def bis_sha(wurzel, bis=None):
+    """Stand für bis: Branch/Ref oder der Arbeitsstand."""
+    bis = bis or BIS
+    return arbeitsstand(wurzel) if bis == ARBEITSSTAND else git(wurzel, "rev-parse", bis).strip()
+
 def finde_repos():
-    """Alle Repos unter PROJEKTE mit VON und BIS (auch eine Ebene tiefer, z. B. cachy-patch/*)."""
-    out = []
-    for e in sorted(os.listdir(PROJEKTE)):
-        d = os.path.join(PROJEKTE, e)
-        if not os.path.isdir(d): continue
-        kandidaten = [d] if os.path.isdir(os.path.join(d, ".git")) else \
-            [os.path.join(d, u) for u in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, u, ".git"))]
-        for k in kandidaten:
-            if git(k, "rev-parse", "--verify", "-q", VON, check=False) and \
-               git(k, "rev-parse", "--verify", "-q", BIS, check=False):
-                out.append(k)
+    """Alle Repos aus projekte (Ordner: auch eine Ebene tiefer, z. B. cachy-patch/*; oder direkt ein Repo) mit VON und BIS."""
+    out, kandidaten = [], []
+    for wo in PROJEKTE_LISTE:
+        if os.path.isdir(os.path.join(wo, ".git")):  # direkt ein Repo
+            kandidaten.append(wo); continue
+        for e in sorted(os.listdir(wo)) if os.path.isdir(wo) else []:
+            d = os.path.join(wo, e)
+            if not os.path.isdir(d): continue
+            kandidaten += [d] if os.path.isdir(os.path.join(d, ".git")) else \
+                [os.path.join(d, u) for u in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, u, ".git"))]
+    for k in kandidaten:
+        if git(k, "rev-parse", "--verify", "-q", VON, check=False) and \
+           git(k, "rev-parse", "--verify", "-q", "HEAD" if BIS == ARBEITSSTAND else BIS, check=False):
+            out.append(k)
     return out
 
 def statistik(wurzel, von=None, bis=None):
-    von, bis = von or VON, bis or BIS
+    von, bis = von or VON, bis_sha(wurzel, bis)
     basis = git(wurzel, "merge-base", von, bis).strip()
     plus = minus = dateien = 0
     for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
@@ -119,7 +181,7 @@ def statistik(wurzel, von=None, bis=None):
     return {"p": projektname(wurzel), "datei": dateiname(projektname(wurzel)), "plus": plus, "minus": minus,
             "dateien": dateien, "commits": int(git(wurzel, "rev-list", "--count", f"{von}..{bis}")),
             "todos": sorted(set(re.findall(r"todo:([\w.-]+)", log))), "status": "offen",
-            "sha": git(wurzel, "rev-parse", bis).strip()}
+            "sha": bis}
 
 def runde_laden():
     import json
@@ -202,6 +264,8 @@ def fertig(projekt, sha, k):
     wurzel = repos[projekt]
     if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
         return False, "Abgelehnt: unbekannter Stand."
+    if not LOKAL.kann["fertig"]:
+        return False, f"„fertig“ geht nur mit lokalen Branches (von = {VON}, bis = {BIS})."
     if git(wurzel, "merge-base", "--is-ancestor", VON, sha, check=False) is None:
         return False, f"{projekt}: {VON} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
     st = statistik(wurzel, VON, sha)

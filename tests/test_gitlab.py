@@ -79,6 +79,52 @@ case "$1" in
 esac
 """
 
+ARBEIT_PRUEFEN = r"""
+import json, os, runpy, subprocess, sys
+m = runpy.run_path(sys.argv[1], run_name="pruefen")
+w = sys.argv[2]
+g = lambda *a: subprocess.run(["git", "-C", w, *a], capture_output=True, text=True).stdout
+vorher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("rev-parse", "HEAD"))
+s1 = m["arbeitsstand"](w); s2 = m["arbeitsstand"](w)
+m["_ARBEIT"].clear(); s3 = m["arbeitsstand"](w)  # ohne Zwischenspeicher: gleicher Inhalt, gleicher sha
+nachher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("rev-parse", "HEAD"))
+st = m["statistik"](w)
+pfad, struktur = m["projekt_seite"](w)
+print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
+                  "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
+                  "stat": st, "fertig": m["LOKAL"].kann["fertig"], "dateien": [d["neu"] for d in struktur["dateien"]],
+                  "seite": os.path.exists(pfad)}))
+"""
+
+def arbeitsstand_test():
+    """bis = "arbeitsstand": Arbeitsverzeichnis (auch nicht committet) gegen von, ohne Index/Branch anzufassen."""
+    w = f"{T}/Arbeit/klon"
+    os.makedirs(w)
+    g = lambda *a: sh("git", "-C", w, *a).stdout.strip()
+    g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    open(f"{w}/a.py", "w").write("a = 1\n"); open(f"{w}/weg.py", "w").write("w = 1\n")
+    g("add", "-A"); g("commit", "-qm", "Start")
+    g("checkout", "-qb", "feature/x")
+    open(f"{w}/a.py", "w").write("a = 2\n")             # geändert, nicht committet
+    open(f"{w}/neu.py", "w").write("n = 1\n")            # neu, nicht hinzugefügt
+    os.remove(f"{w}/weg.py")                              # gelöscht
+    open(f"{w}/.gitignore", "w").write("*.log\n"); open(f"{w}/x.log", "w").write("ignoriert\n")
+    konf = f"{T}/config/merge-train/arbeit.toml"
+    open(konf, "w").write(f'lokal = true\ngitlab = false\nprojekte = ["{T}/Arbeit/klon"]\nvon = "main"\nbis = "arbeitsstand"\n')
+    env = dict(ENV, MERGE_TRAIN_CONFIG=konf, XDG_CACHE_HOME=f"{T}/cache-arbeit")
+    r = subprocess.run([sys.executable, "-c", ARBEIT_PRUEFEN, SKRIPT, w], capture_output=True, text=True, env=env)
+    try:
+        d = json.loads(r.stdout)
+    except ValueError:
+        pruefe(False, "Arbeitsstand: " + (r.stderr.strip().splitlines() or ["?"])[-1]); return
+    pruefe(d["s1"] == d["s2"] == d["s3"] and d["s1"] != d["head"], "Arbeitsstand: eigener Commit, gleicher Inhalt → gleicher sha")
+    pruefe(d["unveraendert"], "Arbeitsstand: Index, Arbeitsverzeichnis und Branch unverändert")
+    pruefe(sorted(d["baum"]) == [".gitignore", "a.py", "neu.py"] and d["inhalt"] == "a = 2\n",
+           "Arbeitsstand: geänderte, neue und gelöschte Dateien, ignorierte nicht")
+    pruefe(d["stat"]["dateien"] == 4 and d["stat"]["sha"] == d["s1"] and sorted(d["dateien"]) == [".gitignore", "a.py", "neu.py", "weg.py"]
+           and d["seite"], "Arbeitsstand: Waggon-Statistik und Diff-Seite gegen von")
+    pruefe(d["fertig"] is False, "Arbeitsstand: „fertig“ ist aus (würde von verschieben)")
+
 def lokal_test():
     """Lokaler Projekt-Diff (claude gegen reviewed): gleiche Seite wie im GitLab-Modus, ohne glab."""
     proj = f"{T}/Projects/proj"
@@ -690,6 +736,7 @@ def main():
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", alt, "--mr", "https://gitlab.example.com/gruppe/demo/-/merge_requests/1", check=False)
         pruefe(r.returncode == 0 and "#9" in r.stdout and "Neu.cs:2" in r.stdout, "Altformat und --mr")
         lokal_test()
+        arbeitsstand_test()
         gemischt_test(mr)
     finally:
         srv.terminate()

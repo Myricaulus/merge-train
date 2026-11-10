@@ -219,7 +219,7 @@ def main():
     if o.ordner:  # ohne Projekt: immer der ganze Zug
         ordner = o.ordner
         if not os.path.isdir(ordner):  # im Projektordner ist „merge-train“ auch die gebaute Datei
-            ordner = os.path.join(PROJEKTE, o.ordner)
+            ordner = projekt_ordner(o.ordner)
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
             sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")

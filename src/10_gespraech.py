@@ -355,7 +355,7 @@ def g_ziele(name=None):
             return treffer[:1] or [mr]
     ordner = name or os.getcwd()
     if name and not os.path.isdir(ordner):
-        ordner = os.path.join(PROJEKTE, name)
+        ordner = projekt_ordner(name)
     wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() if os.path.isdir(ordner) else ""
     if not wurzel:
         raise GitLabFehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
@@ -451,7 +451,8 @@ def g_abholen(ziele, alle=False, markieren=True):
             except GitLabFehler:
                 pass
         teile += [kopf, ""] + [g_ausgeben(k, wurzel, head, rv=rv) + "\n" for k in zeigen]
-        teile.append("Code-Zeilen beziehen sich auf " + (f"den aktuellen Stand von {BIS}." if quelle(g).kann["committen"]
+        teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
+                     "nicht committen." if BIS == ARBEITSSTAND else f"den aktuellen Stand von {BIS}.") if quelle(g).kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')

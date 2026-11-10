@@ -100,8 +100,8 @@ def projekt_seite(wurzel, von=None, bis=None, ansicht=None):
     """Seite eines lokalen Projekts (BIS gegen VON ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
     von, bis = von or VON, bis or BIS
     projekt = projektname(wurzel)
-    head = git(wurzel, "rev-parse", bis).strip()
-    refs = {"base_sha": git(wurzel, "merge-base", von, bis).strip(), "start_sha": git(wurzel, "rev-parse", von).strip(),
+    head = bis_sha(wurzel, bis)
+    refs = {"base_sha": git(wurzel, "merge-base", von, head).strip(), "start_sha": git(wurzel, "rev-parse", von).strip(),
             "head_sha": head}
     praefix = os.path.join(LOKAL_ORDNER, f'{dateiname(projekt)[:-5]}-{von}-{bis}-{head[:12]}-{refs["base_sha"][:12]}'
                            .replace("/", "_"))
@@ -129,7 +129,8 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     lesen = bool(ans and ans["art"] == "commit")
     daten = seiten_daten("projekt:" + projekt, head, len(dateien), ans, projekt=projekt)
     klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
-    hilfe = (f'<div class="hilfe">{klick}<br><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
+    fertig_kbd = "<kbd>Enter</kbd> fertig · " if LOKAL.kann["fertig"] else ""
+    hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
     return diff_seite(titel=f"MR {html.escape(projekt)}", sid="projekt:" + projekt, lesen=lesen, daten=daten, head=head,

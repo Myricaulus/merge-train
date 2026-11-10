@@ -162,6 +162,8 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 | Schlüssel | Standard | Wofür |
 |---|---|---|
 | `lokal` | `true` | Quelle „lokal“ (Projekt-Diff `claude` → `reviewed`) an/aus |
+| `projekte` | `~/Projects` | Ordner mit Repos oder Liste aus Ordnern/einzelnen Repos für „lokal“ |
+| `von`, `bis` | `reviewed`, `claude` | „lokal“ vergleicht `bis` gegen `von`. `bis = "arbeitsstand"`: das Arbeitsverzeichnis samt nicht Committetem (z. B. was ein Agent gerade baut) gegen `von = "origin/main"`; Index und Branch bleiben unberührt, „fertig“ gibt es dann nicht |
 | `gitlab` | `true` | Quelle „GitLab“ (MRs) an/aus |
 | `gitlab_host` | leer | Host, wenn ihn weder URL noch Remote liefern |
 | `mr_liste` | `reviewer` | welche MRs der Zug zeigt |
