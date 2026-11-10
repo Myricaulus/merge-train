@@ -6,7 +6,7 @@ from .waggon import Waggon, fertig_moeglich
 from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, projekt_wurzel, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
-from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_BAHNHOF, JS_DIFF, JS_REVIEW, JS_ZUG
+from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, spaeter_grund, zeilenzahl
 from .zustand import STRUKTUR, zustand, zustand_lesen
 from .gitlab import MetaFehlt, mr_lokal
@@ -106,7 +106,7 @@ def leitstand_html():
 
 def gleise_html():
     """Kopf: der Güterbahnhof über die ganze Breite. Kulisse (bahnhof.webp), davor Verladegebäude und Förderband
-    (zeichnet zug.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Im Leitstand die Knöpfe
+    (zeichnet zeichnungen.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Im Leitstand die Knöpfe
     der eingeschalteten Quellen: lokal nach neuen Änderungen schauen, GitLab nur auf Knopfdruck fragen."""
     titel = "Güterbahnhof" + (": GitLab wird nur hier (und beim Abschließen) gefragt" if KONF["gitlab"] else "")
     return (f'<div class="gleise szene" style="--bild:url(data:image/webp;base64,{BAHNHOF_BILD})">'
@@ -283,7 +283,7 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" class="kliste" open hidden><summary>GitLab-Kommentare</summary><div></div></details><details id="kliste-ki" class="kliste" open hidden><summary>KI-Threads</summary><div></div></details></div>
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
 <main>{leer}{dateien_html(dateien, texte)}</main></div>
-<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""
+<script>const MR={daten};{JS}</script></body></html>"""
 
 
 def ansicht_struktur(haupt, ansicht):
@@ -314,4 +314,4 @@ def startseite(text="", sid=""):
 <script src="/zug.js?akt={urllib.parse.quote(sid)}"></script></head>
 <body class="start"><header id="kopf">{gleise_html()}<div class="zeile"><span id="meldung"></span></div></header>
 <main class="uebersicht">{f'<p class="warn">{html.escape(text)}</p>' if text else ""}{mr_feld}
-</main><script>const MR={daten};const ds=[],ls=[];function kh(){{}}{JS_ZUG}{JS_BAHNHOF}</script></body></html>"""
+</main><script>const MR={daten};{JS_START}</script></body></html>"""

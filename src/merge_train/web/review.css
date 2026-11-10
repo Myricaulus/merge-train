@@ -47,7 +47,7 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .ck:hover{background:var(--akt)} .ck.akt{background:var(--akt);font-weight:600}
 .ansicht{margin-top:6px;padding:4px 10px;border-left:3px solid var(--tn);background:var(--akt);font-size:13px} .ansicht a{color:var(--tn)}
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
-/* Güterbahnhof im Kopf: Kulisse (Bild), Anlage (SVG aus zug.js), Leitstand mit Knöpfen, Zug. Der Himmel (--himmel)
+/* Güterbahnhof im Kopf: Kulisse (Bild), Anlage (SVG aus zeichnungen.js), Leitstand mit Knöpfen, Zug. Der Himmel (--himmel)
    rutscht beim Scrollen weg, Band und Zug bleiben stehen. Panorama (myr, 7014×775) über die volle Breite, mindestens 2480 px (sonst Lücke über dem Bild, dann seitlich abschneiden);
    Horizont bei 64 % der Bildhöhe (= .0711 × Breite) auf y=176; beim Wegscrollen des Himmels wandert er mit (--hub aus bahnhof.js)
    bis an den Unterrand, damit im schmalen Streifen die Gebäude ganz zu sehen sind statt des leeren Bodens. */

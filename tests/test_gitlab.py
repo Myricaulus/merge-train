@@ -471,7 +471,7 @@ def main():
     if shutil.which("node"):  # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt
         m = alles_laden(SKRIPT)
         js = os.path.join(T, "seite.js")
-        open(js, "w", encoding="utf-8").write("".join(m[n] for n in ("JS", "JS_ZUG", "JS_DIFF", "JS_REVIEW", "JS_BAHNHOF")))
+        open(js, "w", encoding="utf-8").write("const MR={};" + m["JS"])
         r = subprocess.run(["node", "--check", js], capture_output=True, text=True)
         pruefe(r.returncode == 0, "Seiten-Skript ohne Syntaxfehler" + (": " + r.stderr.strip().splitlines()[-1] if r.returncode else ""))
     repo_anlegen()

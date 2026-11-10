@@ -8,11 +8,12 @@ def _text(name):
 
 CSS = _text("basis.css")
 CSS_REVIEW = _text("review.css")
-JS = _text("basis.js")
-JS_ZUG = _text("zug.js")
-JS_DIFF = _text("diff.js")
-JS_REVIEW = _text("review.js")
-JS_BAHNHOF = _text("bahnhof.js")
+# Seiten-Skripte, in dieser Reihenfolge in einem <script> (jede Datei in eigener Funktion, gemeinsam nur über App):
+# Diff-Seiten alle, Startseite nur JS_START.
+JS_DATEIEN = ("app.js", "navigation.js", "zeichnungen.js", "zug.js", "diff.js", "review.js", "hud.js", "toasts.js", "bahnhof.js")
+JS_START_DATEIEN = ("app.js", "zeichnungen.js", "zug.js", "bahnhof.js")
+JS = "".join(_text(n) for n in JS_DATEIEN)
+JS_START = "".join(_text(n) for n in JS_START_DATEIEN)
 FAVICON = _text("favicon.svg")
 ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
 BAHNHOF_BILD = base64.b64encode(pkgutil.get_data(__package__, "web/bahnhof.webp")).decode()  # für eine data:-URL

@@ -12,15 +12,15 @@ Commits `321af08` … `eba8275` auf `claude`:
   `gleise_html` setzt es als `--bild` auf `.szene`. Es füllt die volle Breite, ist aber mindestens 2480 px breit
   (sonst seitlich abgeschnitten). Der Horizont liegt immer auf y=176 (`review.css`, `.szene`).
 - **Nacht:** blaues Overlay über der Kulisse, die Fenster leuchten (`prefers-color-scheme: dark`).
-- **Anlage:** `anlage()` in `src/merge_train/web/zug.js` zeichnet sie in `#anlage`. Links steht das Verladegebäude: Bandturm
+- **Anlage:** `anlageZeichnen()` in `src/merge_train/web/zeichnungen.js` zeichnet sie in `#anlage`. Links steht das Verladegebäude: Bandturm
   mit dem Schild „MERGE-TRAIN“, verglaster Leitstand und ein Tor fürs Gleis bei x=28…156. Daraus läuft das
   Förderband als Fachwerkbrücke bis zur Bandmitte `cx` (Bildschirmmitte, mindestens 330), mit Bandkopf, Schurre
   und Strahl über dem Wagen. Dazu kommen Gleis, Schotter und Schwellen. Die Knöpfe sind HTML (`#bahnhof`) im
   Leitstand: GitLab „↻ MRs“ und „↻ MR-Daten“ (ohne glab ausgegraut), lokal „↻ Änderungen“ (lädt neu).
 - **Band:** `.szene.laedt` bzw. `.laeuft` lässt es rütteln, das Schüttgut wandert und aus der Schurre rieselt
   es. `#laden` setzt `laedt` dauerhaft.
-- **Scrollen:** Der Himmel (`--himmel: 96px`) rutscht weg, Leitstand, Band und Zug bleiben stehen. `kopfH()`
-  in `basis.js` rechnet ihn heraus.
+- **Scrollen:** Der Himmel (`--himmel: 96px`) rutscht weg, Leitstand, Band und Zug bleiben stehen. `kopfHoehe()`
+  in `navigation.js` rechnet ihn heraus.
 - **Zug:** Der aktuelle Wagen (sonst der letzte) steht unter dem Band, `#zug` scrollt mit Rand `cx` links und
   rechts. Die Wagen sind noch die alten weißen Kästen.
 

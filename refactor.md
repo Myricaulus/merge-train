@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–6 sind
-erledigt, 7–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–7 sind
+erledigt, 8 steht aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -49,7 +49,7 @@ python3 tests/test_gitlab.py                                             # Ende-
   Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
   nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
 
-## Stand nach den Schritten 1–6
+## Stand nach den Schritten 1–7
 
 | Commit | Inhalt |
 |---|---|
@@ -61,6 +61,7 @@ python3 tests/test_gitlab.py                                             # Ende-
 | Schritt 4 | Zustand kapseln: `with zustand(waggon) as st:`, `zustand_lesen`, `kommentar_finden`/`faden_finden`, `…_anhaengen`, `eintrag_entfernen`, `ist_staged`/`ist_sent`, Aufbau der Datei oben in `zustand.py` |
 | Schritt 5 | Server als Routen-Tabelle (`@route`, `bearbeiten`, `Antwort`/`Anfrage`, `beobachten`), Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
 | Schritt 6 | Abschließen: `abschluss_planen` (rein) → `schritt_ausfuehren` (GitLab, ohne Sperre) → `schritt_eintragen` (je Schritt kurz unter der Sperre); `entwuerfe_abgleichen(st, vorhanden, eigene_texte)` rein, Texte vorher per `abgleich_vorbereiten`; Umformulieren: `umformulieren_ziel_finden` → `hinweis_text_aendern` / `draft_daneben` |
+| Schritt 7 | JS: Formatierung (7a), dann Namen, `App`, Dateien `app.js`, `navigation.js` (war `basis.js`), `zeichnungen.js`, `hud.js`, `toasts.js` (7b) |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
@@ -279,6 +280,19 @@ Browser durchgehen: Startseite (Zug, Güterbahnhof, HUD, Toasts), Projekt-Seite 
 aufklappen, Faden anlegen, Feedback senden, fertig), MR-Seite mit `tests/fake-glab` (Kommentar, Hinweis übernehmen,
 Reihenfolge ziehen, Abschließen), Commit-Ansicht. Auf Konsolenfehler achten. Am besten vor dem Umbau Screenshots
 machen und danach vergleichen. Commits: „JS: Formatierung“, dann „JS: Namen, App-Objekt, Dateien aufgeteilt“.
+
+**Erledigt.** Abweichungen: `App` steht in einem eigenen `app.js` (lädt auf allen Seiten zuerst, auch auf der
+Startseite, die `basis.js` nicht hat); `basis.js` heißt jetzt `navigation.js`, Lok und Verladeanlage liegen in
+`zeichnungen.js` (statt `lok.js`, weil beides drin ist). Jede Datei läuft in einer eigenen Funktion und sieht die
+anderen nur über `App` (oben in jeder Datei: braucht/stellt bereit). `MR` heißt in den Dateien `waggon` (= `App.waggon`).
+`App.melden` schreibt die Meldungszeile, `toasts.js` ersetzt es durch Toasts (kein MutationObserver mehr). Die Liste
+der Skripte steht nur noch in `web.py` (`JS_DATEIEN`, `JS_START_DATEIEN`), der Test prüft `m["JS"]`.
+Geprüft: kein `node` auf diesem Rechner, deshalb prettier und Syntaxprüfung in headless Chromium (DevTools-Protokoll),
+dazu je Datei die freien Namen per Babel-AST (0 außer `App`/`MR`) und dass jede gelesene `App.x` gesetzt wird. Alter
+und neuer Stand im Browser auf demselben Testzustand, 25 Schritte (Zug, lokale Seite j/k/i/z, Faden anlegen/senden,
+Toast, 🔔, MR-Seite, Popup, Vergleich, übernehmen, sortieren, verwerfen, abschließen, MRs holen, Commit-Ansicht,
+fertig): DOM gleich bis auf `--kopfh` nach einer Meldung – vorher maß `kopfhoeheSetzen` den Kopf, bevor der
+MutationObserver die Meldungszeile leerte (zu hoch bis zum nächsten Neuzeichnen), jetzt stimmt er.
 
 ## Schritt 8: Einzeltests für die Logik
 
