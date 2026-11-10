@@ -23,7 +23,7 @@ Nur für die Entwicklung (Doku, Code-Kommentare, Skill, Ausgaben von `merge-trai
 
 **staged entsteht nur durch den Nutzer**: Klick auf „übernehmen“ (oder ein selbst geschriebener Kommentar). Der Agent legt
 nie Review-Kommentare an. Er ändert nur drafts und legt sonst einen neuen draft daneben an (`merge-train agent kommentar`,
-Datei `<review>.agent.json` neben dem Review-Zustand, als Hinweis-Datei des MR angemeldet).
+als Marker in der Review-JSON des MR).
 Achtung: GitLab nennt auch sent-Kommentare „draft notes“; „draft“ meint hier immer den Agent-Hinweis.
 
 ## Code

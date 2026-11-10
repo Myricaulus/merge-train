@@ -514,20 +514,20 @@ def g_kommentar(ziel, text, ziele=None):
         m["ersetzt"] = f'Kommentar {x["id"]}'
     elif art == "h":
         m["ersetzt"] = f'Hinweis {x.get("finding") or x["key"]} ({x["status"]})'
-    datei = review_datei(g)[:-5] + ".agent.json"
+    # in die Review-JSON des MR: die des ersetzten Hinweises, sonst die erste
+    datei = x.get("json") if art == "h" else None
     with SPERRE:
-        try:
-            daten = json.load(open(datei, encoding="utf-8"))
-        except (OSError, ValueError):
-            daten = {"key": "Agent", "notes": "Umformulierungen aus Gesprächen (merge-train agent kommentar)", "markers": []}
-        daten["markers"].append(m)
-        ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
         st = review_laden(g)
-        if datei not in st["hinweis_dateien"]:
-            st["hinweis_dateien"].append(datei)
-            review_speichern(g, st)
+    if not datei and art == "k" and x.get("hinweis"):
+        datei = next((h.get("json") for h in review_daten(g)["hinweise"] if h["key"] == x["hinweis"]), None)
+    datei = datei or next(iter(hinweis_dateien(g, st)), None)
+    if not datei:
+        raise GitLabFehler("Zu diesem MR gibt es keine Review-JSON (Agent-Hinweise) – den neuen Text im Faden vorschlagen")
+    daten = json.load(open(datei, encoding="utf-8-sig"))
+    (daten if isinstance(daten, list) else daten.setdefault("markers", [])).append(m)
+    ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
     ort = f"{path}:{b}" if path and b else "allgemein"
-    return (f"neuer Agent-Hinweis (draft) bei {ort} – der Nutzer übernimmt ihn oder verwirft ihn; "
+    return (f"neuer Agent-Hinweis (draft) bei {ort} in {kurzpfad(datei)} – der Nutzer übernimmt oder verwirft ihn; "
             "der bisherige Kommentar bleibt unverändert")
 
 def hinweis_text_aendern(h, text):

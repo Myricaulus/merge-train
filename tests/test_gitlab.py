@@ -359,8 +359,9 @@ def mr_gespraech_test(mr, k, basis, struktur):
     for x in rv["kommentare"]:
         if x["id"] == km["id"] or x["text"] == "Shortest.":
             post("/api/kommentar", dict(basis, aktion="loeschen", id=x["id"]))
-    agent = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.agent.json'
-    os.remove(agent)
+    pruefe(not os.path.exists(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.agent.json'),
+           "Kommentar umformulieren: drafts in der Review-JSON, keine eigene Datei")
+    open(hw, "w", encoding="utf-8").write(sicher)
     pruefe(sh(sys.executable, SKRIPT, "agent", "kommentar", "gibtsnicht", "x", env=genv, check=False).returncode == 2,
            "Kommentar umformulieren: unbekanntes Ziel")
 
