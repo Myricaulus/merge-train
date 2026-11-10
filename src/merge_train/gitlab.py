@@ -5,7 +5,7 @@ from datetime import datetime
 from .einstellungen import KONF, ORDNER, ersetzen
 from .waggon import Fehler, Waggon
 from .git import aussen_log, git, kurzpfad, ref_sha
-from .zustand import zustand, zustand_lesen
+from .akte import akte_bearbeiten, akte_lesen
 
 class GitLabFehler(Fehler):
     pass
@@ -121,7 +121,7 @@ def lokale_klone(mr):
     for schl in (mr.projekt, f'{mr.host}/{mr.projekt}'):
         if schl in KONF["repos"]:
             out.append(os.path.expanduser(KONF["repos"][schl]))
-    k = zustand_lesen(mr).get("klon")
+    k = akte_lesen(mr).get("klon")
     if k:
         out.append(k)
     return [o for o in out if os.path.isdir(o)]
@@ -144,9 +144,9 @@ def mr_meta_holen(mr):
     meta = {k: roh.get(k) for k in META_FELDER}
     meta["author"] = {"name": (roh.get("author") or {}).get("name", "")}
     meta["_zeit"] = datetime.now().strftime("%d.%m. %H:%M")
-    with zustand(mr) as st:
-        st["meta"] = meta
-        st["mr"] = dict(mr.als_dict(), web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
+    with akte_bearbeiten(mr) as akte:
+        akte["meta"] = meta
+        akte["mr"] = dict(mr.als_dict(), web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
                         source_branch=meta.get("source_branch") or "", target_branch=meta.get("target_branch") or "")
     return mr, meta
 

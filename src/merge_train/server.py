@@ -6,7 +6,7 @@ from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, VON, dateina
 from .waggon import Fehler, Waggon
 from .git import ANLASS, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
-from .zustand import zustand, zustand_lesen
+from .akte import akte_bearbeiten, akte_lesen
 from .beobachter import neue_zeilen, veraltet
 from .gitlab import mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
@@ -254,7 +254,7 @@ def api_review(anfrage, waggon):
 def api_stand(anfrage, waggon):
     """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden."""
     seite_lebt(waggon)
-    return {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION, "server": server_stand(),
+    return {"stand": stand(waggon, akte_lesen(waggon)), "version": VERSION, "server": server_stand(),
             "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
 
 
@@ -353,16 +353,16 @@ def api_gitlab(anfrage):
 
 def mr_daten_holen(mr):
     """MR-Daten und Entwürfe aus GitLab, gesendete Kommentare abgleichen, Seite gleich bauen."""
-    vorher = zustand_lesen(mr).get("struktur")
+    vorher = akte_lesen(mr).get("struktur")
     _, vorhanden = meta_und_entwuerfe(mr)
     if isinstance(vorhanden, Fehler):
         raise vorhanden
     eigene_texte = abgleich_vorbereiten(mr, vorhanden)  # GitLab, ohne Sperre
-    with zustand(mr) as st:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
-        pub, verw = entwuerfe_abgleichen(st, vorhanden, eigene_texte)
+    with akte_bearbeiten(mr) as akte:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
+        pub, verw = entwuerfe_abgleichen(akte, vorhanden, eigene_texte)
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
         mr_seite(mr)
-        neu_laden = zustand_lesen(mr).get("struktur") != vorher
+        neu_laden = akte_lesen(mr).get("struktur") != vorher
     except Fehler:
         neu_laden = True
     text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
@@ -507,11 +507,11 @@ def server_stand():
         roh = (git(repo, "log", "-1", "--format=%h%x1f%cd", "--date=format:%d.%m. %H:%M", check=False) or "").strip()
         if roh:
             commit, zeit = roh.split("\x1f")
-            st = {"commit": commit, "zeit": zeit, "geaendert": bool((git(repo, "status", "--porcelain", "--", "src", check=False) or "").strip())}
+            akte = {"commit": commit, "zeit": zeit, "geaendert": bool((git(repo, "status", "--porcelain", "--", "src", check=False) or "").strip())}
         else:  # kein Git-Repo (z. B. kopierte Datei): Zeit der Datei
-            st = {"commit": "", "zeit": datetime.fromtimestamp(os.path.getmtime(SKRIPT)).strftime("%d.%m. %H:%M"),
+            akte = {"commit": "", "zeit": datetime.fromtimestamp(os.path.getmtime(SKRIPT)).strftime("%d.%m. %H:%M"),
                   "geaendert": False}
-        _SERVER_STAND[:] = [time.time(), st]
+        _SERVER_STAND[:] = [time.time(), akte]
     return _SERVER_STAND[1]
 
 

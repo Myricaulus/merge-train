@@ -410,8 +410,8 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r["ok"] and "zuhört (Copilot)" in r["text"], "MR-Gespräch: Copilot hört zu → übergeben")
     aus, _ = lauscher.communicate(timeout=30)
     pruefe(lauscher.returncode == 0 and "Und warum?" in aus, "MR-Gespräch: horchen mit MR-Kennung bekommt die Nachfrage")
-    st = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
-    pruefe(any(k.get("nachrichten") for k in st["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
+    akte = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+    pruefe(any(k.get("nachrichten") for k in akte["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
     # GitLab-Kommentar umformulieren: draft ändern, sonst neuer draft daneben; staged nur per „übernehmen“
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
@@ -602,8 +602,8 @@ def main():
         r = post("/api/kommentar", dict(basis, aktion="neu", text="Insgesamt gut."))
         ks = {x["text"]: x for x in r["review"]["kommentare"]}
         pruefe(len(ks) == 4 and ks["#1 Missing null check"]["finding"] == "#1", "4 Kommentare, einer aus Agent #1")
-        st = {h["finding"]: h["status"] for h in r["review"]["hinweise"]}
-        pruefe(st["#1"] == "uebernommen" and st["#5"] == "verworfen" and st["#4"] == "offen", "Hinweis-Status")
+        akte = {h["finding"]: h["status"] for h in r["review"]["hinweise"]}
+        pruefe(akte["#1"] == "uebernommen" and akte["#5"] == "verworfen" and akte["#4"] == "offen", "Hinweis-Status")
         # Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge
         rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
         kid = {x["id"]: x for x in rv["kommentare"]}

@@ -8,7 +8,7 @@ import os, re, subprocess, sys, threading, time
 from .einstellungen import KONF, SPERRE, VON
 from .waggon import Fehler
 from .git import bis_sha, git, projekt_wurzel
-from .zustand import struktur_laden, zustand_lesen
+from .akte import akte_lesen, struktur_laden
 
 class Beobachter:
     MASKE = 0x8 | 0x40 | 0x80 | 0x100 | 0x200 | 0x400 | 0x800  # CLOSE_WRITE MOVED_FROM/TO CREATE DELETE DELETE/MOVE_SELF
@@ -117,7 +117,7 @@ def veraltet(waggon, sha):
         except subprocess.CalledProcessError:
             return False
         alt = _GEPRUEFT[wurzel] = (n, jetzt)
-    refs = (struktur_laden(zustand_lesen(waggon)) or {}).get("refs") or {}
+    refs = (struktur_laden(akte_lesen(waggon)) or {}).get("refs") or {}
     start = refs.get("start_sha")
     return alt[1][0] != sha or bool(start and refs.get("head_sha") == sha and alt[1][1] != start)
 

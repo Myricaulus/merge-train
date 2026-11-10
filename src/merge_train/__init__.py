@@ -7,7 +7,7 @@
   zeilen         Zeilen-Arithmetik (alt ↔ neu)
   web            CSS, JavaScript, Bilder aus web/
   diff_html      HTML eines Datei-Diffs
-  zustand        Zustand je Waggon (JSON): Kommentare, Fäden, Struktur der Seite
+  akte           Akte je Waggon (JSON): Review-Kommentare, Gesprächsfäden, Hinweis-Status, Struktur der Seite
   beobachter     --beobachten: Änderungen im Repo merken (inotify), Seite veraltet, neue Zeilen
   gitlab         GitLab über glab
   hinweise       Agent-Hinweise (drafts) lesen und auflösen

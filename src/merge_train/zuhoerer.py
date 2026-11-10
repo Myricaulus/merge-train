@@ -3,13 +3,13 @@ import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
 from .einstellungen import KONF, ersetzen, jetzt
 from .waggon import Fehler
-from .zustand import faeden_von, review_datei, zustand, zustand_lesen
+from .akte import akte_bearbeiten, akte_datei, akte_lesen, faeden_von
 from .quellen import quelle
 
 # ---- Wer bekommt das Feedback?
 
 def horcht_datei(waggon):
-    return review_datei(waggon)[:-5] + ".horcht"
+    return akte_datei(waggon)[:-5] + ".horcht"
 
 
 # Was zwischen „agent horchen“ und der Agenten-Session (claude, copilot …) liegen darf. systemd/init: dorthin wandern
@@ -53,7 +53,7 @@ SEITE_WEG_S = int(os.environ.get("MERGE_TRAIN_SEITE_WEG_S") or 30)
 
 
 def seite_datei(waggon):
-    return review_datei(waggon)[:-5] + ".seite"
+    return akte_datei(waggon)[:-5] + ".seite"
 
 
 def seite_lebt(waggon):
@@ -80,13 +80,13 @@ def horcht(waggon):
 
 
 # ---- Kontext-Füllstand der Agenten-Session (fürs HUD, ohne Zutun des Agenten)
-# „agent horchen“ merkt sich in <zustand>.agent pid und Session-ID der Agenten-Session (Claude Code setzt
+# „agent horchen“ merkt sich in <akte>.agent pid und Session-ID der Agenten-Session (Claude Code setzt
 # CLAUDE_CODE_SESSION_ID). Den Füllstand liest der Server aus deren Transcript: usage der letzten Antwort
 # (input + cache_creation + cache_read) bzw. nach /compact postTokens. Solange die Session lebt, auch während sie
 # arbeitet (dann hört sie gerade nicht zu).
 
 def agent_datei(waggon):
-    return review_datei(waggon)[:-5] + ".agent"
+    return akte_datei(waggon)[:-5] + ".agent"
 
 _KONTEXT = {}
 
@@ -200,7 +200,7 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
         return " und ".join(gestartet) + " gestartet", None
     if not shutil.which("todo"):
         return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {waggon.id}“ sagen", None
-    tid = zustand_lesen(waggon).get("todo_id")
+    tid = akte_lesen(waggon).get("todo_id")
     zeile = f"{n} neue Nachricht(en) um {datetime.now().strftime('%H:%M')}"
     if todo_offen(tid):
         subprocess.run(["todo", "notiz", tid, zeile, "--von", "merge-train"], capture_output=True)
@@ -211,8 +211,8 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
         tid = (r.stdout.strip().splitlines() or [""])[-1].strip() if r.returncode == 0 else None
         if not tid:
             return f"todo-Eintrag ließ sich nicht anlegen: {(r.stderr or r.stdout).strip()[:200]}", None
-        with zustand(waggon) as st:
-            st["todo_id"] = tid
+        with akte_bearbeiten(waggon) as akte:
+            akte["todo_id"] = tid
     subprocess.run(["todo", "heute", tid, "-t", f"Fragen/Feedback aus merge-train ({zeile})"], capture_output=True)
     return "Keine Session hört zu – als todo eingetragen (Panel), „▶ Session starten“ öffnet sie", tid
 
@@ -223,9 +223,9 @@ def feedback_senden(waggon):
         wurzel, _ = quelle(waggon).ort(waggon)
     except Fehler as e:
         return False, str(e), None
-    with zustand(waggon) as st:
+    with akte_bearbeiten(waggon) as akte:
         n, namen = 0, []
-        for k in faeden_von(st):
+        for k in faeden_von(akte):
             for m in k["nachrichten"]:
                 if m["von"] == "ich" and not m.get("gesendet"):
                     m["gesendet"] = jetzt(); n += 1
@@ -238,7 +238,7 @@ def feedback_senden(waggon):
 
 
 def session_starten(waggon):
-    tid = zustand_lesen(waggon).get("todo_id")
+    tid = akte_lesen(waggon).get("todo_id")
     if not todo_offen(tid):
         return False, "Kein offener todo-Eintrag"
     r = subprocess.run(["todo", "los", tid], capture_output=True, text=True)

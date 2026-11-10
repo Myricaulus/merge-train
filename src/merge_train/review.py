@@ -6,20 +6,20 @@ from .git import ANLASS, anlass, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zurueck_diffs
 from .diff_html import datei_tabelle
-from .zustand import (ausstehend, datei_index, eintrag_entfernen, kommentar_anhaengen, kommentar_finden, kommentar_status, review_datei, review_kommentare,
-    struktur_laden, zustand, zustand_lesen)
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, eintrag_entfernen, kommentar_anhaengen,
+    kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import alle, glab, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
 from .zuhoerer import horcht, kontext
 
-def stand(mr, st):
-    teile = [st.get("struktur") or ""]
+def stand(mr, akte):
+    teile = [akte.get("struktur") or ""]
     teile.append(horcht(mr) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
     k = kontext(mr)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
-    for p in [review_datei(mr)] + ([] if mr.lokal else hinweis_dateien(mr, st)):
+    for p in [akte_datei(mr)] + ([] if mr.lokal else hinweis_dateien(mr, akte)):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -27,14 +27,14 @@ def stand(mr, st):
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
 
 
-def gitlab_reihenfolge(st, kom, hinweise):
+def gitlab_reihenfolge(akte, kom, hinweise):
     """Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge bei „Review abschließen“: ids der Kommentare und keys
     der offenen Hinweise. Vom Nutzer sortiert (st["reihenfolge"]), Neues an seiner Stelle nach Datei und Zeile."""
     nat = lambda x: (x["datei"] if x.get("datei") is not None else -1, x.get("b") or x.get("a") or 0)
     eintraege = sorted([(x["id"], x) for x in kom if x["status"] != "loeschen"] +
                        [(h["key"], h) for h in hinweise if h["status"] == "offen"], key=lambda e: nat(e[1]))
     da = dict(eintraege)
-    out = [i for i in st.get("reihenfolge") or [] if i in da]
+    out = [i for i in akte.get("reihenfolge") or [] if i in da]
     gesetzt = set(out)
     for i, x in eintraege:
         if i not in gesetzt:
@@ -43,20 +43,20 @@ def gitlab_reihenfolge(st, kom, hinweise):
 
 
 def review_daten(mr, ansicht=None):
-    st = zustand_lesen(mr)
-    struktur = struktur_laden(st)
+    akte = akte_lesen(mr)
+    struktur = struktur_laden(akte)
     if struktur is None:
         _, struktur, mr = mr_seite(mr)
-        st = zustand_lesen(mr)
-    hinweise, quellen = hinweise_aufloesen(mr, st, struktur)
+        akte = akte_lesen(mr)
+    hinweise, quellen = hinweise_aufloesen(mr, akte, struktur)
     kom = []
-    for k in review_kommentare(st):
+    for k in review_kommentare(akte):
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k)})
-    reihenfolge = gitlab_reihenfolge(st, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
+    reihenfolge = gitlab_reihenfolge(akte, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
         ans_st = ansicht_struktur(struktur, ansicht)
@@ -64,8 +64,8 @@ def review_daten(mr, ansicht=None):
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
         ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
-    return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb,
+    return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, akte),
+            "web_url": akte["mr"].get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
             "reihenfolge": reihenfolge}
 
 
@@ -79,7 +79,7 @@ def seiten_struktur(sid, ansicht=None):
             return None
         struktur = struktur_laden({"struktur": p})
     else:
-        struktur = struktur_laden(zustand_lesen(waggon))
+        struktur = struktur_laden(akte_lesen(waggon))
     if ansicht and struktur:
         struktur = ansicht_struktur(struktur, ansicht)
     return struktur
@@ -175,14 +175,14 @@ def zeile_aus_klick(struktur, d, ansicht):
 NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
 
 
-def kommentar_neu(mr, st, d, ansicht):
+def kommentar_neu(waggon, akte, eingabe, ansicht):
     """Neuer Review-Kommentar (staged): aus einem übernommenen Hinweis (draft), an der geklickten Zeile oder allgemein."""
-    struktur = struktur_laden(st)
-    text = str(d.get("text") or "").strip()
+    struktur = struktur_laden(akte)
+    text = str(eingabe.get("text") or "").strip()
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
          "erstellt": datetime.now().isoformat(timespec="seconds")}
-    if d.get("hinweis"):
-        h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
+    if eingabe.get("hinweis"):
+        h = next((h for h in hinweise_aufloesen(waggon, akte, struktur)[0] if h["key"] == eingabe["hinweis"]), None)
         if not h:
             return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
         if ansicht and h["path"] and not h["b"]:
@@ -190,8 +190,8 @@ def kommentar_neu(mr, st, d, ansicht):
         i = h["datei"]
         k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                  hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
-    elif d.get("datei") is not None:
-        fehler, ort = zeile_aus_klick(struktur, d, ansicht)
+    elif eingabe.get("datei") is not None:
+        fehler, ort = zeile_aus_klick(struktur, eingabe, ansicht)
         if fehler:
             return False, fehler
         k.update(text=text, **ort)
@@ -199,44 +199,44 @@ def kommentar_neu(mr, st, d, ansicht):
         k.update(text=text, path=None, a=None, b=None)
     if not k["text"]:
         return False, "leerer Kommentar"
-    if k.get("hinweis"):  # erst nach allen Prüfungen ändern: frühe returns speichern sonst mit
-        st["hinweise"][k["hinweis"]] = "uebernommen"
-        st["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in st.get("reihenfolge") or []]  # Platz behalten
-    kommentar_anhaengen(st, k)
+    if k.get("hinweis"):
+        akte["hinweise"][k["hinweis"]] = "uebernommen"
+        akte["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in akte.get("reihenfolge") or []]  # Platz behalten
+    kommentar_anhaengen(akte, k)
     return True, ""
 
 
-def kommentare_sortieren(mr, st, d, ansicht):
+def kommentare_sortieren(mr, akte, eingabe, ansicht):
     """Box „GitLab-Kommentare“ umsortiert (bestimmt die Sende-Reihenfolge)."""
-    ids = d.get("ids")
+    ids = eingabe.get("ids")
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         return False, "Reihenfolge ungültig"
-    st["reihenfolge"] = ids
+    akte["reihenfolge"] = ids
     return True, ""
 
 
 # Aktionen an einem bestehenden Kommentar: (st, kommentar, d) → (ok, text)
 
-def kommentar_aendern(st, k, d):
-    text = str(d.get("text") or "").strip()
+def kommentar_aendern(akte, k, eingabe):
+    text = str(eingabe.get("text") or "").strip()
     if not text:
         return False, "leerer Kommentar"
     k["text"] = text
     return True, ""
 
 
-def kommentar_loeschen(st, k, d):
+def kommentar_loeschen(akte, k, eingabe):
     """Schon in GitLab: dort beim Abschließen löschen (staged „loeschen“), sonst gleich weg."""
     if k.get("hinweis"):
-        st["hinweise"][k["hinweis"]] = "verworfen"
+        akte["hinweise"][k["hinweis"]] = "verworfen"
     if k.get("gitlab_id") and not k.get("gitlab_weg"):
         k["geloescht"] = True
     else:
-        eintrag_entfernen(st, k)
+        eintrag_entfernen(akte, k)
     return True, ""
 
 
-def kommentar_wiederherstellen(st, k, d):
+def kommentar_wiederherstellen(akte, k, eingabe):
     k.pop("geloescht", None)
     return True, ""
 
@@ -245,36 +245,44 @@ KOMMENTAR_AKTIONEN = {"neu": kommentar_neu, "reihenfolge": kommentare_sortieren}
 AM_KOMMENTAR = {"aendern": kommentar_aendern, "loeschen": kommentar_loeschen, "wiederherstellen": kommentar_wiederherstellen}
 
 
-def kommentar_aktion(mr, d):
+def kommentar_aktion(mr, eingabe):
     """Aktion des Nutzers von der Seite: aus KOMMENTAR_AKTIONEN oder AM_KOMMENTAR (mit „id“). Rückgabe (ok, text)."""
-    aktion = d.get("aktion")
-    ansicht = ansicht_lesen(d.get("ansicht"))
+    aktion = eingabe.get("aktion")
+    ansicht = ansicht_lesen(eingabe.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
-    if aktion not in KOMMENTAR_AKTIONEN and aktion not in AM_KOMMENTAR:
+    if aktion in KOMMENTAR_AKTIONEN:
+        return aktion_ausfuehren(mr, lambda akte: KOMMENTAR_AKTIONEN[aktion](mr, akte, eingabe, ansicht))
+    if aktion not in AM_KOMMENTAR:
         return False, "unbekannte Aktion"
-    with zustand(mr) as st:
-        if aktion in KOMMENTAR_AKTIONEN:
-            return KOMMENTAR_AKTIONEN[aktion](mr, st, d, ansicht)
-        k = kommentar_finden(st, d.get("id"))
-        if not k:
-            return False, "Kommentar nicht gefunden"
-        return AM_KOMMENTAR[aktion](st, k, d)
+    def am_kommentar(akte):
+        k = kommentar_finden(akte, eingabe.get("id"))
+        return AM_KOMMENTAR[aktion](akte, k, eingabe) if k else (False, "Kommentar nicht gefunden")
+    return aktion_ausfuehren(mr, am_kommentar)
 
 
-def hinweis_aktion(mr, d):
-    ansicht = ansicht_lesen(d.get("ansicht"))
+def hinweis_verwerfen(akte, key):
+    akte["hinweise"][key] = "verworfen"
+    return True, ""
+
+
+def hinweis_zurueck(akte, key):
+    akte["hinweise"].pop(key, None)
+    return True, ""
+
+
+AM_HINWEIS = {"verwerfen": hinweis_verwerfen, "zurueck": hinweis_zurueck}
+
+
+def hinweis_aktion(mr, eingabe):
+    """Agent-Hinweis (draft) verwerfen oder zurückholen. Übernehmen ist „neu“ in KOMMENTAR_AKTIONEN."""
+    ansicht = ansicht_lesen(eingabe.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
-    with zustand(mr) as st:
-        key = str(d.get("key") or "")
-        if d.get("aktion") == "verwerfen":
-            st["hinweise"][key] = "verworfen"
-        elif d.get("aktion") == "zurueck":
-            st["hinweise"].pop(key, None)
-        else:
-            return False, "unbekannte Aktion"
-    return True, ""
+    aktion = AM_HINWEIS.get(eingabe.get("aktion"))
+    if not aktion:
+        return False, "unbekannte Aktion"
+    return aktion_ausfuehren(mr, lambda akte: aktion(akte, str(eingabe.get("key") or "")))
 
 
 def entwurf_anlegen(mr, k, head, proj_url):
@@ -305,10 +313,10 @@ def entwurf_anlegen(mr, k, head, proj_url):
 _ICH = {}  # GitLab-Benutzer-id je Host
 
 
-def fehlende_entwuerfe(st, vorhanden):
+def fehlende_entwuerfe(akte, vorhanden):
     """Gesendete Kommentare, deren Draft-Note in GitLab fehlt (auch schon als „weg“ markierte: früher galt jeder
     fehlende Entwurf als veröffentlicht)."""
-    return [k for k in review_kommentare(st) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
+    return [k for k in review_kommentare(akte) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
 
 
 def eigene_kommentartexte(mr):
@@ -321,17 +329,17 @@ def eigene_kommentartexte(mr):
 
 def abgleich_vorbereiten(mr, vorhanden):
     """Was entwuerfe_abgleichen braucht, ohne Sperre geholt: eigene Kommentartexte, nur wenn Entwürfe fehlen (sonst None)."""
-    return eigene_kommentartexte(mr) if fehlende_entwuerfe(zustand_lesen(mr), vorhanden) else None
+    return eigene_kommentartexte(mr) if fehlende_entwuerfe(akte_lesen(mr), vorhanden) else None
 
 
-def entwuerfe_abgleichen(st, vorhanden, eigene_texte):
+def entwuerfe_abgleichen(akte, vorhanden, eigene_texte):
     """Reine Funktion. Gesendete Kommentare, deren Draft-Note in GitLab fehlt: als Kommentar veröffentlicht → bleibt sent
     („weg“); sonst in GitLab verworfen (z. B. ganzes Review verworfen) → wieder staged, „Review abschließen“ sendet ihn neu.
     eigene_texte None = nicht geholt (es fehlte nichts): dann nichts tun. Rückgabe (veröffentlicht, verworfen)."""
     if eigene_texte is None:
         return 0, 0
     pub = verw = 0
-    for k in fehlende_entwuerfe(st, vorhanden):
+    for k in fehlende_entwuerfe(akte, vorhanden):
         if any((k.get("gitlab_text") or k["text"]) in t for t in eigene_texte):  # „allgemein“: Text steht hinter dem Link
             pub += not k.get("gitlab_weg")
             k["gitlab_weg"] = True
@@ -367,7 +375,7 @@ def kommentar_ort(k):
     return (k.get("path") or "allgemein") + (f":{z}" if z else "")
 
 
-def abschluss_planen(st, vorhanden, pos):
+def abschluss_planen(akte, vorhanden, pos):
     """Reine Funktion: was „Review abschließen“ in GitLab tun muss, in der Reihenfolge der Box „GitLab-Kommentare“
     (pos: id → Platz). Schritte {art, id, ort, gitlab_id, text, …}, art:
       loeschen     Entwurf in GitLab löschen, dann lokal entfernen
@@ -376,8 +384,8 @@ def abschluss_planen(st, vorhanden, pos):
       uebernehmen  gleicher Entwurf ist schon in GitLab (z. B. Abbruch zwischen Anlegen und Speichern): nur merken
       anlegen      neuen Entwurf anlegen (kommentar: Kopie des Kommentars)"""
     schritte = []
-    vergeben = {k.get("gitlab_id") for k in review_kommentare(st) if k.get("gitlab_id")}
-    for k in sorted(review_kommentare(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
+    vergeben = {k.get("gitlab_id") for k in review_kommentare(akte) if k.get("gitlab_id")}
+    for k in sorted(review_kommentare(akte), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
         s = {"id": k["id"], "ort": kommentar_ort(k), "gitlab_id": k.get("gitlab_id"), "text": k["text"]}
         if k.get("geloescht"):
             s["art"] = "loeschen" if k.get("gitlab_id") in vorhanden else "entfernen"
@@ -415,15 +423,15 @@ def schritt_ausfuehren(mr, s, head, proj_url):
     return {}
 
 
-def schritt_eintragen(st, s, ergebnis):
-    """Ergebnis eines Schritts in den Zustand. gitlab_text = der gesendete Text: hat der Nutzer währenddessen getippt,
+def schritt_eintragen(akte, s, ergebnis):
+    """Ergebnis eines Schritts in die Akte. gitlab_text = der gesendete Text: hat der Nutzer währenddessen getippt,
     ist der Kommentar danach „geaendert“ (staged) statt still überschrieben. Rückgabe False: Kommentar inzwischen weg."""
-    k = kommentar_finden(st, s["id"])
+    k = kommentar_finden(akte, s["id"])
     if k is None:
         return False
     if s["art"] in ("loeschen", "entfernen"):
         if k.get("geloescht"):
-            eintrag_entfernen(st, k)
+            eintrag_entfernen(akte, k)
         else:  # währenddessen wiederhergestellt: in GitLab ist er weg, also wieder neu
             for f in ("gitlab_id", "gitlab_text", "gitlab_art", "gitlab_weg"):
                 k.pop(f, None)
@@ -436,7 +444,7 @@ def schritt_eintragen(st, s, ergebnis):
 
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen. Rückgabe (ok, text, web_url)."""
-    head = ((struktur_laden(zustand_lesen(mr)) or {}).get("refs") or {}).get("head_sha")
+    head = ((struktur_laden(akte_lesen(mr)) or {}).get("refs") or {}).get("head_sha")
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
     if head and gl_head and gl_head != head:
@@ -446,7 +454,7 @@ def abschliessen(mr):
         pos = {i: n for n, i in enumerate(review_daten(mr)["reihenfolge"])}  # wie in der Box „GitLab-Kommentare“
     except Fehler:
         pos = {}
-    web = zustand_lesen(mr)["mr"].get("web_url", "")
+    web = akte_lesen(mr)["mr"].get("web_url", "")
     proj_url = web.split("/-/merge_requests/")[0]
     if isinstance(vorhanden, Fehler):
         return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
@@ -455,9 +463,9 @@ def abschliessen(mr):
     except Fehler as e:
         return False, f"Kommentare des MR nicht abrufbar: {e}", web
     z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "wieder": 0}
-    with zustand(mr) as st:
-        z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(st, vorhanden, eigene_texte)
-        schritte = abschluss_planen(st, vorhanden, pos)
+    with akte_bearbeiten(mr) as akte:
+        z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(akte, vorhanden, eigene_texte)
+        schritte = abschluss_planen(akte, vorhanden, pos)
     fehler = []
     for s in schritte:
         try:
@@ -465,8 +473,8 @@ def abschliessen(mr):
         except Fehler as e:
             fehler.append(f'{s["ort"]}: {e}')
             continue
-        with zustand(mr) as st:  # sofort eintragen: vergebene gitlab_ids überstehen einen Abbruch
-            noch_da = schritt_eintragen(st, s, ergebnis)
+        with akte_bearbeiten(mr) as akte:  # sofort eintragen: vergebene gitlab_ids überstehen einen Abbruch
+            noch_da = schritt_eintragen(akte, s, ergebnis)
         if not noch_da and s["art"] == "anlegen" and ergebnis.get("gitlab_id"):  # währenddessen gelöscht: nicht verwaisen lassen
             try:
                 glab(mr.host, f'{mr_pfad(mr)}/draft_notes/{ergebnis["gitlab_id"]}', "DELETE")
@@ -476,8 +484,8 @@ def abschliessen(mr):
         z["neu"] += s["art"] == "anlegen"; z["allg"] += s["art"] == "anlegen" and ergebnis["gitlab_art"] == "allgemein"
         z["akt"] += s["art"] == "aendern"; z["weg"] += s["art"] == "loeschen"; z["wieder"] += s["art"] == "uebernehmen"
     if not fehler:
-        with zustand(mr) as st:
-            st["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
+        with akte_bearbeiten(mr) as akte:
+            akte["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
     teile = []
     if z["neu"]: teile.append(f'{z["neu"]} neu' + (f' ({z["allg"]} als allgemeiner Kommentar mit Link)' if z["allg"] else ""))
     if z["akt"]: teile.append(f'{z["akt"]} aktualisiert')

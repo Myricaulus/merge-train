@@ -6,8 +6,8 @@ from .waggon import Fehler, Waggon
 from .git import git, inhalt, kurzpfad, projekt_ordner
 from .zeilen import zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .zustand import (faden_anhaengen, faden_finden, faden_status, faeden_von, review_datei, review_kommentare, struktur_laden, zustand,
-    zustand_lesen)
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, review_kommentare,
+    struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
@@ -41,7 +41,7 @@ def gespraech_ziele(name=None):
     echt = os.path.realpath(wurzel)
     for waggon in alle_gespraeche():
         if not waggon.lokal:
-            struktur = struktur_laden(zustand_lesen(waggon))
+            struktur = struktur_laden(akte_lesen(waggon))
             if struktur and os.path.realpath(struktur["ordner"]) == echt:
                 ziele.append(waggon)
     if not ziele:
@@ -107,8 +107,8 @@ def faeden_abholen(ziele, alle=False, markieren=True):
     teile, gesamt = [], 0
     for waggon in ziele:
         wurzel, head = quelle(waggon).ort(waggon)
-        with zustand(waggon, speichern=markieren) as st:
-            faeden = [k for k in faeden_von(st) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
+        with akte_bearbeiten(waggon, speichern=markieren) as akte:
+            faeden = [k for k in faeden_von(akte) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
             zeigen = [k for k in faeden if alle or faden_status(k) == "wartet" or faden_ungelesen(k)]
             if markieren:
                 for k in zeigen:
@@ -157,9 +157,9 @@ def umformulieren_ziel_finden(ziel, ziele=None):
                 continue
             treffer += [(waggon, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
         else:
-            st = zustand_lesen(waggon)
-            treffer += [(waggon, "k", k) for k in review_kommentare(st) if passt(k["id"], ziel)]
-            treffer += [(waggon, "f", k) for k in faeden_von(st) if passt(k["id"], ziel)]
+            akte = akte_lesen(waggon)
+            treffer += [(waggon, "k", k) for k in review_kommentare(akte) if passt(k["id"], ziel)]
+            treffer += [(waggon, "f", k) for k in faeden_von(akte) if passt(k["id"], ziel)]
     if not treffer:
         raise Fehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
     if len(treffer) > 1:
@@ -183,8 +183,8 @@ def kommentar_umformulieren(ziel, text, ziele=None):
 def draft_daneben(waggon, art, x, text):
     """Neuer draft (Agent-Hinweis) an der Stelle von x, in der Review-JSON des MR: die des ersetzten Hinweises, sonst
     die erste angemeldete."""
-    st = zustand_lesen(waggon)
-    struktur = struktur_laden(st) or {}
+    akte = akte_lesen(waggon)
+    struktur = struktur_laden(akte) or {}
     head = (struktur.get("refs") or {}).get("head_sha")
     path, b = x.get("path") or None, x.get("b")
     if path and b and art != "h" and head:  # Kommentar/Faden: Zeile auf den aktuellen MR-Stand umrechnen
@@ -206,7 +206,7 @@ def draft_daneben(waggon, art, x, text):
     datei = x.get("json") if art == "h" else None
     if not datei and art == "k" and x.get("hinweis"):
         datei = next((h.get("json") for h in review_daten(waggon)["hinweise"] if h["key"] == x["hinweis"]), None)
-    datei = datei or next(iter(hinweis_dateien(waggon, st)), None)
+    datei = datei or next(iter(hinweis_dateien(waggon, akte)), None)
     if not datei:
         raise Fehler("Zu diesem MR gibt es keine Review-JSON (Agent-Hinweise) – den neuen Text im Faden vorschlagen")
     daten = json.load(open(datei, encoding="utf-8-sig"))
@@ -252,8 +252,8 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     if siehe:
         k["see_also"] = list(siehe)
     k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=als))
-    with zustand(waggon) as st:
-        faden_anhaengen(st, k)
+    with akte_bearbeiten(waggon) as akte:
+        faden_anhaengen(akte, k)
     wo = f'{k["path"]}:{k["b"]}' if k["b"] else (k["path"] or "allgemein")
     melden(f"{waggon.name}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
     return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt'
@@ -291,15 +291,15 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
     """Antwort auf Faden fid (Anfang genügt) – gesucht in ziele, sonst in allen Gesprächen."""
     treffer = []
     for waggon in ziele or alle_gespraeche():
-        st = zustand_lesen(waggon)
-        treffer += [(waggon, k["id"]) for k in faeden_von(st) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))]
+        akte = akte_lesen(waggon)
+        treffer += [(waggon, k["id"]) for k in faeden_von(akte) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))]
     if not treffer:
         raise Fehler(f"Gespräch {fid} gibt es nicht (merge-train agent feedback --alle)")
     if len(treffer) > 1:
         raise Fehler(f"{fid} ist nicht eindeutig: " + ", ".join(t[1] for t in treffer))
     waggon, kid = treffer[0]
-    with zustand(waggon) as st:
-        k = faden_finden(st, kid)
+    with akte_bearbeiten(waggon) as akte:
+        k = faden_finden(akte, kid)
         if not k:
             raise Fehler(f"Gespräch {kid} wurde inzwischen gelöscht")
         neu = faden_ungelesen(k)
@@ -312,8 +312,8 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
             k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=wer))
         if erledigt:
             k["erledigt"] = {"von": "claude", "zeit": jetzt(), "wer": wer}
-        rest = sum(1 for x in faeden_von(st) if faden_status(x) == "wartet")
-        tid = st.get("todo_id")
+        rest = sum(1 for x in faeden_von(akte) if faden_status(x) == "wartet")
+        tid = akte.get("todo_id")
     melden(f"{waggon.name}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
     if not rest and todo_offen(tid):
         subprocess.run(["todo", "erledigt", tid, "-n", "Alle Fragen/Feedback in merge-train beantwortet"], capture_output=True)
@@ -341,7 +341,7 @@ def faeden_horchen(ziele, timeout=0, als=None):
     for sig in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, lambda *_: sys.exit(0))
     ende = time.time() + timeout if timeout else None
-    pfade = [review_datei(waggon) for waggon in ziele]
+    pfade = [akte_datei(waggon) for waggon in ziele]
     zuletzt = None
     session = agent_session(os.getpid())  # endet die Agenten-Session, hört auch horchen auf
     start, gesehen = time.time(), False
@@ -364,9 +364,9 @@ def faeden_horchen(ziele, timeout=0, als=None):
             zuletzt = m
             neu = []
             for waggon in ziele:
-                st = zustand_lesen(waggon)
+                akte = akte_lesen(waggon)
                 if any(n["von"] == "ich" and n.get("gesendet") and not n.get("abgeholt")
-                       for k in faeden_von(st) for n in k["nachrichten"]):
+                       for k in faeden_von(akte) for n in k["nachrichten"]):
                     neu.append(waggon)
             if neu:
                 return faeden_abholen(neu)
@@ -498,8 +498,8 @@ def agent_main(argv):
         except Fehler:
             klon = False
         if klon:
-            with zustand(mr) as st:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
-                st["klon"] = ordner
+            with akte_bearbeiten(mr) as akte:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
+                akte["klon"] = ordner
         mr, meta = mr_meta_holen(mr)  # die einzige GitLab-Anfrage: aktuelle MR-Daten für die Seite merken
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2
@@ -507,9 +507,9 @@ def agent_main(argv):
         _, struktur, mr = mr_seite(mr)
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 3
-    with zustand(mr) as st:
-        if o.befehl == "zeigen" and pfad not in st["hinweis_dateien"]:
-            st["hinweis_dateien"].append(pfad)
+    with akte_bearbeiten(mr) as akte:
+        if o.befehl == "zeigen" and pfad not in akte["hinweis_dateien"]:
+            akte["hinweis_dateien"].append(pfad)
     head = struktur["refs"].get("head_sha") or ""
     geaendert, seit = None, None
     if o.seit is not None:
@@ -520,7 +520,7 @@ def agent_main(argv):
             geaendert = geaenderte_dateien(mr, seit, head)
         except Fehler as e:
             print(f"merge-train: {e}", file=sys.stderr); return 2
-    hinweise, _ = hinweise_aufloesen(mr, st, struktur, nur=[pfad])
+    hinweise, _ = hinweise_aufloesen(mr, akte, struktur, nur=[pfad])
     print(f'{mr.projekt}!{mr.iid} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
     print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
     gl_head = (meta.get("diff_refs") or {}).get("head_sha") or ""

@@ -38,7 +38,7 @@ class Waggon(NamedTuple):
 
     @classmethod
     def aus_dict(cls, d):
-        """Aus dem Feld „mr“ einer Zustandsdatei."""
+        """Aus dem Feld „mr“ einer Akte."""
         return cls(lokal=d["lokal"]) if d.get("lokal") else cls(host=d["host"], projekt=d["projekt"], iid=d["iid"])
 
     def als_dict(self):

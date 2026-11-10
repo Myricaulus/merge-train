@@ -5,7 +5,7 @@ from .waggon import Fehler
 from .git import inhalt
 from .zeilen import alt_zeile, im_diff
 from .diff_html import zeilenzahl
-from .zustand import datei_index
+from .akte import datei_index
 from .gitlab import mr_ref
 
 HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
@@ -62,8 +62,8 @@ _HW_CACHE = {}
 
 def hinweise_lesen(pfad):
     """Hinweis-Datei lesen und vereinheitlichen (auch Altformat: nur das markers-Array)."""
-    st = os.stat(pfad)
-    k = (pfad, st.st_mtime_ns, st.st_size)
+    info = os.stat(pfad)
+    k = (pfad, info.st_mtime_ns, info.st_size)
     if k in _HW_CACHE:
         return _HW_CACHE[k]
     daten = json.load(open(pfad, encoding="utf-8-sig"))
@@ -95,12 +95,12 @@ def hinweis_passt(pfad, info):
     return bool(h.get("branch")) and h["branch"] == info.get("source_branch")
 
 
-def hinweis_dateien(mr, st):
-    dateien = [p for p in st["hinweis_dateien"] if os.path.exists(p)]
+def hinweis_dateien(mr, akte):
+    dateien = [p for p in akte["hinweis_dateien"] if os.path.exists(p)]
     for muster in KONF["hinweise"]:
         for p in sorted(glob.glob(os.path.expanduser(muster))):
             p = os.path.abspath(p)
-            if p not in dateien and hinweis_passt(p, st["mr"]):
+            if p not in dateien and hinweis_passt(p, akte["mr"]):
                 dateien.append(p)
     return dateien
 
@@ -116,12 +116,12 @@ def needle_zeilen(text, needle, tag):
     return out
 
 
-def hinweise_aufloesen(mr, st, struktur, nur=None):
+def hinweise_aufloesen(mr, akte, struktur, nur=None):
     """Hinweise aller Dateien auf Zeilen des MR-Stands abbilden. Rückgabe (hinweise, quellen)."""
     hinweise, quellen = [], []
     head = (struktur or {}).get("refs", {}).get("head_sha")
     ordner = (struktur or {}).get("ordner")
-    for pfad in (nur if nur is not None else hinweis_dateien(mr, st)):
+    for pfad in (nur if nur is not None else hinweis_dateien(mr, akte)):
         try:
             h = hinweise_lesen(pfad)
         except (OSError, ValueError) as e:
@@ -168,5 +168,5 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
                 pr = problem or (None if imd else ("Zeile außerhalb des Diffs" if f else "Datei nicht im Diff") if z else None)
                 hinweise.append(dict(basis, key=key, zeile=z, datei=i, a=a, b=z, im_diff=imd, problem=pr,
                                      mehrfach=len(zeilen) if len(zeilen) > 1 else None,
-                                     status=st["hinweise"].get(key, "offen")))
+                                     status=akte["hinweise"].get(key, "offen")))
     return hinweise, quellen

@@ -1,7 +1,8 @@
-"""Zustand je Waggon: eine JSON-Datei mit Review-Kommentaren und Gesprächsfäden, dazu die Struktur der gebauten Seite.
+"""Akte je Waggon: eine JSON-Datei mit Review-Kommentaren, Gesprächsfäden und Hinweis-Status, dazu die Struktur der
+gebauten Seite.
 
-Zugriff nur hierüber: ändern mit `with zustand(waggon) as st:` (lädt unter SPERRE, speichert am Ende, wenn sich etwas
-geändert hat; bei einer Ausnahme nicht), nur lesen mit `zustand_lesen(waggon)`.
+Zugriff nur hierüber: ändern mit `with akte_bearbeiten(waggon) as akte:` (sperrt, lädt, speichert am Ende, wenn sich
+etwas geändert hat; bei einer Ausnahme nicht), nur lesen mit `akte_lesen(waggon)`.
 
 Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
   mr               Waggon.als_dict(), bei MRs dazu web_url, titel, source_branch, target_branch
@@ -24,78 +25,130 @@ Gesprächsfaden: id, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
   archiv (nach „fertig“ aus der Ansicht genommen). Stufe: faden_status.
 """
-import json, os
+import fcntl, json, os, sys, threading
 from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 from contextlib import contextmanager
 
-def review_datei(waggon):
+def akte_datei(waggon):
     return os.path.join(DATEN, "lokal" if waggon.lokal else "reviews", waggon.dateiname + ".json")
 
 
-def review_laden(mr):
+def akte_laden(waggon, kaputte_beiseite=False):
+    """Akte laden (fehlende Felder ergänzt). Kaputte Datei: als leere Akte; mit kaputte_beiseite (nur unter der Sperre)
+    vorher nach <datei>.kaputt-<zeit> verschieben, damit das nächste Speichern sie nicht überschreibt."""
+    pfad = akte_datei(waggon)
     try:
-        st = json.load(open(review_datei(mr), encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        st = {}
-    st.setdefault("mr", mr.als_dict())
-    st.setdefault("kommentare", []); st.setdefault("hinweise", {}); st.setdefault("hinweis_dateien", [])
-    return st
+        akte = json.load(open(pfad, encoding="utf-8"))
+    except FileNotFoundError:
+        akte = {}
+    except ValueError as e:
+        if kaputte_beiseite:
+            beiseite = f"{pfad}.kaputt-{jetzt().replace(':', '')}"
+            os.replace(pfad, beiseite)
+            print(f"merge-train: {pfad} ist kaputt ({e}) – verschoben nach {beiseite}", file=sys.stderr)
+        akte = {}
+    akte.setdefault("mr", waggon.als_dict())
+    akte.setdefault("kommentare", []); akte.setdefault("hinweise", {}); akte.setdefault("hinweis_dateien", [])
+    return akte
 
 
-def review_kommentare(st):
+def review_kommentare(akte):
     """Review-Kommentare (ohne Gesprächsfäden)."""
-    return [k for k in st["kommentare"] if k.get("nachrichten") is None]
+    return [k for k in akte["kommentare"] if k.get("nachrichten") is None]
 
 
-def review_speichern(mr, st):
-    ersetzen(review_datei(mr), json.dumps(st, ensure_ascii=False, indent=1))
+def akte_speichern(waggon, akte):
+    ersetzen(akte_datei(waggon), json.dumps(akte, ensure_ascii=False, indent=1))
+
+
+_DATEISPERRE = threading.local()  # Tiefe je Thread: verschachtelte akte_bearbeiten sperren die Datei nur einmal
 
 
 @contextmanager
-def zustand(waggon, speichern=True):
-    """Zustand des Waggons laden, unter der Sperre halten, am Ende speichern (nur wenn geändert)."""
+def akten_sperre():
+    """SPERRE (Threads im Server) und eine Dateisperre (andere Prozesse: „merge-train agent …“, zweiter Server)."""
     with SPERRE:
-        st = review_laden(waggon)
-        vorher = json.dumps(st, sort_keys=True)
-        yield st
-        if speichern and json.dumps(st, sort_keys=True) != vorher:
-            review_speichern(waggon, st)
+        tiefe = getattr(_DATEISPERRE, "tiefe", 0)
+        if tiefe:
+            _DATEISPERRE.tiefe += 1
+            try:
+                yield
+            finally:
+                _DATEISPERRE.tiefe -= 1
+            return
+        os.makedirs(DATEN, exist_ok=True)
+        with open(os.path.join(DATEN, ".sperre"), "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            _DATEISPERRE.tiefe = 1
+            try:
+                yield
+            finally:
+                _DATEISPERRE.tiefe = 0
+                fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def zustand_lesen(waggon):
-    """Zustand nur lesen (eigene Kopie). Ohne Sperre: ersetzen() schreibt atomar, man sieht immer eine ganze Datei –
-    und wartet nicht, während ein anderer unter der Sperre GitLab fragt."""
-    return review_laden(waggon)
+@contextmanager
+def akte_bearbeiten(waggon, speichern=True):
+    """Akte des Waggons laden, gesperrt halten, am Ende speichern (nur wenn geändert, nicht bei einer Ausnahme)."""
+    with akten_sperre():
+        akte = akte_laden(waggon, kaputte_beiseite=True)
+        vorher = json.dumps(akte, sort_keys=True)
+        yield akte
+        if speichern and json.dumps(akte, sort_keys=True) != vorher:
+            akte_speichern(waggon, akte)
 
 
-def kommentar_finden(st, kid):
-    return next((k for k in review_kommentare(st) if k["id"] == kid), None)
+class Abgelehnt(Exception):
+    """Eine Aktion lehnt ab (Text für den Nutzer). Innerhalb von akte_bearbeiten: nichts wird gespeichert."""
 
 
-def faden_finden(st, fid):
-    return next((k for k in faeden_von(st) if k["id"] == fid), None)
+def aktion_ausfuehren(waggon, aktion):
+    """aktion(akte) → (ok, text), gesperrt. Gespeichert wird nur bei ok: lehnt eine Aktion nach einer halben Änderung
+    ab, bleibt die Datei, wie sie war. Rückgabe (ok, text)."""
+    try:
+        with akte_bearbeiten(waggon) as akte:
+            ok, text = aktion(akte)
+            if not ok:
+                raise Abgelehnt(text)
+    except Abgelehnt as e:
+        return False, str(e)
+    return True, text
 
 
-def kommentar_anhaengen(st, k):
+def akte_lesen(waggon):
+    """Akte nur lesen (eigene Kopie). Ohne Sperre: ersetzen() schreibt atomar, man sieht immer eine ganze Datei –
+    und wartet nicht, während ein anderer gesperrt GitLab fragt."""
+    return akte_laden(waggon)
+
+
+def kommentar_finden(akte, kid):
+    return next((k for k in review_kommentare(akte) if k["id"] == kid), None)
+
+
+def faden_finden(akte, fid):
+    return next((k for k in faeden_von(akte) if k["id"] == fid), None)
+
+
+def kommentar_anhaengen(akte, k):
     assert k.get("nachrichten") is None
-    st["kommentare"].append(k)
+    akte["kommentare"].append(k)
 
 
-def faden_anhaengen(st, k):
+def faden_anhaengen(akte, k):
     assert isinstance(k.get("nachrichten"), list)
-    st["kommentare"].append(k)
+    akte["kommentare"].append(k)
 
 
-def eintrag_entfernen(st, k):
+def eintrag_entfernen(akte, k):
     """Review-Kommentar oder Faden aus der Datei nehmen."""
-    st["kommentare"].remove(k)
+    akte["kommentare"].remove(k)
 
 
 STRUKTUR = {}
 
 
-def struktur_laden(st):
-    p = st.get("struktur")
+def struktur_laden(akte):
+    p = akte.get("struktur")
     if not p:
         return None
     if p not in STRUKTUR:
@@ -125,8 +178,8 @@ def ist_sent(k):
     return kommentar_status(k) in ("uebertragen", "weg")
 
 
-def ausstehend(st):
-    return sum(1 for k in review_kommentare(st) if ist_staged(k))
+def ausstehend(akte):
+    return sum(1 for k in review_kommentare(akte) if ist_staged(k))
 
 
 def datei_index(struktur, pfad):
@@ -151,14 +204,14 @@ def faden_status(k):
     return "antwort" if gesendet and gesendet[-1]["von"] == "claude" else "wartet"
 
 
-def faeden_von(st):
-    return [k for k in st["kommentare"] if k.get("nachrichten") is not None and not k.get("archiv")]
+def faeden_von(akte):
+    return [k for k in akte["kommentare"] if k.get("nachrichten") is not None and not k.get("archiv")]
 
 
-def faeden_archivieren(mr):
+def faeden_archivieren(waggon):
     """Nach „fertig“: erledigte Fäden aus der Ansicht nehmen (bleiben in der Datei)."""
-    with zustand(mr) as st:
-        for k in faeden_von(st):
+    with akte_bearbeiten(waggon) as akte:
+        for k in faeden_von(akte):
             if faden_status(k) == "erledigt":
                 k["archiv"] = jetzt()
 
@@ -166,8 +219,8 @@ def faeden_archivieren(mr):
 def faeden_zaehlen(waggon):
     """Für den Zug: (offene Fäden, Fäden mit neuer Antwort)."""
     try:
-        st = zustand_lesen(waggon)
+        akte = akte_lesen(waggon)
     except Exception:
         return 0, 0
-    f = faeden_von(st)
+    f = faeden_von(akte)
     return sum(1 for k in f if faden_status(k) != "erledigt"), sum(1 for k in f if faden_status(k) == "antwort")

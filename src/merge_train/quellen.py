@@ -4,7 +4,7 @@ from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich
 from .git import arbeitsstand, finde_repos, git, projekt_wurzel, statistik
-from .zustand import ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden, zustand_lesen
+from .akte import akte_lesen, ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
 
@@ -42,14 +42,14 @@ def fertig(projekt, sha):
         return False, f"„fertig“ geht nur mit lokalen Branches (von = {VON}, bis = {BIS})."
     if git(wurzel, "merge-base", "--is-ancestor", VON, sha, check=False) is None:
         return False, f"{projekt}: {VON} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
-    st = statistik(wurzel, VON, sha)
+    akte = statistik(wurzel, VON, sha)
     log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", VON, sha)
     faeden_archivieren(Waggon(lokal=projekt))
     with SPERRE:
         r = runde_laden()
-        r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
+        r[projekt] = dict(akte, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
         with open(RUNDE, "w") as f:
             json.dump(r, f, ensure_ascii=False, indent=1)
     erledigt = []
@@ -68,9 +68,9 @@ def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
     def wagen_fuer(mr, titel, aenderungen):
-        st = zustand_lesen(mr)
-        n = sum(1 for k in review_kommentare(st) if not k.get("geloescht"))
-        fertig = bool(st.get("abgeschlossen")) and not ausstehend(st)
+        akte = akte_lesen(mr)
+        n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
+        fertig = bool(akte.get("abgeschlossen")) and not ausstehend(akte)
         kurz = mr.projekt.rsplit("/", 1)[-1]
         return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}',
                 "zeile2": titel, "datei": mr.url, "plus": 0, "minus": 0, "dateien": aenderungen or 0,
@@ -87,7 +87,7 @@ def mr_wagen(akt=None):
         try:
             mr = Waggon.aus_id(akt)
             if not mr.lokal:
-                wagen.insert(0, wagen_fuer(mr, zustand_lesen(mr)["mr"].get("titel", ""), 0))
+                wagen.insert(0, wagen_fuer(mr, akte_lesen(mr)["mr"].get("titel", ""), 0))
         except Fehler:
             pass
     return wagen
@@ -137,7 +137,7 @@ class GitLab:
 
     def ort(self, waggon):
         """(Klon, Stand) des MR, wie ihn die Seite zuletzt gebaut hat."""
-        struktur = struktur_laden(zustand_lesen(waggon))
+        struktur = struktur_laden(akte_lesen(waggon))
         if struktur is None:
             _, struktur = self.seite(waggon)
         return struktur["ordner"], struktur["refs"]["head_sha"]

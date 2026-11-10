@@ -45,9 +45,9 @@ def main():
             return
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(8) as ex:
-            st = list(ex.map(statistik, finde_repos()))
-        st.sort(key=lambda w: (not w["dateien"], -(w["plus"] + w["minus"])))
-        for w in st:
+            akte = list(ex.map(statistik, finde_repos()))
+        akte.sort(key=lambda w: (not w["dateien"], -(w["plus"] + w["minus"])))
+        for w in akte:
             print(f'{w["p"]}\t+{w["plus"]} −{w["minus"]} · {w["dateien"]} Datei(en)' if w["dateien"] else f'{w["p"]}\taktuell')
         return
     if o.ordner and ist_mr_ref(o.ordner) and not os.path.exists(o.ordner):

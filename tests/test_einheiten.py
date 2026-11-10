@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from merge_train.waggon import Fehler, Waggon
 from merge_train.git import zerlegen
 from merge_train.zeilen import alt_zeile, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts, zurueck_diffs
-from merge_train.zustand import ausstehend, ist_sent, ist_staged, kommentar_status
+from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
 from merge_train.review import abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
 
@@ -62,11 +62,11 @@ def datei(name):
 
 class Zerlegen(unittest.TestCase):
     def test_status_und_namen(self):
-        st = {d["neu"]: d["status"] for d in DIFF}
-        self.assertEqual(st["a.txt"], "geändert")
-        self.assertEqual(st["weg.txt"], "gelöscht")
-        self.assertEqual(st["Ümlaut mit leer.txt"], "neu")
-        self.assertEqual(st["neuer name.txt"], "umbenannt")
+        akte = {d["neu"]: d["status"] for d in DIFF}
+        self.assertEqual(akte["a.txt"], "geändert")
+        self.assertEqual(akte["weg.txt"], "gelöscht")
+        self.assertEqual(akte["Ümlaut mit leer.txt"], "neu")
+        self.assertEqual(akte["neuer name.txt"], "umbenannt")
         self.assertEqual(next(d for d in DIFF if d["neu"] == "neuer name.txt")["alt"], "alt name.txt")
 
     def test_binaer(self):
@@ -147,9 +147,9 @@ class Stufen(unittest.TestCase):
             self.assertEqual(ist_sent(k), not staged, k)
 
     def test_ausstehend_ohne_faeden(self):
-        st = {"kommentare": [kommentar(), kommentar(id="k2", gitlab_id=1, gitlab_text="Text"),
+        akte = {"kommentare": [kommentar(), kommentar(id="k2", gitlab_id=1, gitlab_text="Text"),
                              {"id": "f1", "nachrichten": [], "text": "x"}]}
-        self.assertEqual(ausstehend(st), 1)
+        self.assertEqual(ausstehend(akte), 1)
 
 
 class WaggonTest(unittest.TestCase):
@@ -183,7 +183,7 @@ class WaggonTest(unittest.TestCase):
 
 class Abschliessen(unittest.TestCase):
     def test_planen(self):
-        st = {"kommentare": [
+        akte = {"kommentare": [
             kommentar(id="neu", text="ganz neu"),
             kommentar(id="da", text="schon in GitLab"),              # Entwurf dort, nur nicht gemerkt
             kommentar(id="geaendert", text="neu", gitlab_id=11, gitlab_text="alt"),
@@ -194,7 +194,7 @@ class Abschliessen(unittest.TestCase):
             {"id": "faden", "text": "privat", "nachrichten": []}]}
         vorhanden = {11: {"id": 11}, 12: {"id": 12}, 13: {"id": 13},
                      20: {"id": 20, "note": "**[`a.txt:5`](link)**\n\nschon in GitLab"}}
-        s = abschluss_planen(st, vorhanden, {"loeschen": 0, "neu": 1})
+        s = abschluss_planen(akte, vorhanden, {"loeschen": 0, "neu": 1})
         self.assertEqual([(x["id"], x["art"]) for x in s],
                          [("loeschen", "loeschen"), ("neu", "anlegen"), ("da", "uebernehmen"), ("geaendert", "aendern"),
                           ("entfernen", "entfernen")])
@@ -203,34 +203,34 @@ class Abschliessen(unittest.TestCase):
         self.assertEqual(next(x for x in s if x["id"] == "neu")["kommentar"]["text"], "ganz neu")
 
     def test_ein_entwurf_nur_einmal_uebernommen(self):
-        st = {"kommentare": [kommentar(id="a", text="gleich"), kommentar(id="b", text="gleich")]}
-        s = abschluss_planen(st, {5: {"id": 5, "note": "gleich", "position": {"new_line": 5}}}, {})
+        akte = {"kommentare": [kommentar(id="a", text="gleich"), kommentar(id="b", text="gleich")]}
+        s = abschluss_planen(akte, {5: {"id": 5, "note": "gleich", "position": {"new_line": 5}}}, {})
         self.assertEqual([x["art"] for x in s], ["uebernehmen", "anlegen"])
         self.assertEqual(s[0]["gitlab_art"], "position")
 
     def test_eintragen(self):
-        st = {"kommentare": [kommentar(id="k", text="getippt, während gesendet wurde")]}
-        ok = schritt_eintragen(st, {"art": "anlegen", "id": "k", "text": "gesendet"}, {"gitlab_id": 7, "gitlab_art": "position"})
+        akte = {"kommentare": [kommentar(id="k", text="getippt, während gesendet wurde")]}
+        ok = schritt_eintragen(akte, {"art": "anlegen", "id": "k", "text": "gesendet"}, {"gitlab_id": 7, "gitlab_art": "position"})
         self.assertTrue(ok)
-        self.assertEqual(kommentar_status(st["kommentare"][0]), "geaendert")  # nichts still überschrieben
-        self.assertFalse(schritt_eintragen(st, {"art": "anlegen", "id": "weg", "text": "x"}, {"gitlab_id": 8, "gitlab_art": "mr"}))
+        self.assertEqual(kommentar_status(akte["kommentare"][0]), "geaendert")  # nichts still überschrieben
+        self.assertFalse(schritt_eintragen(akte, {"art": "anlegen", "id": "weg", "text": "x"}, {"gitlab_id": 8, "gitlab_art": "mr"}))
 
     def test_eintragen_loeschen(self):
-        st = {"kommentare": [kommentar(id="weg", gitlab_id=1, geloescht=True),
+        akte = {"kommentare": [kommentar(id="weg", gitlab_id=1, geloescht=True),
                              kommentar(id="zurueck", gitlab_id=2, gitlab_text="Text")]}  # währenddessen wiederhergestellt
-        schritt_eintragen(st, {"art": "loeschen", "id": "weg", "text": "Text"}, {})
-        schritt_eintragen(st, {"art": "loeschen", "id": "zurueck", "text": "Text"}, {})
-        self.assertEqual([k["id"] for k in st["kommentare"]], ["zurueck"])
-        self.assertEqual(kommentar_status(st["kommentare"][0]), "neu")
+        schritt_eintragen(akte, {"art": "loeschen", "id": "weg", "text": "Text"}, {})
+        schritt_eintragen(akte, {"art": "loeschen", "id": "zurueck", "text": "Text"}, {})
+        self.assertEqual([k["id"] for k in akte["kommentare"]], ["zurueck"])
+        self.assertEqual(kommentar_status(akte["kommentare"][0]), "neu")
 
     def test_abgleich(self):
-        st = {"kommentare": [kommentar(id="pub", text="veröffentlicht", gitlab_id=1, gitlab_text="veröffentlicht"),
+        akte = {"kommentare": [kommentar(id="pub", text="veröffentlicht", gitlab_id=1, gitlab_text="veröffentlicht"),
                              kommentar(id="verw", text="verworfen", gitlab_id=2, gitlab_text="verworfen"),
                              kommentar(id="da", gitlab_id=3, gitlab_text="Text")]}
-        self.assertEqual(entwuerfe_abgleichen(st, {3: {}}, None), (0, 0))  # nichts geholt: nichts ändern
-        self.assertEqual(kommentar_status(st["kommentare"][1]), "uebertragen")
-        self.assertEqual(entwuerfe_abgleichen(st, {3: {}}, ["**[`a.txt:5`](l)**\n\nveröffentlicht"]), (1, 1))
-        self.assertEqual([kommentar_status(k) for k in st["kommentare"]], ["weg", "neu", "uebertragen"])
+        self.assertEqual(entwuerfe_abgleichen(akte, {3: {}}, None), (0, 0))  # nichts geholt: nichts ändern
+        self.assertEqual(kommentar_status(akte["kommentare"][1]), "uebertragen")
+        self.assertEqual(entwuerfe_abgleichen(akte, {3: {}}, ["**[`a.txt:5`](l)**\n\nveröffentlicht"]), (1, 1))
+        self.assertEqual([kommentar_status(k) for k in akte["kommentare"]], ["weg", "neu", "uebertragen"])
 
     def test_reihenfolge(self):
         kom = [{"id": "k1", "datei": 0, "b": 5, "status": "neu"}, {"id": "k2", "datei": 1, "b": 1, "status": "neu"},

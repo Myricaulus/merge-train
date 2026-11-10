@@ -4,8 +4,8 @@ from .einstellungen import DATEN, KONF, jetzt
 from .waggon import Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, im_diff, zeile_vorwaerts
-from .zustand import (datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_status, faeden_von, struktur_laden, zustand,
-    zustand_lesen)
+from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_status, faeden_von,
+    struktur_laden)
 from .hinweise import see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
@@ -16,8 +16,8 @@ from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_
 # Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
 # schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
 # Bei MRs genauso, für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen als Fäden (mit „nachrichten“) in der
-# Review-Datei des MR und gehen nie nach GitLab. Felder eines Fadens: siehe zustand.py.
-# Wer zuhört: „agent horchen“ legt <zustand>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
+# Review-Datei des MR und gehen nie nach GitLab. Felder eines Fadens: siehe akte.py.
+# Wer zuhört: „agent horchen“ legt <akte>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
 # Agenten aus [agenten] bzw. feedback_befehl – oder legt einen todo-Eintrag an („Session starten“ öffnet ihn).
 
 
@@ -28,9 +28,9 @@ def wagen_daten(waggon, ansicht=None):
         return gs
     rv = review_daten(waggon, ansicht) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
-    st = zustand_lesen(waggon)
+    akte = akte_lesen(waggon)
     return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], kontext=gs["kontext"], todo=gs["todo"],
-                agenten=gs["agenten"], kann=waggon.kann, stand=stand(waggon, st), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
+                agenten=gs["agenten"], kann=waggon.kann, stand=stand(waggon, akte), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
 
 
 def gespraech_agenten(waggon):
@@ -44,8 +44,8 @@ def gespraech_agenten(waggon):
 
 def gespraech_daten(mr, ansicht=None):
     """Wie review_daten, für ein Gespräch: Fäden auf den Stand der Seite umgerechnet."""
-    st = zustand_lesen(mr)
-    struktur = struktur_laden(st)
+    akte = akte_lesen(mr)
+    struktur = struktur_laden(akte)
     if struktur is None:
         try:
             _, struktur = quelle(mr).seite(mr)
@@ -53,7 +53,7 @@ def gespraech_daten(mr, ansicht=None):
             return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
     kom = []
-    for k in faeden_von(st):
+    for k in faeden_von(akte):
         von = (k.get("refs") or {}).get("head_sha") or head
         b, unter = k.get("b"), None
         if k.get("path") and b:
@@ -81,11 +81,11 @@ def gespraech_daten(mr, ansicht=None):
         vorher = len(kom)
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         ausserhalb = vorher - len(kom)
-    entwuerfe = sum(1 for k in faeden_von(st) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
-    return {"ok": True, "kommentare": kom, "stand": stand(mr, st),
+    entwuerfe = sum(1 for k in faeden_von(akte) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
+    return {"ok": True, "kommentare": kom, "stand": stand(mr, akte),
             "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "kontext": kontext(mr),
             "agenten": gespraech_agenten(mr),
-            "todo": st.get("todo_id") if todo_offen(st.get("todo_id")) else None}
+            "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
 
 
 def neue_nachricht(von, text, gesendet=False, wer=None):
@@ -96,35 +96,35 @@ def neue_nachricht(von, text, gesendet=False, wer=None):
     return m
 
 
-def faden_neu(mr, st, d, text, ansicht):
+def faden_neu(waggon, akte, eingabe, text, ansicht):
     """Neuer Faden des Nutzers (Entwurf), an der geklickten Zeile oder allgemein."""
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
     if not text:
         return False, "leerer Kommentar"
-    struktur = struktur_laden(st)
+    struktur = struktur_laden(akte)
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
          "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
          "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}
-    if d.get("an"):
-        k["an"] = str(d["an"])[:40]
-    if d.get("datei") is not None:
-        fehler, ort = zeile_aus_klick(struktur, d, ansicht)
+    if eingabe.get("an"):
+        k["an"] = str(eingabe["an"])[:40]
+    if eingabe.get("datei") is not None:
+        fehler, ort = zeile_aus_klick(struktur, eingabe, ansicht)
         if fehler:
-            return False, fehler if mr.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
+            return False, fehler if waggon.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
         k.update(ort)
         if ort["b"]:
             t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
             zeilen = t.split("\n")
             k["zeile_text"] = zeilen[ort["b"] - 1] if ort["b"] <= len(zeilen) else None
-    faden_anhaengen(st, k)
+    faden_anhaengen(akte, k)
     return True, ""
 
 
 # Aktionen an einem bestehenden Faden: (st, faden, nachricht | None, text) → (ok, text). Die Nachricht (nid) ist
 # schon geprüft: eigene, noch nicht gesendete.
 
-def faden_nutzer_antwortet(st, k, m, text):
+def faden_nutzer_antwortet(akte, k, m, text):
     if not text:
         return False, "leere Nachricht"
     k["nachrichten"].append(neue_nachricht("ich", text))
@@ -132,28 +132,28 @@ def faden_nutzer_antwortet(st, k, m, text):
     return True, ""
 
 
-def faden_nachricht_aendern(st, k, m, text):
+def faden_nachricht_aendern(akte, k, m, text):
     if not m or not text:
         return False, "leere Nachricht" if m else "Nachricht fehlt"
     m["text"] = text; m["zeit"] = jetzt()
     return True, ""
 
 
-def faden_nachricht_loeschen(st, k, m, text):
+def faden_nachricht_loeschen(akte, k, m, text):
     """Ohne Nachricht (oder wenn die letzte weg ist): den ganzen Faden."""
     if m:
         k["nachrichten"].remove(m)
     if not m or not k["nachrichten"]:
-        eintrag_entfernen(st, k)
+        eintrag_entfernen(akte, k)
     return True, ""
 
 
-def faden_erledigen(st, k, m, text):
+def faden_erledigen(akte, k, m, text):
     k["erledigt"] = {"von": "ich", "zeit": jetzt()}
     return True, ""
 
 
-def faden_wieder_oeffnen(st, k, m, text):
+def faden_wieder_oeffnen(akte, k, m, text):
     k["erledigt"] = None
     return True, ""
 
@@ -162,23 +162,28 @@ AM_FADEN = {"antworten": faden_nutzer_antwortet, "aendern": faden_nachricht_aend
             "erledigt": faden_erledigen, "oeffnen": faden_wieder_oeffnen}
 
 
-def gespraech_aktion(mr, d):
-    """Aktion des Nutzers von der Seite: neu oder eine aus AM_FADEN. Rückgabe (ok, text)."""
-    aktion = d.get("aktion")
-    if aktion != "neu" and aktion not in AM_FADEN:
+FADEN_AKTIONEN = {"neu": faden_neu}
+
+
+def gespraech_aktion(waggon, eingabe):
+    """Aktion des Nutzers von der Seite: aus FADEN_AKTIONEN oder AM_FADEN (mit „id“, ggf. „nid“). Rückgabe (ok, text)."""
+    aktion = eingabe.get("aktion")
+    ansicht = ansicht_lesen(eingabe.get("ansicht"))
+    text = str(eingabe.get("text") or "").strip()
+    if aktion in FADEN_AKTIONEN:
+        return aktion_ausfuehren(waggon, lambda akte: FADEN_AKTIONEN[aktion](waggon, akte, eingabe, text, ansicht))
+    if aktion not in AM_FADEN:
         return False, "unbekannte Aktion"
-    ansicht = ansicht_lesen(d.get("ansicht"))
-    text = str(d.get("text") or "").strip()
-    with zustand(mr) as st:
-        if aktion == "neu":
-            return faden_neu(mr, st, d, text, ansicht)
-        k = faden_finden(st, d.get("id"))
+    def am_faden(akte):
+        k = faden_finden(akte, eingabe.get("id"))
         if not k:
             return False, "Gespräch nicht gefunden – Seite neu laden"
-        m = next((m for m in k["nachrichten"] if m["id"] == d.get("nid")), None) if d.get("nid") else None
-        if d.get("nid") and (not m or m["von"] != "ich" or m.get("gesendet")):
+        nid = eingabe.get("nid")
+        m = next((m for m in k["nachrichten"] if m["id"] == nid), None) if nid else None
+        if nid and (not m or m["von"] != "ich" or m.get("gesendet")):
             return False, "Nur eigene, noch nicht gesendete Nachrichten lassen sich ändern"
-        return AM_FADEN[aktion](st, k, m, text)
+        return AM_FADEN[aktion](akte, k, m, text)
+    return aktion_ausfuehren(waggon, am_faden)
 
 
 # ---- Agent-Seite (CLI)
@@ -189,11 +194,11 @@ def alle_gespraeche():
     for unter in ("lokal", "reviews"):
         for p in glob.glob(os.path.join(DATEN, unter, "*.json")):
             try:
-                st = json.load(open(p, encoding="utf-8"))
+                akte = json.load(open(p, encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            m = st.get("mr") or {}
-            if m.get("lokal") or m.get("iid") and any(k.get("nachrichten") is not None for k in st.get("kommentare") or []):
+            m = akte.get("mr") or {}
+            if m.get("lokal") or m.get("iid") and any(k.get("nachrichten") is not None for k in akte.get("kommentare") or []):
                 out.append(Waggon.aus_dict(m))
     return out
 

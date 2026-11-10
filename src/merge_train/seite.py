@@ -8,7 +8,7 @@ from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, spaeter_grund, zeilenzahl
-from .zustand import STRUKTUR, zustand, zustand_lesen
+from .akte import STRUKTUR, akte_bearbeiten, akte_lesen
 from .gitlab import MetaFehlt, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
 
@@ -36,8 +36,8 @@ def dateiliste_html(dateien):
 
 def mr_seite(mr, ansicht=None):
     """MR-Seite aus dem lokalen Klon (im Cache je Stand). Rückgabe (html-pfad, struktur, mr). Keine GitLab-Anfrage."""
-    st = zustand_lesen(mr)
-    meta = st.get("meta")
+    akte = akte_lesen(mr)
+    meta = akte.get("meta")
     if not meta:
         raise MetaFehlt(f'Für {mr.projekt}!{mr.iid} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
                         "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
@@ -51,7 +51,7 @@ def mr_seite(mr, ansicht=None):
     pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix,
                                  lambda *a: mr_html(mr, meta, *a), ansicht)
     if not ansicht:
-        with zustand(mr) as s:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
+        with akte_bearbeiten(mr) as s:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
             s["struktur"] = praefix_json(praefix)
     return pfad, struktur, mr
 
@@ -220,8 +220,8 @@ def projekt_seite(wurzel, ansicht=None):
                                  lambda *a: projekt_html(projekt, von, bis, *a), ansicht)
     if not ansicht:
         ersetzen(projekt_zeiger(projekt), praefix_json(praefix))
-        with zustand(waggon) as st:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
-            st["struktur"] = praefix_json(praefix)
+        with akte_bearbeiten(waggon) as akte:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
+            akte["struktur"] = praefix_json(praefix)
     return pfad, struktur
 
 
