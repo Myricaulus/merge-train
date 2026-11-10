@@ -68,8 +68,26 @@ function kasten(id,name,items){const k=document.getElementById(id);if(!k)return;
 function ortLink(x){return x.path?el('a',{class:'ortlink',title:'im Code zeigen',onclick:()=>zeigen(x)},ort(x)):el('code',{},ort(x))}
 function siehe(sa){if(!sa||!sa.length)return null;
  return el('div',{class:'sa'},el('span',{},'Siehe auch:'),...sa.map(s=>{const wo=s.path+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):'');
-  return s.problem?el('span',{class:'warn',title:s.problem},(s.label?s.label+' · ':'')+wo+' ('+s.problem+')')
-   :el('a',{title:wo,onclick:()=>popup(s.path,s.zeile,s.label,s.bis)},s.label||(s.path.split('/').pop()+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):'')))}))}
+  if(s.problem)return el('span',{class:'warn',title:s.problem},(s.label?s.label+' · ':'')+wo+' ('+s.problem+')');
+  const name=s.label||(s.path.split('/').pop()+(s.zeile?':'+s.zeile+(s.bis?'-'+s.bis:''):''));
+  return s.vergleich?el('a',{class:'vgl',title:'Vergleich nebeneinander: '+s.vergleich+' ⇄ '+s.path,onclick:()=>vergleich(s.vergleich,s.path,s.label)},'⇄ '+name)
+   :el('a',{title:wo,onclick:()=>popup(s.path,s.zeile,s.label,s.bis)},name)}))}
+function vergleich(a,b,label){schliessen(); // see_also mit "diff": zwei Dateien des MR-Stands nebeneinander
+ const kurz=p=>p.split('/').pop(),info=el('span',{class:'sub'},'lädt …'),pb=el('div',{class:'pb'}),kn=el('span',{class:'knoepfe'});
+ document.body.append(el('div',{id:'schleier',onclick:schliessen}),el('div',{id:'popup',class:'vergleich'},el('div',{class:'pk'},
+  el('b',{title:a+' ⇄ '+b},(label?label+' – ':'')+kurz(a)+' ⇄ '+kurz(b)),info,kn),pb));
+ kn.append(el('button',{title:'schließen (Esc)',onclick:schliessen},'✕'));
+ fetch('/api/vergleich?'+qs(true)+'&a='+encodeURIComponent(a)+'&b='+encodeURIComponent(b)).then(r=>r.json())
+  .catch(()=>({ok:false,text:'merge-train-Server nicht erreichbar'})).then(r=>{if(!pb.isConnected)return;
+  if(!r.ok){info.textContent='';pb.append(el('div',{class:'warn'},r.text));return}
+  pb.append(el('div',{class:'vkopf'},el('span',{title:a},a),el('span',{title:b},b)));
+  const t=document.createElement('div');t.innerHTML=r.html;pb.append(...t.childNodes);
+  const rows=[...pb.querySelectorAll('tr')],anf=rows.filter((tr,i)=>tr.querySelector('.weg,.dazu,.nix')&&!(rows[i-1]&&rows[i-1].querySelector('.weg,.dazu,.nix')));
+  info.textContent=anf.length?anf.length+' Unterschied(e) · +'+r.plus+' −'+r.minus+' · Stand '+r.sha.slice(0,8):'keine Unterschiede';
+  let i=-1;const geh=d=>{if(!anf.length)return;i=(i+d+anf.length)%anf.length;const z=anf[i];
+   pb.scrollTop+=z.getBoundingClientRect().top-pb.getBoundingClientRect().top-pb.clientHeight/3;blinken(z)};
+  if(anf.length)kn.prepend(el('button',{title:'voriger Unterschied',onclick:()=>geh(-1)},'↑'),el('button',{title:'nächster Unterschied',onclick:()=>geh(1)},'↓'));
+  geh(1)})}
 var LEIHE=null; // Datei, die gerade im Popup steht: {d, platz}
 function zurueckgeben(){if(!LEIHE)return;const {d,platz}=LEIHE;LEIHE=null;d.querySelectorAll('tr.ziel').forEach(t=>t.classList.remove('ziel'));platz.replaceWith(d)}
 function schliessen(){zurueckgeben();['popup','schleier'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}

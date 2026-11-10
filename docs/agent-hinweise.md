@@ -60,7 +60,8 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
  "markers": [
    {"finding": "#3", "title": "Stichpunkte zum Thema", "path": "src/A.cs", "needle": "public void Foo(", "text": "English comment for GitLab",
     "problem": "deutsche Kurzfassung", "decision": "…", "status": "…",
-    "see_also": ["src/B.cs:120", {"path": "src/C.cs", "needle": "Foo(", "label": "Aufrufer"}],
+    "see_also": ["src/B.cs:120", {"path": "src/C.cs", "needle": "Foo(", "label": "Aufrufer"},
+                 {"path": "src/AKopie.cs", "diff": true, "label": "Kopie"}],
     "rationale": "Belege", "resolved_when": "woran man den Fix erkennt"},
    {"finding": "#7", "text": "General remark (no path → general MR comment)"}]}
 ```
@@ -75,6 +76,9 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
   `{"path", "line" | "needle", "end", "label"}`; `end` = letzte Zeile eines Bereichs). merge-train zeigt sie als Links.
   Ein Klick öffnet den Code im Popup, Zeile bzw. Bereich hervorgehoben: liegt die Datei im Diff, deren Diff (aufklappbar),
   sonst den Dateiinhalt.
+  Mit `"diff": true` wird daraus ein Dateivergleich (Link mit ⇄): Das Popup zeigt die Datei des Hinweises (`path` des
+  Markers) und die verlinkte Datei nebeneinander, Unterschiede markiert, mit ↑/↓ von Unterschied zu Unterschied. Mit
+  `"diff": "pfad"` wird stattdessen gegen diese Datei verglichen. Gedacht für Kopien („nahezu identisch zu …“).
   Die Verweise gehören **nicht** zum GitLab-Kommentar.
 - `problem`, `decision`, `status` und weitere Felder erscheinen unter „Details“, `status` zusätzlich als Etikett.
 - Oben optional `"mr": "<MR-URL>"`.

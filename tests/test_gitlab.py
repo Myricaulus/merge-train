@@ -332,7 +332,8 @@ def main():
                "markers": [
                    {"finding": "#1", "path": "App.cs", "needle": "public void Neu(", "text": "#1 Missing null check",
                     "rationale": "siehe Ticket", "resolved_when": "Test grün", "status": "open (GitLab comment)",
-                    "see_also": ["Neu.cs:2", {"path": "App.cs", "needle": "WeitWeg", "label": "Aufrufer"}, "App.cs:40-45"]},
+                    "see_also": ["Neu.cs:2", {"path": "App.cs", "needle": "WeitWeg", "label": "Aufrufer"}, "App.cs:40-45",
+                                 {"path": "Neu.cs", "diff": True, "label": "Kopie"}]},
                    {"finding": "#7", "text": "#7 General remark about the MR"},
                    {"path": "App.cs", "needle": "=public void WeitWeg() {}", "text": "K2 Rename method"},
                    {"finding": "#3", "path": "App.cs", "needle": "GibtEsNicht", "text": "#3 Weg"},
@@ -391,8 +392,15 @@ def main():
         pruefe(hs["#6"]["im_diff"] and hs["#6"]["a"] == 10 and hs["#6"]["b"] == 10, "#6: Kontextzeile alt 10 / neu 10")
         pruefe(hs["#4"]["datei"] is not None and hs["#4"]["im_diff"], "#4 in seite.html")
         sa = hs["#1"]["see_also"]
-        pruefe([(s["path"], s["zeile"], s["bis"], s["label"]) for s in sa] == [("Neu.cs", 2, None, None), ("App.cs", 50, None, "Aufrufer"), ("App.cs", 40, 45, None)]
-               and not any(s["problem"] for s in sa), "see_also: pfad:zeile, pfad:von-bis und needle aufgelöst")
+        pruefe([(s["path"], s["zeile"], s["bis"], s["label"]) for s in sa[:3]] == [("Neu.cs", 2, None, None), ("App.cs", 50, None, "Aufrufer"), ("App.cs", 40, 45, None)]
+               and not any(s["problem"] for s in sa[:3]), "see_also: pfad:zeile, pfad:von-bis und needle aufgelöst")
+        pruefe(sa[3]["vergleich"] == "App.cs" and not sa[3]["problem"] and sa[0]["vergleich"] is None,
+               "see_also mit diff: Vergleich gegen die eigene Datei des Hinweises")
+        v = json.loads(get(f"/api/vergleich?mr={mr}&k={k}&a=App.cs&b=Neu.cs"))
+        pruefe(v["ok"] and v["plus"] == 2 and v["minus"] == 61 and 'class="sbs"' in v["html"] and "WeitWeg" in v["html"],
+               "Dateivergleich: ganze Dateien nebeneinander")
+        pruefe(not json.loads(get(f"/api/vergleich?mr={mr}&k={k}&a=App.cs&b=Gibts.cs"))["ok"]
+               and not json.loads(get(f"/api/vergleich?mr={mr}&k=falsch&a=App.cs&b=Neu.cs"))["ok"], "Dateivergleich: fehlende Datei, Schlüssel")
         pruefe("see_also" not in hs["#1"]["extra"] and "see_also" not in hs["#1"]["text"], "see_also nicht im Kommentartext")
         pruefe('class="lu" data-von="1" data-bis="7" data-d="0"' in seite and 'data-von="15" data-bis="17" data-d="0"' in seite
                and 'data-von="24" data-bis="61" data-d="1"' in seite, "ausgeblendete Bereiche vor, zwischen und nach den Hunks")

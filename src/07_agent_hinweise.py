@@ -6,9 +6,10 @@ def pfad_norm(p):
     p = str(p or "").strip().replace("\\", "/")
     return p[2:] if p.startswith("./") else p
 
-def see_also_aufloesen(ordner, head, eintraege, tag):
-    """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label"}
-    → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars."""
+def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None):
+    """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label", "diff"}
+    → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars.
+    "diff": true vergleicht die eigene Datei des Hinweises mit dieser (Popup nebeneinander), "diff": "pfad" eine andere."""
     if isinstance(eintraege, (str, dict)):
         eintraege = [eintraege]
     out = []
@@ -35,7 +36,14 @@ def see_also_aufloesen(ordner, head, eintraege, tag):
                 zeile = z[0] if z else None
                 problem = None if z else "needle nicht gefunden"
         bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
-        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem})
+        gegen = None
+        if e.get("diff"):
+            gegen = pfad_norm(e["diff"]) if isinstance(e["diff"], str) else eigene
+            if not gegen:
+                problem = problem or "diff: Hinweis hat keine eigene Datei – Pfad angeben"
+            elif head and not problem and inhalt(ordner, head, gegen) is None:
+                problem = f"diff: {gegen} nicht im MR-Stand"
+        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem, "vergleich": gegen})
     return out
 _HW_CACHE = {}
 
@@ -114,7 +122,7 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
-                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag),
+                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path),
                      "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None
             if not path:
@@ -238,6 +246,22 @@ def zeilen_daten(struktur, pfad, von, bis):
     return {"ok": True, "n": len(zeilen), "von": von, "bis": bis, "sha": head,
             "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
                        for i in range(von, bis + 1)]}
+
+def vergleich_daten(struktur, a, b):
+    """Zwei Dateien des MR-Stands gegeneinander (see_also mit "diff"): ganze Dateien nebeneinander als Tabelle."""
+    head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
+    if not head:
+        return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
+    a, b = pfad_norm(a), pfad_norm(b)
+    ta, tb = inhalt(struktur["ordner"], head, a), inhalt(struktur["ordner"], head, b)
+    for p, t in ((a, ta), (b, tb)):
+        if t is None:
+            return {"ok": False, "text": f"{p} gibt es im Stand {head[:8]} nicht"}
+    roh = git(struktur["ordner"], "diff", "--no-color", "--no-ext-diff", "-U1000000", f"{head}:{a}", f"{head}:{b}", check=False)
+    dateien = zerlegen(roh or "")
+    d = dateien[0] if dateien else {"hunks": [], "binaer": False, "plus": 0, "minus": 0, "leer": "beide Dateien sind gleich"}
+    d.update(alt=a, neu=b)
+    return {"ok": True, "sha": head, "plus": d["plus"], "minus": d["minus"], "html": datei_tabelle(d, ta, tb)}
 
 def zeile_aus_klick(struktur, d, ansicht):
     """Klick auf eine Zeilennummer (datei, a, b, sha der Seite) → (fehler, {path, old_path, a, b}) im MR-Stand."""

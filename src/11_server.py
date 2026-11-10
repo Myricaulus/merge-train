@@ -81,12 +81,14 @@ def server():
                     return self.senden(200, "merge-train", "text/plain")
                 if pfad in ("favicon.ico", "favicon.svg"):
                     return self.senden(200, FAVICON.strip(), "image/svg+xml")
-                if pfad in ("api/zeilen", "api/datei"):  # beide Modi: Kontext / große Datei nachladen
+                if pfad in ("api/zeilen", "api/datei", "api/vergleich"):  # Kontext / große Datei nachladen, Dateivergleich
                     if q.get("k") != schluessel():
                         return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                     struktur = seiten_struktur(q.get("mr", ""), ansicht_lesen(q.get("ansicht")))
                     if struktur is None:
                         return self.json_senden(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
+                    if pfad == "api/vergleich":
+                        return self.json_senden(200, vergleich_daten(struktur, q.get("a", ""), q.get("b", "")))
                     if pfad == "api/datei":
                         try:
                             return self.json_senden(200, datei_nachladen(struktur, int(q.get("i", -1))))
