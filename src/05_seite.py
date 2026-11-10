@@ -4,7 +4,9 @@
 
 MR_ORDNER = os.path.join(ORDNER, "mr")
 LOKAL_ORDNER = os.path.join(ORDNER, "lokal")
-VERSION = str(int(os.path.getmtime(os.path.realpath(__file__))))
+# Stand des Skripts und der Einstellung (Leitstand-Knöpfe, Agenten): ändert sich eins, werden Seiten neu gebaut
+VERSION = str(int(os.path.getmtime(os.path.realpath(__file__)))) + "-" + \
+    hashlib.sha1(json.dumps(KONF, sort_keys=True, default=str).encode()).hexdigest()[:6]
 
 INHALT = {}
 
@@ -66,8 +68,8 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
     return stamm + ".html", struktur
 
 def seiten_daten(sid, head, n, ans, **mehr):
-    """const MR = … für die Seite."""
-    return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n,
+    """const MR = … für die Seite (kann: was der Waggon kann, siehe Quellen)."""
+    return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n, kann=quelle(sid).kann,
                            ansicht=f'{ans["art"]}:{ans["sha"]}' if ans else "",
                            lesen=bool(ans and ans["art"] == "commit")), ensure_ascii=False)
 
@@ -130,26 +132,33 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
-    knoepfe = ('<button id="feedback" disabled title="Entwürfe (Fragen/Kommentare) an Claude schicken">Feedback senden</button>\n'
-               '<button id="starten" hidden title="Konsole mit Claude im Projekt öffnen (todo los)">▶ Session starten</button>\n'
-               f'<button id="fertig"{" hidden" if lesen else ""} title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button>')
-    return diff_seite(titel=f"MR {html.escape(projekt)}", gitlab=False, daten=daten, head=head, dateien=dateien, texte=texte,
-                      commits=commits, h1=f"{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}",
-                      knoepfe=knoepfe, commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah,
-                      hilfe=hilfe, leer=leer)
+    return diff_seite(titel=f"MR {html.escape(projekt)}", sid="projekt:" + projekt, lesen=lesen, daten=daten, head=head,
+                      dateien=dateien, texte=texte, commits=commits,
+                      h1=f"{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}",
+                      fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
+                      commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer)
 
-def diff_seite(*, titel, gitlab, daten, head, dateien, texte, commits, h1, knoepfe, commits_titel, commits_liste,
+def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, commits_titel, commits_liste, fertig_titel="",
                nach_h1="", sub_vor="", nach_sub="", unter_commits="", nach_commits="", hilfe="", leer=""):
-    """Die eine Diff-Seite für lokalen und GitLab-Modus: Güterbahnhof im Kopf, Titelzeile, Commits, Seitenleiste mit
-    Kommentaren und Dateiliste, Diff. Die Modi unterscheiden sich nur in den übergebenen Stücken (Titelzeile, Knöpfe)."""
+    """Die eine Diff-Seite für alle Quellen: Güterbahnhof im Kopf, Titelzeile, Commits, Seitenleiste mit Kommentaren und
+    Dateiliste, Diff. Die Knöpfe richten sich danach, was der Waggon kann (Quelle), die Titelzeile liefert die Quelle."""
+    kann = quelle(sid).kann
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
+    knoepfe = ('<button id="feedback" hidden disabled title="Entwürfe (Fragen/Wünsche) an den Agenten schicken – bleiben privat">'
+               'Feedback senden</button>\n'
+               '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>')
+    if kann["fertig"]:
+        knoepfe += f'\n<button id="fertig"{" hidden" if lesen else ""} title="{fertig_titel}">fertig ✓</button>'
+    if kann["review"]:
+        knoepfe += (f'\n<button id="abschliessen"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) '
+                    'in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button>')
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{titel}</title>
-<style>{CSS}{CSS_REVIEW}</style>{"" if gitlab else '<script src="/zug.js"></script>'}</head><body class="{"gl" if gitlab else "kom"}">
-<header id="kopf">{gleise_html(gitlab)}<div class="zeile"><h1>{h1}</h1>{nach_h1}
+<style>{CSS}{CSS_REVIEW}</style><script src="/zug.js?akt={urllib.parse.quote(sid)}"></script></head><body class="diffseite">
+<header id="kopf">{gleise_html()}<div class="zeile"><h1>{h1}</h1>{nach_h1}
 <span class="sub">{sub_vor}{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{nach_sub}
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
-{knoepfe}</div>
+<span class="kopfknoepfe">{knoepfe}</span></div>
 <details id="commits"><summary>{commits_titel}</summary><div class="liste">{commits_liste}</div>{unter_commits}</details>{nach_commits}</header>
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>

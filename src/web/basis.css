@@ -42,7 +42,7 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .hilfe{border-bottom:1px solid var(--rand);padding:6px 10px;color:var(--muted);font-size:12px;line-height:1.7}
 .hilfe kbd{font:11px ui-monospace,monospace;border:1px solid var(--rand);border-bottom-width:2px;border-radius:3px;padding:0 4px;color:var(--fg);background:var(--bg)}
 #zug{overflow-x:auto;margin:-2px 0 6px} #zug svg{display:block}
-#zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default} body.gl #zug .wg.fertig{cursor:pointer}
+#zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default} #zug .wg.fertig.mr{cursor:pointer}
 #zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5}
 #zug .wg:hover .kasten{stroke:var(--muted)}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}
@@ -52,8 +52,8 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 #zug .tp{fill:var(--p)} #zug .tm{fill:var(--m)} #zug .rad{fill:var(--muted)} #zug .lok{fill:var(--muted)}
 #zug .marke{font-size:11px;font-weight:600} #zug .mo{fill:var(--tb)} #zug .mf{fill:var(--p)}
 .zeile{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-#fertig{margin-left:auto;font:600 14px system-ui;padding:6px 16px;border-radius:6px;border:1px solid var(--p);background:var(--p);color:#fff;cursor:pointer}
-#fertig:disabled{opacity:.6;cursor:wait} #fertig.erledigt{background:transparent;color:var(--p);cursor:default}
+#fertig,#abschliessen{margin-left:auto;font:600 14px system-ui;padding:6px 16px;border-radius:6px;border:1px solid var(--p);background:var(--p);color:#fff;cursor:pointer}
+#fertig:disabled,#abschliessen:disabled{opacity:.6;cursor:wait} #fertig.erledigt{background:transparent;color:var(--p);cursor:default}
 #meldung{color:var(--muted);font-size:13px}
 .tk{color:var(--tk)} .ts{color:var(--ts)} .tc{color:var(--tc);font-style:italic} .tn{color:var(--tn)} .tt{color:var(--tt)}
 .ta{color:var(--ta)} .tf{color:var(--tf)} .tb{color:var(--tb)} .tv{color:var(--tv)} .to{color:var(--to)}

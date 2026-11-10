@@ -15,8 +15,8 @@ tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
 .kbox details,.quelle{margin-top:4px;color:var(--muted);font-size:12px} .kbox details div,.quelle div{white-space:pre-wrap;margin:2px 0}
 .kbox summary,.quelle summary{cursor:pointer}
 .warn{color:var(--m)}
-body.gl td.n:not(:empty),body.kom td.n:not(:empty){cursor:pointer}
-body.gl td.n:not(:empty):hover,body.kom td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
+body.diffseite td.n:not(:empty){cursor:pointer}
+body.diffseite td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
 #allgemein{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;padding:8px 12px}
 #allgemein>.kk{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #liste .kz{color:var(--tf);margin-right:6px}
@@ -95,4 +95,4 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 #feedback,#starten{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
 #feedback:not(:disabled){background:var(--tn);color:var(--bg)} #feedback:disabled{opacity:.45;cursor:default;border-color:var(--rand);color:var(--muted)}
 .gs .msg:has(textarea){width:100%;max-width:none}
-body.kom #feedback{margin-left:auto} body.kom #fertig{margin-left:0}
+.kopfknoepfe{margin-left:auto;display:flex;gap:8px;align-items:center} .kopfknoepfe #fertig,.kopfknoepfe #abschliessen{margin-left:0}

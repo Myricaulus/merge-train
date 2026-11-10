@@ -129,17 +129,16 @@ def runde_laden():
     heute = datetime.now().strftime("%Y-%m-%d")
     return {p: w for p, w in r.items() if w.get("tag") == heute}
 
-def zug_schreiben(stats):
-    """zug.js: offene Projekte + heute fertig gewordene (sofern seitdem nichts Neues kam), absteigend nach Umfang."""
-    import json
+def lokal_wagen(stats):
+    """Lokale Waggons: offene Projekte + heute fertig gewordene (sofern seitdem nichts Neues kam), absteigend nach Umfang."""
     fertig = runde_laden()
     wagen = [w for w in stats if w["dateien"]]  # offen ist, was jetzt noch Unterschiede hat
     offen = {w["p"] for w in wagen}
     wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
     for w in wagen:  # Gespräch: offene Fäden / neue Antworten des Agenten
-        w["gs"], w["gs_neu"] = g_zahlen(w["p"])
-    ersetzen(os.path.join(ORDNER, "zug.js"), "window.MR_ZUG=" + json.dumps({"wagen": wagen}, ensure_ascii=False) + ";")
+        w["gs"], w["gs_neu"] = g_zahlen({"lokal": w["p"]})
+        w["datei"] = "/" + dateiname(w["p"])
     return wagen
 
 def commits_html(commits, knoepfe=None):
@@ -168,7 +167,7 @@ def alles_erzeugen(von, bis, inline):
     repos = finde_repos()
     with ThreadPoolExecutor(8) as ex:
         stats = list(ex.map(lambda r: statistik(r, von, bis), repos))
-    wagen = zug_schreiben(stats)
+    wagen = lokal_wagen(stats)
     offen = {w["p"] for w in wagen if w["status"] == "offen"}
     with ThreadPoolExecutor(8) as ex:
         list(ex.map(lambda r: projekt_seite(r, von, bis),
@@ -208,13 +207,12 @@ def fertig(projekt, sha, k):
     log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", VON, sha)
-    g_archivieren(projekt)
+    g_archivieren({"lokal": projekt})
     with SPERRE:
         r = runde_laden()
         r[projekt] = dict(st, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
         with open(RUNDE, "w") as f:
             json.dump(r, f, ensure_ascii=False, indent=1)
-    zug_schreiben([statistik(w) for w in repos.values()])
     erledigt = []
     for t in schliesst:
         ok = subprocess.run(["todo", "erledigt", t, "-n", f"Merge-Request {projekt} angenommen ({sha[:8]})"],

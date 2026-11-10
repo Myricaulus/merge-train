@@ -147,9 +147,8 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
 
 def stand(mr, st):
     teile = [st.get("struktur") or ""]
-    g = mr if mr.get("lokal") else gk(mr)  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
-    teile.append(horcht(g) or "")
-    for p in [review_datei(mr)] + ([] if mr.get("lokal") else [review_datei(g)]) + hinweis_dateien(mr, st):
+    teile.append(horcht(mr) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+    for p in [review_datei(mr)] + ([] if mr.get("lokal") else hinweis_dateien(mr, st)):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -165,7 +164,7 @@ def review_daten(mr, ansicht=None):
         st = review_laden(mr)
     hinweise, quellen = hinweise_aufloesen(mr, st, struktur)
     kom = []
-    for k in st["kommentare"]:
+    for k in rk(st):
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
@@ -178,11 +177,8 @@ def review_daten(mr, ansicht=None):
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
         ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
-    gs = g_daten(gk(mr), ansicht)
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb,
-            "faeden": gs.get("kommentare") or [], "g_ausstehend": gs.get("ausstehend", 0), "horcht": gs.get("horcht"),
-            "todo": gs.get("todo"), "agenten": gs.get("agenten", [])}
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
 
 def seiten_struktur(sid, ansicht=None):
     """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
@@ -302,7 +298,7 @@ def kommentar_aktion(mr, d):
                 return False, "leerer Kommentar"
             st["kommentare"].append(k)
         else:
-            k = next((k for k in st["kommentare"] if k["id"] == d.get("id")), None)
+            k = next((k for k in rk(st) if k["id"] == d.get("id")), None)
             if not k:
                 return False, "Kommentar nicht gefunden"
             if aktion == "aendern":
@@ -383,7 +379,7 @@ def abschliessen(mr):
             return False, f"Entwürfe nicht abrufbar: {e}", web
         z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "verschwunden": 0}
         fehler = []
-        for k in list(st["kommentare"]):
+        for k in rk(st):  # Gesprächsfäden bleiben privat
             try:
                 if k.get("geloescht"):
                     if k.get("gitlab_id") in vorhanden:

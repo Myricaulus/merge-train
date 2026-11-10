@@ -1,10 +1,11 @@
 # ---------------------------------------------------------------- Review-Zustand
 
+# Eine Datei je Waggon. „kommentare“ enthält Review-Kommentare (gehen nach GitLab) und Gesprächsfäden (mit
+# „nachrichten“, bleiben privat) – rk() und g_faeden() trennen sie.
+
 def review_datei(mr):
-    if mr.get("lokal"):  # lokales Projekt: Gespräch mit dem Agenten (siehe Gespräch)
+    if mr.get("lokal"):  # lokales Projekt: nur Gespräch
         return os.path.join(DATEN, "lokal", dateiname(mr["lokal"])[:-5] + ".json")
-    if mr.get("gespraech"):  # Fragen an den Agenten zu einem MR: eigene Datei, geht nie nach GitLab
-        return os.path.join(DATEN, "gespraech", mr_datei(mr) + ".json")
     return os.path.join(DATEN, "reviews", mr_datei(mr) + ".json")
 
 def review_laden(mr):
@@ -12,9 +13,32 @@ def review_laden(mr):
         st = json.load(open(review_datei(mr), encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         st = {}
-    st.setdefault("mr", dict(mr))
+    st.setdefault("mr", {k: v for k, v in mr.items() if k in ("lokal", "host", "projekt", "iid")})
     st.setdefault("kommentare", []); st.setdefault("hinweise", {}); st.setdefault("hinweis_dateien", [])
+    if not mr.get("lokal"):
+        alt_gespraech_uebernehmen(mr, st)
     return st
+
+def alt_gespraech_uebernehmen(mr, st):
+    """Übergang: Fäden aus der früheren getrennten Ablage (gespraech/<mr>.json) in die Review-Datei holen."""
+    alt = os.path.join(DATEN, "gespraech", mr_datei(mr) + ".json")
+    if not os.path.exists(alt):
+        return
+    with SPERRE:
+        try:
+            g = json.load(open(alt, encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        ids = {k["id"] for k in st["kommentare"]}
+        st["kommentare"] += [k for k in g.get("kommentare") or [] if k.get("nachrichten") is not None and k["id"] not in ids]
+        if g.get("todo_id") and not st.get("todo_id"):
+            st["todo_id"] = g["todo_id"]
+        review_speichern(mr, st)
+        os.replace(alt, alt + ".uebernommen")
+
+def rk(st):
+    """Review-Kommentare (ohne Gesprächsfäden)."""
+    return [k for k in st["kommentare"] if k.get("nachrichten") is None]
 
 def review_speichern(mr, st):
     ersetzen(review_datei(mr), json.dumps(st, ensure_ascii=False, indent=1))
@@ -39,7 +63,7 @@ def k_status(k):
     return "uebertragen" if k["text"] == k.get("gitlab_text") else "geaendert"
 
 def ausstehend(st):
-    return sum(1 for k in st["kommentare"] if k_status(k) in ("neu", "geaendert", "loeschen"))
+    return sum(1 for k in rk(st) if k_status(k) in ("neu", "geaendert", "loeschen"))
 
 def datei_index(struktur, pfad):
     if struktur and pfad:

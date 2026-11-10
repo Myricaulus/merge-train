@@ -1,5 +1,5 @@
 let ZUG=(window.MR_ZUG||{wagen:[]}).wagen;
-const GL=MR.modus==='gitlab',esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KANN=MR.kann||{},esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function naechster(){const i=ZUG.findIndex(w=>w.p===MR.projekt);
  const offen=ZUG.filter(w=>w.status==='offen'&&w.p!==MR.projekt);
  return offen.find(w=>ZUG.indexOf(w)>i)||offen[0]||null}
@@ -31,14 +31,14 @@ function zug(){const box=document.getElementById('zug');if(!box)return;box.inner
  const svg=document.createElementNS(ns,'svg'),breite=4+ZUG.length*(W+G)+LW+6;
  svg.setAttribute('width',breite);svg.setAttribute('height',yr+4);
  let s=`<line x1="0" y1="${yr}" x2="${breite}" y2="${yr}" class="schiene"/>`;
- ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig';
+ ZUG.forEach((w,i)=>{const x=4+i*(W+G),akt=w.p===MR.projekt,f=w.status==='fertig',mr=w.quelle&&w.quelle!=='lokal';
   const nm=w.name||w.p,name=esc(nm.length>23?nm.slice(0,22)+'…':nm),ges=Math.max(1,w.plus+w.minus),bp=Math.round((W-20)*w.plus/ges);
   const todos=w.todos||[],marke=esc(w.marke||(f?'✓ fertig':w.gs_neu?'💬 '+w.gs_neu+' neu':w.gs?'💬 '+w.gs:(todos.length?'● todo '+todos.length:'● offen')));
   const titel=esc(w.titel||`${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length?'\ntodos: '+todos.join(', '):''}`);
   const zmax=Math.max(6,24-marke.length);
   const z2=w.zeile2!=null?`<tspan class="klein">${esc(w.zeile2.length>zmax?w.zeile2.slice(0,zmax-1)+'…':w.zeile2)}</tspan>`:`<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
   const balken=w.plus+w.minus>0?`<rect x="${x+10}" y="${y+43}" width="${bp}" height="4" class="tp"/><rect x="${x+10+bp}" y="${y+43}" width="${W-20-bp}" height="4" class="tm"/>`:'';
-  s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''}" data-i="${i}"><title>${titel}</title>
+  s+=`<g class="wg ${akt?'akt':''} ${f?'fertig':''} ${mr?'mr':''}" data-i="${i}"><title>${titel}</title>
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
    <text x="${x+10}" y="${y+17}" font-weight="600">${name}</text>
    <text x="${x+10}" y="${y+35}">${z2}</text>
@@ -48,7 +48,7 @@ function zug(){const box=document.getElementById('zug');if(!box)return;box.inner
    <line x1="${x+W}" y1="${y+H-8}" x2="${x+W+G}" y2="${y+H-8}" class="rad" stroke="currentColor" stroke-width="2"/>`});
  s+=`<g transform="translate(${4+ZUG.length*(W+G)},${yr-70})">${lok()}</g>`;
  svg.innerHTML=s;box.appendChild(svg);
- svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w&&w.p!==MR.projekt&&(w.status==='offen'||GL))location.href=w.datei}));
+ svg.querySelectorAll('.wg').forEach(g=>g.addEventListener('click',()=>{const w=ZUG[+g.dataset.i];if(w&&w.p!==MR.projekt&&(w.status==='offen'||(w.quelle&&w.quelle!=='lokal')))location.href=w.datei})); // MRs auch nach dem Abschließen anklickbar
  const cx=anlage(),a=svg.querySelector('.akt')||[...svg.querySelectorAll('.wg')].pop();
  if(cx!=null){svg.style.marginLeft=cx+'px';svg.style.marginRight=(box.clientWidth-cx)+'px'}
  if(a){const x=+a.querySelector('.kasten').getAttribute('x');box.scrollLeft=Math.max(0,x+W/2-(cx!=null?0:box.clientWidth/2))}}
@@ -111,14 +111,14 @@ function feier(){ // letzter Waggon fertig: Zug fährt ab, Daumen-Regen, großer
 if(location.hash==='#feier')setTimeout(feier,300); // Vorschau: Seite mit #feier aufrufen
 function weiter(){const n=naechster();if(n){meld.textContent='→ weiter zu '+n.p;setTimeout(()=>location.href=n.datei,600)}
  else meld.textContent='Alles durch – kein offener Waggon mehr 🎉'}
-if(knopf&&!GL){
+if(knopf){ // „fertig ✓“ gibt es nur bei Waggons, deren Quelle das kann (lokal)
  if(ich&&ich.status==='fertig'){knopf.textContent='✓ fertig';knopf.classList.add('erledigt');knopf.disabled=true;weiter()}
  else if(!MR.dateien){knopf.style.display='none'}
  knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='wird übernommen …';
-  if(typeof RV!=='undefined'){const o=RV.kommentare.filter(k=>k.status==='wartet'||k.status==='antwort').length,e=RV.ausstehend;
+  if(typeof RV!=='undefined'){const o=(RV.faeden||[]).filter(k=>k.status==='wartet'||k.status==='antwort').length,e=RV.g_ausstehend||0;
    if((o||e)&&!confirm((o?o+' Gespräch(e) noch offen':'')+(o&&e?', ':'')+(e?e+(e>1?' Entwürfe':' Entwurf')+' nicht gesendet':'')+' – trotzdem fertig?')){knopf.disabled=false;meld.textContent='';return}}
   if(location.protocol.startsWith('http')){
-   fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projekt:MR.projekt,sha:MR.sha,k:MR.k})})
+   fetch('/fertig',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mr:MR.id,projekt:MR.projekt,sha:MR.sha,k:MR.k})})
     .then(r=>r.json()).then(d=>{if(!d.ok){knopf.disabled=false;meld.textContent=d.text;return}
      ZUG=d.wagen;zug();kh();knopf.textContent='✓ fertig';knopf.classList.add('erledigt');weiter();if(!naechster())feier()})
     .catch(e=>{knopf.disabled=false;meld.textContent='merge-train-Server nicht erreichbar – merge-train erneut aufrufen'});
@@ -126,4 +126,4 @@ if(knopf&&!GL){
   knopf.disabled=false;meld.textContent='Seite bitte über merge-train öffnen, dann klappt „fertig“.'})}
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
  if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
- else if(e.key==='Enter'&&!GL&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
+ else if(e.key==='Enter'&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});

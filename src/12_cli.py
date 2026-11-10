@@ -219,11 +219,11 @@ def main():
             return im_browser("/" + dateiname(projektname(wurzel)))
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(8) as ex:
-            wagen = zug_schreiben(list(ex.map(statistik, finde_repos())))
+            wagen = lokal_wagen(list(ex.map(statistik, finde_repos())))
         offen = [w for w in wagen if w["status"] == "offen"]
         if not offen:
             print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
-        return im_browser("/" + offen[0]["datei"])
+        return im_browser(offen[0]["datei"])
     repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
     if wurzel:
         ziel, _ = projekt_seite(wurzel, o.von, o.bis)

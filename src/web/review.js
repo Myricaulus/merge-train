@@ -10,8 +10,11 @@ const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)'
  loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok'],
  // Gespräch (lokales Projekt)
  entwurf:['Entwurf – noch nicht gesendet','b-entwurf'],wartet:['wartet auf Claude','b-wartet'],antwort:['Claude hat geantwortet','b-antwort'],erledigt:['erledigt','b-erledigt']};
-const FD=()=>GL?RV.faeden||[]:RV.kommentare,GA=()=>(GL?RV.g_ausstehend:RV.ausstehend)||0;
-function gsPost(d){return speichernAls(GL?Object.assign({gespraech:1},d):d)} // Fragen an den Agenten: im GitLab-Modus nie ins Review
+const FD=()=>RV.faeden||[],GA=()=>RV.g_ausstehend||0,RVW=!!KANN.review; // RVW: Waggon mit Review (Kommentare nach außen)
+function gsPost(d){return speichernAls(Object.assign({gespraech:1},d))} // Fragen an den Agenten: Fäden, nie ins Review
+const AG=()=>(RV.agenten&&RV.agenten.length?RV.agenten:RVW?[]:['Claude']); // wen man fragen kann (lokal mindestens Claude)
+function neuSpeichern(d){ // neuer Kommentar: mit Review als Review-Kommentar, sonst als Frage an den ersten Agenten
+ return t=>RVW?speichernAls(Object.assign({},d,{aktion:'neu',text:t})):gsPost(Object.assign({},d,{aktion:'neu',an:AG()[0],text:t}))}
 const ort=x=>x.path?x.path+(x.b?':'+x.b:(x.a?':'+x.a+' (alt)':'')):'allgemein';
 function bearbeiten(box,text,speichern,abbruch,extra){ // extra: [[beschriftung, speichern(t)|null, titel]] – null = ausgegraut
  const ta=el('textarea',{}),alt=[...box.childNodes];ta.value=text||'';
@@ -21,7 +24,7 @@ function bearbeiten(box,text,speichern,abbruch,extra){ // extra: [[beschriftung,
  box.replaceChildren(ta,el('div',{class:'kk'},el('span',{},'Strg+Enter speichern · Esc abbrechen'),
   el('span',{class:'knoepfe'},el('button',{onclick:zu},'abbrechen'),
    ...(extra||[]).map(([t,sp,ti])=>el('button',{title:ti||'',disabled:sp?null:'',onclick:()=>ok(sp)},t)),
-   el('button',{class:'haupt',onclick:()=>ok()},extra?'als Review-Kommentar':'speichern'))));
+   el('button',{class:'haupt',onclick:()=>ok()},extra?(RVW?'als Review-Kommentar':'an '+AG()[0]):'speichern'))));
  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}
 function speichernAls(d){return post('/api/kommentar',d).then(r=>{const x=antwort(r);return x})}
 function autoLaden(){[...RV.kommentare,...RV.hinweise].forEach(x=>{const d=x.datei!=null&&ds[x.datei];if(d&&d.querySelector('.spaet'))dateiLaden(d)})}
@@ -47,7 +50,6 @@ function fadenBox(k,mitOrt){ // Gespräch: Verlauf wie im Messenger, eigene Nach
   mb.append(mk,el('div',{class:'mt'},m.text));v.append(mb)});
  box.append(v);return box}
 function kommentarBox(k,mitOrt){
- if(!GL)return fadenBox(k,mitOrt);
  const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
  if(LESEN||k.lesen);
  else if(k.status==='loeschen')kn.append(el('button',{onclick:()=>speichernAls({aktion:'wiederherstellen',id:k.id})},'wiederherstellen'));
@@ -91,33 +93,33 @@ function zeichnen(){
   if(ok)zahl[x.datei]=(zahl[x.datei]||0)+1;return ok};
  const unter=(x,mach)=>{if(x.unter==null||x.datei==null||!ds[x.datei])return false;unterDatei(x,mach());zahl[x.datei]=(zahl[x.datei]||0)+1;return true};
  RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false))&&!unter(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
- if(GL)FD().forEach(k=>{if(!platz(k,()=>fadenBox(k,false))&&!unter(k,()=>fadenBox(k,false)))allg.push(()=>fadenBox(k,true))});
+ FD().forEach(k=>{if(!platz(k,()=>fadenBox(k,false))&&!unter(k,()=>fadenBox(k,false)))allg.push(()=>fadenBox(k,true))});
  RV.hinweise.filter(h=>h.status==='offen'||(RV.zeigVerworfen&&h.status==='verworfen'))
   .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false))&&!unter(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
  allgemein(allg);kliste();ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
  const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
- if(!GL){gsStand();kh();return}
+ if(!RVW){gsStand();kh();return}
  gsStand(n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':''));kh()}
 const TITEL=document.title,fb=document.getElementById('feedback'),sst=document.getElementById('starten');
 function gsStand(vorn){const f=FD(),z=s=>f.filter(k=>k.status===s).length,neu=z('antwort'),w=z('wartet'),e=GA();
- document.getElementById('rvstand').textContent=[vorn,f.length?f.length+' Gespräch(e)':null,e?e+(e>1?' Fragen-Entwürfe':' Fragen-Entwurf'):null,w?w+' wartet auf Antwort':null,
+ document.getElementById('rvstand').textContent=[vorn,f.length?f.length+' Gespräch(e)':null,e?e+(RVW?' Fragen-Entw':' Entw')+(e>1?'ürfe':'urf'):null,w?w+' wartet auf Antwort':null,
   neu?neu+' neue Antwort(en)':null,RV.horcht?'🎧 '+RV.horcht+' hört zu':null].filter(Boolean).join(' · ');
- if(!fb)return;fb.hidden=GL&&!f.length;fb.disabled=!e;fb.textContent=e?'Fragen senden ('+e+')':'Fragen senden';if(!GL)fb.textContent=fb.textContent.replace('Fragen','Feedback');sst.hidden=!RV.todo||!!RV.horcht;
+ if(!fb)return;fb.hidden=RVW&&!f.length;fb.disabled=!e;const fw=RVW?'Fragen senden':'Feedback senden';fb.textContent=e?fw+' ('+e+')':fw;sst.hidden=!RV.todo||!!RV.horcht;
  document.title=(neu?'('+neu+') ':'')+TITEL}
 if(fb){
  fb.addEventListener('click',()=>{fb.disabled=true;meld.textContent='sendet …';post('/api/gespraech',{aktion:'senden'}).then(d=>{meld.textContent=d.text||'';
   if(d.review){Object.assign(RV,d.review);zeichnen()}else gsStand()})});
  sst.addEventListener('click',()=>{sst.disabled=true;post('/api/gespraech',{aktion:'starten'}).then(d=>{sst.disabled=false;meld.textContent=d.text||''})})}
-function anKnoepfe(d){ // GitLab-Modus: Frage an einen Agenten statt Review-Kommentar (nur wenn eingerichtet oder einer zuhört)
- if(!GL)return undefined;const a=RV.agenten||[];
+function anKnoepfe(d){ // weitere Speichern-Knöpfe „an <Agent>“ (mit Review alle; sonst ist der erste „speichern“)
+ const a=RVW?AG():AG().slice(1);if(!RVW&&!a.length)return undefined;
  return a.length?a.map(n=>['an '+n,t=>gsPost(Object.assign({},d,{aktion:'neu',an:n,text:t})),'Frage an '+n+' – bleibt privat, geht nicht nach GitLab'])
   :[['an Agent',null,'Kein Agent eingerichtet: [agenten] in der Einstellung oder „merge-train agent horchen“ in einer Session']]}
 function allgemein(allg){
  let s=document.getElementById('allgemein');if(!s){s=el('section',{id:'allgemein'});document.querySelector('main').prepend(s)}
  const verw=RV.hinweise.filter(h=>h.status==='verworfen').length;
- s.replaceChildren(el('div',{class:'kk'},el('b',{},GL?'Review':'Gespräch mit Claude'),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
+ s.replaceChildren(el('div',{class:'kk'},el('b',{},RVW?'Review':'Gespräch mit '+AG()[0]),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
   el('span',{class:'knoepfe'},verw?el('button',{onclick:()=>{RV.zeigVerworfen=!RV.zeigVerworfen;zeichnen()}},RV.zeigVerworfen?'verworfene ausblenden':verw+' verworfene Hinweise zeigen'):null,
-   LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',t=>(GL?speichernAls:gsPost)({aktion:'neu',text:t}),()=>b.remove(),anKnoepfe({}))}},GL?'＋ allgemeiner Kommentar':'＋ allgemeine Frage'))),
+   LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',neuSpeichern({}),()=>b.remove(),anKnoepfe({}))}},RVW?'＋ allgemeiner Kommentar':'＋ allgemeine Frage'))),
   RV.ausserhalb?el('div',{class:'sub'},RV.ausserhalb+' weitere(r) Kommentar(e)/Hinweis(e) in Dateien, die diese Ansicht nicht ändert – siehe ganzer MR'):'');
  RV.quellen.forEach(q=>{const d=el('details',{class:'quelle'},el('summary',{},'🤖 '+(q.key||q.datei)+(q.reviewed_commit?' · geprüft '+q.reviewed_commit:'')+(q.reviewed_at?' am '+q.reviewed_at:'')+' · '+q.anzahl+' Hinweis(e)'),
   q.fehler?el('div',{class:'warn'},q.fehler):null,q.alt?el('div',{class:'warn'},'geprüft auf Stand '+q.reviewed_commit+', der MR steht auf '+MR.sha.slice(0,8)+' – Hinweise evtl. veraltet'):null,el('div',{},q.datei),q.notes?el('div',{class:'kt'},q.notes):null,
@@ -131,9 +133,10 @@ document.addEventListener('click',e=>{const td=e.target.closest('main td.n,#popu
  if(tab.classList.contains('sbs')&&tr.querySelector('.weg,.dazu,.nix')){if(td.cellIndex===0)b=null;else a=null}
  if(SEIT&&b==null){meld.textContent='In dieser Ansicht nur rechts (MR-Stand) kommentierbar';return}
  const box=el('div',{class:'kbox km'}),zr=einfuegen(tr,box,tab);
- bearbeiten(box,'',t=>speichernAls({aktion:'neu',datei:n,a,b,text:t}),()=>zr.remove(),anKnoepfe({datei:n,a,b}))});
-if(GL)knopf.addEventListener('click',()=>{knopf.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
- post('/api/abschliessen',{}).then(d=>{knopf.disabled=false;
+ bearbeiten(box,'',neuSpeichern({datei:n,a,b}),()=>zr.remove(),anKnoepfe({datei:n,a,b}))});
+const abk=document.getElementById('abschliessen');
+if(abk)abk.addEventListener('click',()=>{abk.disabled=true;meld.textContent='überträgt Entwürfe nach GitLab …';
+ post('/api/abschliessen',{}).then(d=>{abk.disabled=false;
   meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
   if(d.review){Object.assign(RV,d.review);zeichnen()}
   zugHolen()})});

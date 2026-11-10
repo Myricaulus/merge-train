@@ -55,6 +55,7 @@ function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/
  (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
 function kliste(){const k=document.getElementById('kliste');if(!k)return;
  const items=[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
+  ...(RV.faeden||[]).map(x=>({art:'km',id:x.id,x,st:x.status})), // Gesprächsfäden
   ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))]
   .sort((p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0)));
  k.querySelector('summary').textContent='Kommentare ('+items.length+')';

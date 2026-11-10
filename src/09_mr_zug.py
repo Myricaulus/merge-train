@@ -30,7 +30,7 @@ def mr_wagen(akt=None):
     wagen, gesehen = [], set()
     def wagen_fuer(mr, titel, aenderungen):
         st = review_laden(mr)
-        n = sum(1 for k in st["kommentare"] if not k.get("geloescht"))
+        n = sum(1 for k in rk(st) if not k.get("geloescht"))
         fertig = bool(st.get("abgeschlossen")) and not ausstehend(st)
         kurz = mr["projekt"].rsplit("/", 1)[-1]
         return {"p": mr_id(mr), "name": f'!{mr["iid"]} {kurz}', "titel": f'{mr["projekt"]}!{mr["iid"]}: {titel}',
@@ -53,13 +53,18 @@ def mr_wagen(akt=None):
     return wagen
 
 def startseite(text="", sid=""):
-    """Start (GitLab-Modus): Güterbahnhof und Zug, dazu ein Feld zum Öffnen eines MR."""
-    daten = json.dumps({"modus": "gitlab", "id": sid, "projekt": sid, "sha": "", "k": schluessel(), "dateien": 0})
+    """Start: Güterbahnhof und der gemischte Zug, mit GitLab dazu ein Feld zum Öffnen eines MR."""
+    daten = json.dumps({"id": sid, "projekt": sid, "sha": "", "k": schluessel(), "dateien": 0,
+                        "kann": {"review": False, "fertig": False, "committen": False}})
+    mr_feld = ('<p class="sub">Waggon im Zug wählen. Neue MRs holt „↻ MRs“ im Güterbahnhof.</p>'
+               '<form action="/mr-oeffnen"><p><label>MR öffnen (URL oder gruppe/projekt!42):<br>'
+               '<input name="u" autofocus placeholder="https://gitlab…/-/merge_requests/42"></label></p></form>'
+               if GITLAB.an() else '<p class="sub">Waggon im Zug wählen.</p>')
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}<title>merge-train</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>{CSS}{CSS_REVIEW}.uebersicht{{max-width:900px;margin:30px auto;padding:0 16px}}
-.uebersicht input{{width:100%;font:14px ui-monospace,monospace;padding:6px 8px;border:1px solid var(--rand);border-radius:6px;background:var(--bg);color:var(--fg)}}</style></head>
-<body class="gl"><header id="kopf">{gleise_html(True)}<div class="zeile"><span id="meldung"></span><button id="fertig" hidden></button></div></header>
-<main class="uebersicht">{f'<p class="warn">{html.escape(text)}</p>' if text else ""}<p class="sub">MR im Zug wählen. Neue MRs holt „↻ MRs“ im Güterbahnhof.</p>
-<form action="/mr-oeffnen"><p><label>MR öffnen (URL oder gruppe/projekt!42):<br><input name="u" autofocus placeholder="https://gitlab…/-/merge_requests/42"></label></p></form>
+.uebersicht input{{width:100%;font:14px ui-monospace,monospace;padding:6px 8px;border:1px solid var(--rand);border-radius:6px;background:var(--bg);color:var(--fg)}}</style>
+<script src="/zug.js?akt={urllib.parse.quote(sid)}"></script></head>
+<body class="start"><header id="kopf">{gleise_html()}<div class="zeile"><span id="meldung"></span></div></header>
+<main class="uebersicht">{f'<p class="warn">{html.escape(text)}</p>' if text else ""}{mr_feld}
 </main><script>const MR={daten};const ds=[],ls=[];function kh(){{}}{JS_ZUG}{JS_BAHNHOF}</script></body></html>"""

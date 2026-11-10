@@ -139,11 +139,12 @@ def gespraech_test(proj, env, k, hol, g):
                                             text=True, **kw)
     head = g("rev-parse", "claude")
     seite = hol("/proj.html")
-    pruefe('id="feedback"' in seite and 'id="kliste"' in seite and 'class="kom"' in seite, "Gespräch: Knöpfe und Kommentarliste auf der Seite")
+    pruefe('id="feedback"' in seite and 'id="kliste"' in seite and 'class="diffseite"' in seite and 'id="fertig"' in seite
+           and 'id="abschliessen"' not in seite, "Gespräch: Knöpfe und Kommentarliste auf der Seite (fertig, kein Review)")
     basis = {"mr": "projekt:proj", "k": k, "sha": head}
     r = post_l("/api/kommentar", dict(basis, aktion="neu", datei=0, a=None, b=20, text="Warum mal zwei?"))
-    pruefe(r["ok"] and r["review"]["kommentare"][0]["status"] == "entwurf" and r["review"]["ausstehend"] == 1, "Gespräch: Frage an Zeile 20 als Entwurf")
-    fid = r["review"]["kommentare"][0]["id"]
+    pruefe(r["ok"] and r["review"]["faeden"][0]["status"] == "entwurf" and r["review"]["g_ausstehend"] == 1, "Gespräch: Frage an Zeile 20 als Entwurf")
+    fid = r["review"]["faeden"][0]["id"]
     pruefe(not post_l("/api/kommentar", dict(basis, aktion="neu", datei=0, a=5, b=6, text="x"))["ok"], "Gespräch: unstimmige Zeile abgelehnt")
     post_l("/api/kommentar", dict(basis, aktion="neu", text="Allgemein: sieht gut aus?"))
     r = agent("feedback")
@@ -157,12 +158,12 @@ def gespraech_test(proj, env, k, hol, g):
     pruefe(f"[{fid}] a.py:20" in r.stdout and "x20 = 40" in r.stdout and "Nutzer (" in r.stdout and "Warum mal zwei?" in r.stdout
            and "allgemein" in r.stdout and "2 Gespräch(e) warten" in r.stdout, "Gespräch: agent feedback zeigt Ort, Code und Verlauf")
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
-    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    f1 = next(x for x in rv["faeden"] if x["id"] == fid)
     pruefe(f1["status"] == "wartet" and f1["nachrichten"][0]["abgeholt"], "Gespräch: abgeholt (✓✓) auf der Seite")
     r = agent("antworten", fid[:6], "Weil der Test das so will.")
     pruefe(r.returncode == 0 and "1 weitere(r) wartet" in r.stdout, "Gespräch: agent antworten (Anfang der id genügt)")
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
-    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    f1 = next(x for x in rv["faeden"] if x["id"] == fid)
     pruefe(f1["status"] == "antwort" and f1["nachrichten"][-1]["von"] == "claude", "Gespräch: Antwort auf der Seite")
     zug = hol("/zug.js")
     pruefe('"gs_neu": 1' in zug, "Gespräch: Zug zeigt neue Antwort")
@@ -185,7 +186,7 @@ def gespraech_test(proj, env, k, hol, g):
     pruefe(r.returncode == 2 and "Nachtrag" in r.stderr, "Gespräch: antworten lehnt ab, wenn Ungelesenes im Faden liegt")
     r = agent("feedback")
     pruefe("Nachtrag" in r.stdout and "Blind" not in r.stdout, "Gespräch: feedback zeigt den Nachtrag")
-    allg = next(x for x in rv["kommentare"] if x["id"] != fid)["id"]
+    allg = next(x for x in rv["faeden"] if x["id"] != fid)["id"]
     agent("antworten", allg, "Ja.", "--erledigt")
     r = agent("antworten", fid, "Drei wäre zu viel.", "--erledigt")
     pruefe("nichts mehr offen" in r.stdout and "erledigt t1" in open(env["TODO_LOG"]).read(), "Gespräch: alles beantwortet → todo abgehakt")
@@ -195,11 +196,46 @@ def gespraech_test(proj, env, k, hol, g):
     g("commit", "-qam", "Kopfzeilen")
     hol("/proj.html")  # Seite zum neuen Stand; die Fäden werden auf den Stand der Seite umgerechnet
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
-    f1 = next(x for x in rv["kommentare"] if x["id"] == fid)
+    f1 = next(x for x in rv["faeden"] if x["id"] == fid)
     pruefe(f1["b"] == 22 and f1["im_diff"], "Gespräch: nach neuem Commit steht der Faden an Zeile 22")
     r = post_l("/fertig", {"projekt": "proj", "sha": g("rev-parse", "claude"), "k": k})
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
-    pruefe(r["ok"] and not rv["kommentare"], "Gespräch: fertig räumt erledigte Fäden weg")
+    pruefe(r["ok"] and not rv["faeden"], "Gespräch: fertig räumt erledigte Fäden weg")
+
+def gemischt_test(mr):
+    """Beide Quellen an: ein Zug mit lokalen Waggons und MRs, jede Seite mit den Knöpfen ihrer Quelle."""
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/gemischt.toml", PATH=f"{T}/bin:" + os.environ["PATH"],
+               TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
+    open(env["MERGE_TRAIN_CONFIG"], "w").write(
+        f'lokal = true\ngitlab = true\nglab = "{sys.executable} {HIER}/fake-glab"\nprojekte = "{T}/Projects"\n'
+        f'port = 8797\nbrowser = "true"\n')
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
+    try:
+        for _ in range(50):
+            try:
+                urllib.request.urlopen("http://127.0.0.1:8797/ping", timeout=1); break
+            except OSError:
+                time.sleep(0.1)
+        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:8797{p}", timeout=60).read().decode()
+        # neuer lokaler Stand, damit der lokale Waggon wieder offen ist
+        proj = f"{T}/Projects/proj"
+        open(f"{proj}/c.py", "w").write("neu = 1\n")
+        sh("git", "-C", proj, "add", "-A"); sh("git", "-C", proj, "commit", "-qm", "Dritter Schritt")
+        zug = hol("/zug.js?akt=" + urllib.parse.quote(mr))
+        z = json.loads(zug[len("window.MR_ZUG="):-1])
+        quellen = {w["quelle"]: w for w in z["wagen"]}
+        pruefe(set(quellen) == {"lokal", "gitlab"} and quellen["lokal"]["p"] == "proj" and quellen["gitlab"]["p"] == mr,
+               "gemischt: ein Zug mit lokalem Waggon und MR")
+        pruefe([w["quelle"] for w in z["wagen"]][0] == "lokal", "gemischt: lokale Waggons vorn")
+        ms = hol("/mr/" + mr)
+        pruefe('id="abschliessen"' in ms and 'id="fertig"' not in ms and 'data-l="neu"' in ms and 'data-g="mrliste"' in ms,
+               "gemischt: MR-Seite mit Review-Knopf, Leitstand beider Quellen")
+        ls_ = hol("/proj.html")
+        pruefe('id="fertig"' in ls_ and 'id="abschliessen"' not in ls_ and 'data-g="mrliste"' in ls_, "gemischt: lokale Seite mit fertig")
+        start = urllib.request.urlopen("http://127.0.0.1:8797/", timeout=60)
+        pruefe(start.geturl().endswith("/proj.html"), "gemischt: Start springt zum offenen lokalen Waggon")
+    finally:
+        srv.terminate(); srv.wait()
 
 def mr_gespraech_test(mr, k, basis, struktur):
     """Fragen an einen Agenten zum MR: eigene Datei, nie im Review, agent feedback/antworten/horchen mit MR-Kennung."""
@@ -242,9 +278,8 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r["ok"] and "zuhört (Copilot)" in r["text"], "MR-Gespräch: Copilot hört zu → übergeben")
     aus, _ = lauscher.communicate(timeout=30)
     pruefe(lauscher.returncode == 0 and "Und warum?" in aus, "MR-Gespräch: horchen mit MR-Kennung bekommt die Nachfrage")
-    pruefe(not os.path.exists(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json')
-           or "Was macht Zeile 11" not in open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json').read(),
-           "MR-Gespräch: nichts davon in der Review-Datei")
+    st = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+    pruefe(any(k.get("nachrichten") for k in st["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
 
 def main():
@@ -311,7 +346,7 @@ def main():
         # Seite + Review-Daten: keine GitLab-Anfrage beim Öffnen
         vorher = len(open(f"{T}/glab/aufrufe.log").readlines())
         seite = get("/mr/gitlab.example.com/gruppe/demo/1")
-        get("/api/mrzug?akt=gitlab.example.com/gruppe/demo/1")
+        get("/api/zug?akt=gitlab.example.com/gruppe/demo/1")
         pruefe(len(open(f"{T}/glab/aufrufe.log").readlines()) == vorher, "Seite und Zug ohne GitLab-Anfrage")
         pruefe('id="bahnhof"' in seite, "Güterbahnhof im Kopf")
         pruefe("Demo-Änderung &lt;b&gt;fett&lt;/b&gt;" in seite and 'data-b="10"' in seite, "MR-Seite mit Diff und escaptem Titel")
@@ -371,6 +406,8 @@ def main():
         print(r["text"])
         d = drafts()
         pruefe(r["ok"] and len(d) == 4, "4 Draft-Notes angelegt")
+        pruefe(not any("Was macht Zeile 11" in x["note"] or "Und warum" in x["note"] for x in d),
+               "MR-Gespräch: Fragen an den Agenten gehen nicht nach GitLab")
         pos = {x["note"]: x["position"] for x in d}
         pruefe(pos["#1 Missing null check"]["new_line"] == 11 and "old_line" not in pos["#1 Missing null check"]
                and pos["#1 Missing null check"]["head_sha"] == head, "Position #1 (hinzugefügte Zeile: nur neu)")
@@ -451,7 +488,7 @@ def main():
                                  if f"-seit{c1[:12]}-" in p and p.endswith(".html"))))
         i_v = next(i for i, f in enumerate(sv["dateien"]) if f["neu"] == "App.cs")
         r = post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=None, b=4, text="Eingefügt?"))
-        kn = r["ok"] and next(x for x in json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["kommentare"] if x["text"] == "Eingefügt?")
+        kn = r["ok"] and next(x for x in json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["kommentare"] if x.get("text") == "Eingefügt?")
         pruefe(kn and kn["b"] == 4 and kn["a"] is None, "Seit-Ansicht: Kommentar wird auf die MR-Zeile (neu 4, im MR hinzugefügt) gelegt")
         pruefe(not post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=3, b=None, text="x"))["ok"],
                "Seit-Ansicht: alte Seite nicht kommentierbar")
@@ -462,7 +499,7 @@ def main():
         # Übersicht, Zug, lokal=false
         pruefe("Güterbahnhof" in get("/") and "Demo-Änderung" not in get("/"), "Startseite ohne MR-Liste (lokal = false)")
         r = post("/api/gitlab", dict(k=k, aktion="mrliste"))
-        z = json.loads(get("/api/mrzug?akt=" + mr))
+        z = json.loads(get("/api/zug?akt=" + mr))
         pruefe(r["ok"] and any(w["name"] == "!1 demo" and "Demo-Änderung" in w["titel"] for w in z["wagen"]) and z["zeit"],
                "Güterbahnhof holt die MR-Liste, der Zug kommt danach aus dem Cache")
         pruefe(post("/api/gitlab", dict(k=k, aktion="mrdaten", mr=mr))["ok"], "Güterbahnhof holt MR-Daten")
@@ -477,6 +514,7 @@ def main():
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", alt, "--mr", "https://gitlab.example.com/gruppe/demo/-/merge_requests/1", check=False)
         pruefe(r.returncode == 0 and "#9" in r.stdout and "Neu.cs:2" in r.stdout, "Altformat und --mr")
         lokal_test()
+        gemischt_test(mr)
     finally:
         srv.terminate()
         if "--behalten" in sys.argv:

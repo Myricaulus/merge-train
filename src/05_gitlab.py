@@ -248,11 +248,10 @@ def mr_seite(mr, ansicht=None):
                                  lambda *a: mr_html(mr, meta, *a), ansicht)
     if not ansicht:
         with SPERRE:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
-            for m in (mr, gk(mr)):
-                s = review_laden(m)
-                if s.get("struktur") != praefix_json(praefix):
-                    s["struktur"] = praefix_json(praefix)
-                    review_speichern(m, s)
+            s = review_laden(mr)
+            if s.get("struktur") != praefix_json(praefix):
+                s["struktur"] = praefix_json(praefix)
+                review_speichern(mr, s)
     return pfad, struktur, mr
 
 def mr_html(mr, meta, dateien, commits, texte, struktur):
@@ -266,7 +265,7 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
         + commits_html(commits, commit_knoepfe(f"/mr/{slug}", commits, ans))
     leer = '<div class="leer">Keine Änderungen in diesem Merge-Request.</div>' if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
-    daten = seiten_daten(slug, head, len(dateien), ans, modus="gitlab", projekt=slug, web_url=web)
+    daten = seiten_daten(slug, head, len(dateien), ans, projekt=slug, web_url=web)
     klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
              else "Klick auf Zeilennummer: Kommentar")
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
@@ -278,37 +277,22 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
            if gl_head and gl_head != head else "")
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
-    knoepfe = ('<button id="feedback" hidden disabled title="Fragen an den Agenten abschicken (gehen nicht nach GitLab)">Fragen senden</button>\n'
-               '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>\n'
-               f'<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR '
-               'übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button>')
-    return diff_seite(titel=f'!{mr["iid"]} {html.escape(meta.get("title") or "")}', gitlab=True, daten=daten, head=head,
-                      dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',
-                      knoepfe=knoepfe, commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
+    return diff_seite(titel=f'!{mr["iid"]} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,
+                      head=head, dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',
+                      commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
                       nach_h1=f'\n<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>',
                       sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
                       nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>',
                       hilfe=hilfe, leer=leer)
 
-def gleise_html(gitlab):
+def gleise_html():
     """Kopf: der Güterbahnhof über die ganze Breite. Kulisse (bahnhof.webp), davor Verladegebäude und Förderband
-    (zeichnet zug.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Die Knöpfe sitzen im
-    Leitstand des Gebäudes: GitLab nur auf Knopfdruck, lokal schauen sie nach neuen Änderungen."""
-    if gitlab:
-        fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
-        def knopf(g, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
-            if fehlt:
-                return f'<button data-g="{g}" disabled title="glab fehlt ({html.escape(KONF["glab"])}) – siehe README">{text}</button>'
-            return f'<button data-g="{g}" title="{titel}">{text}</button>'
-        knoepfe = (knopf("mrliste", "↻ MRs", "MRs, bei denen ich Reviewer bin, aus GitLab holen")
-                   + knopf("mrdaten", "↻ MR-Daten", "Titel, Beschreibung, Branches und GitLab-Stand dieses MR neu holen"))
-        titel = "Güterbahnhof: GitLab wird nur hier (und beim Abschließen) gefragt"
-    else:
-        knoepfe = '<button data-l="neu" title="Nach neuen lokalen Änderungen schauen">↻ Änderungen</button>'
-        titel = "Güterbahnhof"
+    (zeichnet zug.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Im Leitstand die Knöpfe
+    der eingeschalteten Quellen: lokal nach neuen Änderungen schauen, GitLab nur auf Knopfdruck fragen."""
+    titel = "Güterbahnhof" + (": GitLab wird nur hier (und beim Abschließen) gefragt" if GITLAB.an() else "")
     return (f'<div class="gleise szene" style="--bild:url(data:image/webp;base64,{BAHNHOF_BILD})">'
             '<svg id="anlage" aria-hidden="true"></svg>'
-            f'<div id="bahnhof" title="{titel}"><div class="bh-knoepfe">{knoepfe}</div><span id="bhzeit"></span></div>'
+            f'<div id="bahnhof" title="{titel}"><div class="bh-knoepfe">{leitstand_html()}</div><span id="bhzeit"></span></div>'
             '<div id="zug"></div></div>')
 
 BAHNHOF_BILD = r"""@einbetten web/bahnhof.webp@"""

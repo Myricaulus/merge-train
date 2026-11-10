@@ -1,16 +1,21 @@
 # merge-train
 
-Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nur schneller. Zwei Modi:
+Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nur schneller. Jeder Waggon im Zug ist ein
+Vergleich Quelle → Ziel in einem lokalen Klon. Die Waggons kommen aus zwei **Quellen** (einzeln an- und abschaltbar,
+sind beide an, fahren sie im selben Zug):
 
-- **Lokaler Projekt-Diff**: Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen. Jedes Projekt ist ein Waggon im Zug.
-  „fertig“ setzt `reviewed` auf den gesehenen Stand. Fragen und Wünsche zum Code gehen per Klick auf die Zeilennummer
-  an Claude, Antworten erscheinen als Gespräch an der Zeile (siehe [Gespräch mit Claude](#gespräch-mit-claude-lokaler-modus)).
-- **GitLab-MR-Review**: Diff eines MR mit eigenen Kommentaren und Agent-Hinweisen.
-  „Review abschließen“ legt die Kommentare als **Entwürfe** im MR an. Veröffentlicht wird danach in GitLab.
+- **lokal** (`lokal = true`): Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen.
+  „fertig ✓“ setzt `reviewed` auf den gesehenen Stand. Fragen und Wünsche zum Code gehen per Klick auf die Zeilennummer
+  an Claude, der sie auf `claude` umsetzen darf (siehe [Gespräch mit Claude](#gespräch-mit-claude-lokaler-modus)).
+- **GitLab** (`gitlab = true`): ein MR mit eigenen Review-Kommentaren und Agent-Hinweisen. „Review abschließen“ legt
+  die Kommentare als **Entwürfe** im MR an, veröffentlicht wird danach in GitLab. Dazu private Fragen an Agenten
+  (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)), die nur antworten, nichts ändern.
 
-Beide Modi bauen die Seite gleich aus dem lokalen Git (Kontext nachladen, große Dateien auf Klick, Commit-Ansichten).
-Der GitLab-Modus unterscheidet sich nur darin, dass `glab` MR-Daten holt und Kommentare als Entwürfe überträgt –
-und zwar nur auf Anforderung (siehe [GitLab nur auf Knopfdruck](#gitlab-nur-auf-knopfdruck)).
+Es gibt nur eine Seite: Kopf mit Güterbahnhof (Leitstand-Knöpfe aller eingeschalteten Quellen) und Zug, Diff aus dem
+lokalen Git (Kontext nachladen, große Dateien auf Klick, Commit-Ansichten), Gespräch an den Zeilen. Was ein Waggon
+zusätzlich kann (Review, „fertig“), bestimmt seine Quelle. GitLab wird nur auf Anforderung gefragt
+(siehe [GitLab nur auf Knopfdruck](#gitlab-nur-auf-knopfdruck)). Eine weitere Quelle (z. B. GitHub-PRs) wäre eine
+weitere Klasse in `src/09_quellen.py`.
 
 Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit `pygments`, GitLab mit `glab`).
 Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
@@ -104,7 +109,7 @@ Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cach
 
 Auch zu einem MR kann man einen Agenten fragen (Claude, Copilot …), wie im lokalen Modus, nur privat:
 Im Kommentar-Editor gibt es neben „als Review-Kommentar“ je Agent einen Knopf **„an <Name>“**. Solche Fragen liegen
-getrennt vom Review (`~/.local/share/merge-train/gespraech/<mr>.json`) und gehen **nie** nach GitLab.
+als eigene Fäden in der Review-Datei des MR und gehen **nie** nach GitLab („Review abschließen“ überspringt sie).
 „Fragen senden“ schickt die Entwürfe ab, die Antworten erscheinen als Gespräch an der Zeile.
 
 Aktiv sind die Knöpfe nur für Agenten aus `[agenten]` in der Einstellung oder wenn gerade einer zuhört (sonst ausgegraut):
@@ -140,8 +145,8 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 
 | Schlüssel | Standard | Wofür |
 |---|---|---|
-| `lokal` | `true` | lokaler Projekt-Diff an/aus |
-| `gitlab` | `true` | GitLab-Modus an/aus |
+| `lokal` | `true` | Quelle „lokal“ (Projekt-Diff `claude` → `reviewed`) an/aus |
+| `gitlab` | `true` | Quelle „GitLab“ (MRs) an/aus |
 | `gitlab_host` | leer | Host, wenn ihn weder URL noch Remote liefern |
 | `mr_liste` | `reviewer` | welche MRs der Zug zeigt |
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |

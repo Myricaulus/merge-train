@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------- Gespräch (Fragen und Feedback an den Agenten)
 # Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
 # schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
-# Im GitLab-Modus genauso, aber nur für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen getrennt vom Review
-# (DATEN/gespraech/<mr>.json) und gehen nie nach GitLab. Gesprächs-Schlüssel g: {"lokal": projekt} oder gk(mr).
+# Bei MRs genauso, für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen als Fäden (mit „nachrichten“) in der
+# Review-Datei des MR und gehen nie nach GitLab. Schlüssel g wie bei den Quellen: {"lokal": projekt} oder der MR.
 # Zustand: gleiche Form wie bei MRs (kommentare mit path/a/b, refs des Stands beim Schreiben), je Faden
 # „nachrichten“: [{id, von: ich|claude, wer, text, zeit, gesendet, abgeholt}], „erledigt“: {von, zeit} oder None, „an“.
 # Wer zuhört: „agent horchen“ legt <zustand>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
@@ -56,37 +56,18 @@ def zeile_vorwaerts(ordner, von, bis, pfad, b):
 def g_wurzel(projekt):
     return next((r for r in finde_repos() if projektname(r) == projekt), None)
 
-def gk(mr):
-    """Gesprächs-Schlüssel: lokales Projekt bleibt, ein MR bekommt seine eigene Gesprächsdatei."""
-    if mr.get("lokal"):
-        return {"lokal": mr["lokal"]}
-    return {"gespraech": True, "host": mr["host"], "projekt": mr["projekt"], "iid": mr["iid"]}
-
-def g_mr(g):
-    return {"host": g["host"], "projekt": g["projekt"], "iid": g["iid"]}
-
 def g_name(g):
-    return g["lokal"] if g.get("lokal") else f'{g["projekt"]}!{g["iid"]}'
+    return quelle(g).name_von(g)
 
 def g_ort(g):
-    """(ordner, head) des Stands, auf den sich die Zeilen beziehen: lokal der Branch BIS, beim MR der Stand der Seite."""
-    if g.get("lokal"):
-        wurzel = g_wurzel(g["lokal"])
-        if not wurzel:
-            raise GitLabFehler(f'Projekt {g["lokal"]} nicht gefunden')
-        head = (git(wurzel, "rev-parse", "--verify", "-q", BIS, check=False) or "").strip()
-        if not head:
-            raise GitLabFehler(f"Branch {BIS} fehlt in {wurzel}")
-        return wurzel, head
-    with SPERRE:
-        struktur = struktur_laden(review_laden(g))
-    if struktur is None:
-        _, struktur, _ = mr_seite(g_mr(g))
-    return struktur["ordner"], struktur["refs"]["head_sha"]
+    """(Klon, Stand), auf den sich die Zeilen beziehen (lokal der Branch BIS, beim MR der Stand der Seite)."""
+    return quelle(g).ort(g)
 
 def g_agenten(g):
     """Namen, an die man im GitLab-Modus fragen kann: eingerichtete [agenten] und wer gerade zuhört."""
     namen = list(KONF.get("agenten") or {})
+    if quelle(g).kann["committen"] and "Claude" not in namen:  # lokal ist Claude immer da (todo / feedback_befehl)
+        namen.insert(0, "Claude")
     wer = horcht(g)
     return namen + ([wer] if wer and wer not in namen else [])
 
@@ -96,13 +77,10 @@ def g_daten(mr, ansicht=None):
         st = review_laden(mr)
     struktur = struktur_laden(st)
     if struktur is None:
-        if mr.get("lokal"):
-            wurzel = g_wurzel(mr["lokal"])
-            if not wurzel:
-                return {"ok": False, "text": f'Projekt {mr["lokal"]} nicht gefunden'}
-            _, struktur = projekt_seite(wurzel)
-        else:
-            _, struktur, _ = mr_seite(g_mr(mr))
+        try:
+            _, struktur = quelle(mr).seite(mr)
+        except GitLabFehler as e:
+            return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
     kom = []
     for k in g_faeden(st):
@@ -161,7 +139,7 @@ def g_aktion(mr, d):
             if d.get("datei") is not None:
                 fehler, ort = zeile_aus_klick(struktur, d, ansicht)
                 if fehler:
-                    return False, fehler.replace("Der MR hat", "Das Projekt hat") if mr.get("lokal") else fehler
+                    return False, fehler if quelle(mr).kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
                 k.update(ort)
                 if ort["b"]:
                     t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
@@ -220,17 +198,7 @@ def todo_offen(tid):
     return os.path.exists(os.path.join(basis, "offen", tid + ".md"))
 
 def g_prompt(g, wurzel=""):
-    if g.get("lokal"):
-        projekt = g["lokal"]
-        return (f"In merge-train liegen Fragen bzw. Feedback des Nutzers zum Code von {projekt} (Diff {BIS} gegen {VON}). "
-                f"Hol sie mit `merge-train agent feedback` ab. Fragen beantworten, Änderungswünsche auf {BIS} umsetzen und "
-                f"committen; zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). "
-                f"Danach mit `merge-train agent horchen` im Hintergrund auf weitere Nachrichten warten.")
-    z = mr_id(g_mr(g))
-    return (f"In merge-train liegen Fragen des Nutzers zum Merge-Request {g_name(g)} (lokaler Klon: {wurzel}). "
-            f"Hol sie mit `merge-train agent feedback {z}` ab. Beantworte sie anhand des Codes im Klon; den MR nicht "
-            f"ändern, nichts committen oder pushen. Zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten. "
-            f"Danach mit `merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
+    return quelle(g).prompt(g, wurzel)
 
 def benachrichtigen(g, wurzel, n, namen=("Claude",)):
     """Nach „Feedback senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
@@ -256,7 +224,7 @@ def benachrichtigen(g, wurzel, n, namen=("Claude",)):
                 return f"{nm} startet nicht: {e}", None
         return " und ".join(gestartet) + " gestartet", None
     if not shutil.which("todo"):
-        return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback{'' if g.get('lokal') else ' ' + mr_id(g_mr(g))}“ sagen", None
+        return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {mr_id(g)}“ sagen", None
     with SPERRE:
         tid = review_laden(g).get("todo_id")
     zeile = f"{n} neue Nachricht(en) um {datetime.now().strftime('%H:%M')}"
@@ -309,14 +277,17 @@ def session_starten(g):
 def g_alle():
     """Alle Gespräche (lokale Projekte und MRs) → Liste von Schlüsseln."""
     out = []
-    for unter in ("lokal", "gespraech"):
+    for unter in ("lokal", "reviews"):
         for p in glob.glob(os.path.join(DATEN, unter, "*.json")):
             try:
-                m = json.load(open(p, encoding="utf-8")).get("mr") or {}
+                st = json.load(open(p, encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            if m.get("lokal") or m.get("gespraech"):
-                out.append(gk(m) if m.get("lokal") else m)
+            m = st.get("mr") or {}
+            if m.get("lokal"):
+                out.append({"lokal": m["lokal"]})
+            elif m.get("iid") and any(k.get("nachrichten") is not None for k in st.get("kommentare") or []):
+                out.append({"host": m["host"], "projekt": m["projekt"], "iid": m["iid"]})
     return out
 
 def g_ziele(name=None):
@@ -330,9 +301,9 @@ def g_ziele(name=None):
             if ist_mr_ref(name):
                 mr = mr_ref(name, os.getcwd())
         if mr and not mr.get("lokal"):
-            treffer = [g for g in g_alle() if g.get("gespraech") and g["projekt"] == mr["projekt"]
+            treffer = [g for g in g_alle() if not g.get("lokal") and g["projekt"] == mr["projekt"]
                        and g["iid"] == mr["iid"] and (not mr["host"] or g["host"] == mr["host"])]
-            return treffer[:1] or [gk(mr)]
+            return treffer[:1] or [mr]
     ordner = name or os.getcwd()
     if name and not os.path.isdir(ordner):
         ordner = os.path.join(PROJEKTE, name)
@@ -342,7 +313,7 @@ def g_ziele(name=None):
     ziele = [{"lokal": projektname(wurzel)}] if KONF["lokal"] else []
     echt = os.path.realpath(wurzel)
     for g in g_alle():
-        if g.get("gespraech"):
+        if not g.get("lokal"):
             with SPERRE:
                 struktur = struktur_laden(review_laden(g))
             if struktur and os.path.realpath(struktur["ordner"]) == echt:
@@ -396,7 +367,7 @@ def g_abholen(ziele, alle=False, markieren=True):
                             m["abgeholt"] = jetzt()
                 if zeigen:
                     review_speichern(g, st)
-        wo = f"{BIS} {head[:8]}" if g.get("lokal") else f"MR {mr_id(g_mr(g))} · Stand {head[:8]} · Klon {wurzel}"
+        wo = f"{BIS} {head[:8]}" if g.get("lokal") else f"MR {mr_id(g)} · Stand {head[:8]} · Klon {wurzel}"
         kopf = (f'merge-train · {g_name(g)} · {wo} · {sum(1 for k in faeden if g_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
@@ -405,8 +376,8 @@ def g_abholen(ziele, alle=False, markieren=True):
             continue
         gesamt += len(zeigen)
         teile += [kopf, ""] + [g_ausgeben(k, wurzel, head) + "\n" for k in zeigen]
-        teile.append("Code-Zeilen beziehen sich auf " + (f"den aktuellen Stand von {BIS}." if g.get("lokal")
-                     else f"den MR-Stand {head[:8]} im Klon (den MR nicht ändern, nur antworten).") + "\n")
+        teile.append("Code-Zeilen beziehen sich auf " + (f"den aktuellen Stand von {BIS}." if quelle(g).kann["committen"]
+                     else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
     return "\n".join(teile) or "(nichts offen)", gesamt
@@ -488,9 +459,8 @@ def g_horchen(ziele, timeout=0, als=None):
         time.sleep(1)
     return "merge-train: keine neuen Nachrichten (Zeit abgelaufen)", 0
 
-def g_archivieren(projekt):
+def g_archivieren(mr):
     """Nach „fertig“: erledigte Fäden aus der Ansicht nehmen (bleiben in der Datei)."""
-    mr = {"lokal": projekt}
     with SPERRE:
         st = review_laden(mr)
         n = 0
@@ -500,10 +470,10 @@ def g_archivieren(projekt):
         if n:
             review_speichern(mr, st)
 
-def g_zahlen(projekt):
+def g_zahlen(g):
     """Für den Zug: (offene Fäden, Fäden mit neuer Antwort)."""
     try:
-        st = review_laden({"lokal": projekt})
+        st = review_laden(g)
     except Exception:
         return 0, 0
     f = g_faeden(st)
