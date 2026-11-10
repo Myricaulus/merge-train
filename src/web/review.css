@@ -99,3 +99,5 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 #feedback:not(:disabled){background:var(--tn);color:var(--bg)} #feedback:disabled{opacity:.45;cursor:default;border-color:var(--rand);color:var(--muted)}
 .gs .msg:has(textarea){width:100%;max-width:none}
 .kopfknoepfe{margin-left:auto;display:flex;gap:8px;align-items:center} .kopfknoepfe #fertig,.kopfknoepfe #abschliessen{margin-left:0}
+label.sofort{font-size:12px;color:var(--muted);margin-right:6px;cursor:pointer;user-select:none} label.sofort input{vertical-align:middle;margin:0 3px 0 0}
+.kbox.gs .unten{text-align:right;margin-top:4px} .kbox.gs:has(textarea) .unten{display:none}
