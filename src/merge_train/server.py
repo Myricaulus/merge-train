@@ -12,8 +12,8 @@ from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
-from .review import (NUR_LESEN, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe, seiten_struktur,
-    stand, vergleich_daten, zeilen_daten)
+from .review import (NUR_LESEN, abgleich_vorbereiten, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe,
+    seiten_struktur, stand, vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import NamedTuple
@@ -348,8 +348,9 @@ def mr_daten_holen(mr):
     _, vorhanden = meta_und_entwuerfe(mr)
     if isinstance(vorhanden, Fehler):
         raise vorhanden
+    eigene_texte = abgleich_vorbereiten(mr, vorhanden)  # GitLab, ohne Sperre
     with zustand(mr) as st:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
-        pub, verw = entwuerfe_abgleichen(mr, st, vorhanden)
+        pub, verw = entwuerfe_abgleichen(st, vorhanden, eigene_texte)
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
         mr_seite(mr)
         neu_laden = zustand_lesen(mr).get("struktur") != vorher

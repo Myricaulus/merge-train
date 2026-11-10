@@ -140,13 +140,9 @@ def faeden_abholen(ziele, alle=False, markieren=True):
     return "\n".join(teile) or "(nichts offen)", gesamt
 
 
-def kommentar_umformulieren(ziel, text, ziele=None):
-    """GitLab-Kommentar für den Nutzer umformulieren. h:<key> eines drafts (noch nicht übernommener Agent-Hinweis): dessen
-    text in seiner JSON ändern. Sonst (staged/sent, übernommener/verworfener Hinweis, Faden): neuer draft an derselben
-    Stelle. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Rückgabe: Meldung."""
-    text = (text or "").strip()
-    if not text:
-        raise Fehler("Kommentartext fehlt")
+def umformulieren_ziel_finden(ziel, ziele=None):
+    """Was meint der Agent? h:<key> → Agent-Hinweis (art "h"), sonst Kommentar-id ("k") oder Faden-id ("f"), Anfang
+    genügt (ab 4 Zeichen). Rückgabe (waggon, art, eintrag); Fehler, wenn nichts oder mehreres passt."""
     ziel = ziel.strip()
     hkey = ziel[2:] if ziel.startswith("h:") else None
     passt = lambda i, z: i == z or (len(z) >= 4 and i.startswith(z))
@@ -154,7 +150,6 @@ def kommentar_umformulieren(ziel, text, ziele=None):
     for waggon in ziele or alle_gespraeche():
         if not waggon.kann["review"]:
             continue
-        st = zustand_lesen(waggon)
         if hkey:
             try:
                 rv = review_daten(waggon)
@@ -162,17 +157,32 @@ def kommentar_umformulieren(ziel, text, ziele=None):
                 continue
             treffer += [(waggon, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
         else:
+            st = zustand_lesen(waggon)
             treffer += [(waggon, "k", k) for k in review_kommentare(st) if passt(k["id"], ziel)]
             treffer += [(waggon, "f", k) for k in faeden_von(st) if passt(k["id"], ziel)]
     if not treffer:
         raise Fehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
     if len(treffer) > 1:
         raise Fehler(f"{ziel} ist nicht eindeutig: " + ", ".join((x.get("key") or x["id"]) for _, _, x in treffer))
-    waggon, art, x = treffer[0]
+    return treffer[0]
+
+
+def kommentar_umformulieren(ziel, text, ziele=None):
+    """GitLab-Kommentar für den Nutzer umformulieren (Regel aus AGENTS.md): ein draft (noch nicht übernommener
+    Agent-Hinweis) wird in seiner JSON geändert; zu allem anderen (staged/sent, übernommener/verworfener Hinweis, Faden)
+    kommt ein neuer draft daneben. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Rückgabe: Meldung."""
+    text = (text or "").strip()
+    if not text:
+        raise Fehler("Kommentartext fehlt")
+    waggon, art, x = umformulieren_ziel_finden(ziel, ziele)
     if art == "h" and x["status"] == "offen":
         return hinweis_text_aendern(x, text)
-    # staged/sent oder ein Faden: neuer draft (Agent-Hinweis) an derselben Stelle. staged wird ein Kommentar nur,
-    # wenn der Nutzer auf „übernehmen“ klickt – der Agent legt nie selbst Review-Kommentare an.
+    return draft_daneben(waggon, art, x, text)
+
+
+def draft_daneben(waggon, art, x, text):
+    """Neuer draft (Agent-Hinweis) an der Stelle von x, in der Review-JSON des MR: die des ersetzten Hinweises, sonst
+    die erste angemeldete."""
     st = zustand_lesen(waggon)
     struktur = struktur_laden(st) or {}
     head = (struktur.get("refs") or {}).get("head_sha")
@@ -193,7 +203,6 @@ def kommentar_umformulieren(ziel, text, ziele=None):
         m["ersetzt"] = f'Kommentar {x["id"]}'
     elif art == "h":
         m["ersetzt"] = f'Hinweis {x.get("finding") or x["key"]} ({x["status"]})'
-    # in die Review-JSON des MR: die des ersetzten Hinweises, sonst die erste
     datei = x.get("json") if art == "h" else None
     if not datei and art == "k" and x.get("hinweis"):
         datei = next((h.get("json") for h in review_daten(waggon)["hinweise"] if h["key"] == x["hinweis"]), None)
@@ -484,12 +493,13 @@ def agent_main(argv):
         print(f"merge-train: {o.datei} nicht lesbar: {e}", file=sys.stderr); return 2
     try:
         mr, ordner = mr_fuer_hinweise(pfad, daten, o.mr)
-        with zustand(mr) as st:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
-            try:
-                if remote_info(ordner)[1].lower() == (mr.projekt or "").lower():
-                    st["klon"] = ordner
-            except Fehler:
-                pass
+        try:
+            klon = remote_info(ordner)[1].lower() == (mr.projekt or "").lower()
+        except Fehler:
+            klon = False
+        if klon:
+            with zustand(mr) as st:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
+                st["klon"] = ordner
         mr, meta = mr_meta_holen(mr)  # die einzige GitLab-Anfrage: aktuelle MR-Daten für die Seite merken
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2

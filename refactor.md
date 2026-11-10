@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–5 sind
-erledigt, 6–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–6 sind
+erledigt, 7–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -49,7 +49,7 @@ python3 tests/test_gitlab.py                                             # Ende-
   Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
   nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
 
-## Stand nach den Schritten 1–5
+## Stand nach den Schritten 1–6
 
 | Commit | Inhalt |
 |---|---|
@@ -60,6 +60,7 @@ python3 tests/test_gitlab.py                                             # Ende-
 | `a6f6a12` | Schritt 3: Typ `Waggon` (waggon.py), `Fehler` als Basis von `GitLabFehler`, Quellen entschlackt, kein Import-Zyklus mehr |
 | Schritt 4 | Zustand kapseln: `with zustand(waggon) as st:`, `zustand_lesen`, `kommentar_finden`/`faden_finden`, `…_anhaengen`, `eintrag_entfernen`, `ist_staged`/`ist_sent`, Aufbau der Datei oben in `zustand.py` |
 | Schritt 5 | Server als Routen-Tabelle (`@route`, `bearbeiten`, `Antwort`/`Anfrage`, `beobachten`), Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
+| Schritt 6 | Abschließen: `abschluss_planen` (rein) → `schritt_ausfuehren` (GitLab, ohne Sperre) → `schritt_eintragen` (je Schritt kurz unter der Sperre); `entwuerfe_abgleichen(st, vorhanden, eigene_texte)` rein, Texte vorher per `abgleich_vorbereiten`; Umformulieren: `umformulieren_ziel_finden` → `hinweis_text_aendern` / `draft_daneben` |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
@@ -234,6 +235,13 @@ anderen Anfragen an, solange GitLab antwortet, und lässt sich nicht testen, ohn
 umgebenden Block prüfen), die Planungsfunktionen ohne GitLab aufrufbar sind und die Tests grün sind. Die Tests haben
 mit `tests/fake-glab` gute Abdeckung fürs Abschließen (Entwürfe anlegen/ändern/löschen, `FAKE_GLAB_FEHLER_POSITION`).
 Commit: „Abschließen und Umformulieren: planen, dann ausführen …“.
+
+**Erledigt.** Keine GitLab-Anfrage mehr unter der Sperre (per AST geprüft: kein `glab`/`alle`/… in einem
+`with zustand(…)`). `review_laden`/`review_speichern` gibt es nur noch in `zustand.py`. Nebenläufigkeit beim Senden:
+`gitlab_text` ist der gesendete Text (tippt der Nutzer währenddessen, ist der Kommentar danach „geaendert“); ein
+währenddessen wiederhergestellter Kommentar wird wieder „neu“; ein währenddessen gelöschter bekommt seinen gerade
+angelegten Entwurf in GitLab wieder gelöscht. Diese Fälle in Schritt 8 als Einzeltests von `schritt_eintragen` abdecken.
+`faden_anlegen` (prüft schon vor dem Anlegen) und `fertig` (sperrt nur die Runden-Datei) blieben, wie sie sind.
 
 ## Schritt 7: JavaScript lesbar machen
 
