@@ -257,7 +257,6 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
     slug = mr_id(mr)
     head = struktur["refs"]["head_sha"]
     ans = struktur.get("ansicht")
-    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     web = meta.get("web_url") or ""
     autor = (meta.get("author") or {}).get("name", "")
     beschr = (meta.get("description") or "").strip()
@@ -277,21 +276,15 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
            if gl_head and gl_head != head else "")
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
-    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>!{mr["iid"]} {html.escape(meta.get("title") or "")}</title>
-<style>{CSS}{CSS_REVIEW}</style></head><body class="gl">
-<header id="kopf">{gleise_html(True)}<div class="zeile"><h1>{entwurf}{html.escape(meta.get("title") or "")}</h1>
-<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>
-<span class="sub">{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·
-{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
-<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>
-<span id="rvstand" class="sub"></span><span id="meldung"></span>
-<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button></div>
-<details id="commits"><summary>Beschreibung &amp; Commits</summary><div class="liste">{cl}</div></details>{abw}{ah}</header>
-<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
-<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
-<main>{leer}{dateien_html(dateien, texte)}</main></div>
-<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""
+    knoepfe = (f'<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR '
+               'übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button>')
+    return diff_seite(titel=f'!{mr["iid"]} {html.escape(meta.get("title") or "")}', gitlab=True, daten=daten, head=head,
+                      dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',
+                      knoepfe=knoepfe, commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
+                      nach_h1=f'\n<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>',
+                      sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
+                      nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>',
+                      hilfe=hilfe, leer=leer)
 
 def gleise_html(gitlab):
     """Kopf: der Güterbahnhof über die ganze Breite. Kulisse (bahnhof.webp), davor Verladegebäude und Förderband

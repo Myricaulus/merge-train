@@ -117,7 +117,6 @@ def projekt_seite(wurzel, von=None, bis=None, ansicht=None):
 def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     head = struktur["refs"]["head_sha"]
     ans = struktur.get("ansicht")
-    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     todos = sorted(set(re.findall(r"todo:([\w.-]+)", " ".join(c[2] + " " + c[3] for c in commits))))
     url = "/" + dateiname(projekt)
     cl = commits_html(commits, commit_knoepfe(url, commits, ans))
@@ -131,16 +130,28 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>Enter</kbd> fertig · <kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
+    knoepfe = ('<button id="feedback" disabled title="Entwürfe (Fragen/Kommentare) an Claude schicken">Feedback senden</button>\n'
+               '<button id="starten" hidden title="Konsole mit Claude im Projekt öffnen (todo los)">▶ Session starten</button>\n'
+               f'<button id="fertig"{" hidden" if lesen else ""} title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button>')
+    return diff_seite(titel=f"MR {html.escape(projekt)}", gitlab=False, daten=daten, head=head, dateien=dateien, texte=texte,
+                      commits=commits, h1=f"{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}",
+                      knoepfe=knoepfe, commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah,
+                      hilfe=hilfe, leer=leer)
+
+def diff_seite(*, titel, gitlab, daten, head, dateien, texte, commits, h1, knoepfe, commits_titel, commits_liste,
+               nach_h1="", sub_vor="", nach_sub="", unter_commits="", nach_commits="", hilfe="", leer=""):
+    """Die eine Diff-Seite für lokalen und GitLab-Modus: Güterbahnhof im Kopf, Titelzeile, Commits, Seitenleiste mit
+    Kommentaren und Dateiliste, Diff. Die Modi unterscheiden sich nur in den übergebenen Stücken (Titelzeile, Knöpfe)."""
+    plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>MR {html.escape(projekt)}</title>
-<style>{CSS}{CSS_REVIEW}</style><script src="/zug.js"></script></head><body class="kom">
-<header id="kopf">{gleise_html(False)}<div class="zeile"><h1>{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}</h1>
-<span class="sub">{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{titel}</title>
+<style>{CSS}{CSS_REVIEW}</style>{"" if gitlab else '<script src="/zug.js"></script>'}</head><body class="{"gl" if gitlab else "kom"}">
+<header id="kopf">{gleise_html(gitlab)}<div class="zeile"><h1>{h1}</h1>{nach_h1}
+<span class="sub">{sub_vor}{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{nach_sub}
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
-<button id="feedback" disabled title="Entwürfe (Fragen/Kommentare) an Claude schicken">Feedback senden</button>
-<button id="starten" hidden title="Konsole mit Claude im Projekt öffnen (todo los)">▶ Session starten</button>
-<button id="fertig"{" hidden" if lesen else ""} title="{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt">fertig ✓</button></div>
-<details id="commits"><summary>Commits</summary><div class="liste">{cl}</div>{td}</details>{ah}</header>
-<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div><nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
+{knoepfe}</div>
+<details id="commits"><summary>{commits_titel}</summary><div class="liste">{commits_liste}</div>{unter_commits}</details>{nach_commits}</header>
+<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" open><summary>Kommentare</summary><div></div></details></div>
+<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
 <main>{leer}{dateien_html(dateien, texte)}</main></div>
-<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}</script></body></html>"""
+<script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""

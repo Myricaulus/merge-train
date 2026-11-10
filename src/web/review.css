@@ -46,7 +46,7 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
 /* Güterbahnhof im Kopf: Kulisse (Bild), Anlage (SVG aus zug.js), Leitstand mit Knöpfen, Zug. Der Himmel (--himmel)
    rutscht beim Scrollen weg, Band und Zug bleiben stehen. Panorama (myr, 7014×775) über die volle Breite, mindestens 2480 px (sonst Lücke über dem Bild, dann seitlich abschneiden);
-   Horizont bei 64 % der Bildhöhe (= .0711 × Breite) auf y=176; beim Wegscrollen des Himmels wandert er mit (--hub aus zug.js)
+   Horizont bei 64 % der Bildhöhe (= .0711 × Breite) auf y=176; beim Wegscrollen des Himmels wandert er mit (--hub aus bahnhof.js)
    bis an den Unterrand, damit im schmalen Streifen die Gebäude ganz zu sehen sind statt des leeren Bodens. */
 #kopf:has(.szene){--himmel:96px;top:calc(-1*var(--himmel))}
 .szene{--bw:max(100vw,2480px);--bb:var(--bw) auto;--bpos:center calc(176px + var(--hub,0px) - .0711*var(--bw));position:relative;height:212px;margin:-8px -16px 6px;overflow:hidden;

@@ -127,7 +127,3 @@ if(knopf&&!GL){
 document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
  if(e.key==='n'){const n=naechster();if(n)location.href=n.datei}
  else if(e.key==='Enter'&&!GL&&knopf&&!knopf.disabled&&knopf.style.display!=='none'){e.preventDefault();knopf.click()}});
-// Himmel rutscht weg (#kopf klebt bei top:-96px): Kulisse um bis zu 36 px nach unten schieben, Horizont landet am Unterrand
-{const k=document.getElementById('kopf'),sz=document.querySelector('.szene');
- if(k&&sz){const f=()=>{const s=Math.min(96,Math.max(0,-k.getBoundingClientRect().top));sz.style.setProperty('--hub',(s*36/96).toFixed(1)+'px')};
-  addEventListener('scroll',f,{passive:true});f()}}
