@@ -2,11 +2,11 @@
 import json, os, subprocess, sys, threading, time
 import urllib.parse
 from datetime import datetime
-from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, SPERRE, VON, dateiname, oeffnen, projektname, schluessel
+from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, VON, dateiname, oeffnen, projektname, schluessel
 from .waggon import Fehler, Waggon
 from .git import ANLASS, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
-from .zustand import review_laden, review_speichern
+from .zustand import zustand, zustand_lesen
 from .gitlab import mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
@@ -146,7 +146,7 @@ def server():
                     waggon = schluessel_von(q.get("mr", ""))
                     if pfad == "api/stand":
                         seite_lebt(waggon)
-                        return self.json_senden(200, {"stand": stand(waggon, review_laden(waggon)), "version": VERSION,
+                        return self.json_senden(200, {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION,
                                                       "server": server_stand()})
                     return self.json_senden(200, wagen_daten(waggon, ansicht_lesen(q.get("ansicht"))))
                 if pfad in ("zug.js", "api/zug"):  # der gemischte Zug aller eingeschalteten Quellen
@@ -204,18 +204,15 @@ def server():
                         return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
                     if d.get("aktion") == "mrdaten":
                         mr = Waggon.aus_id(d.get("mr", ""))
-                        vorher = review_laden(mr).get("struktur")
+                        vorher = zustand_lesen(mr).get("struktur")
                         _, vorhanden = meta_und_entwuerfe(mr)
                         if isinstance(vorhanden, Fehler):
                             raise vorhanden
-                        with SPERRE:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
-                            st = review_laden(mr)
+                        with zustand(mr) as st:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
                             pub, verw = entwuerfe_abgleichen(mr, st, vorhanden)
-                            if pub or verw:
-                                review_speichern(mr, st)
                         try:  # Seite gleich bauen: neu laden muss der Browser nur, wenn sie sich geändert hat
                             mr_seite(mr)
-                            neu_laden = review_laden(mr).get("struktur") != vorher
+                            neu_laden = zustand_lesen(mr).get("struktur") != vorher
                         except Fehler:
                             neu_laden = True
                         text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "

@@ -1,9 +1,9 @@
 """Wer hört zu? Agenten-Sessions, die auf Nachrichten warten, benachrichtigen oder neu starten."""
 import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
-from .einstellungen import KONF, SPERRE, ersetzen, jetzt
+from .einstellungen import KONF, ersetzen, jetzt
 from .waggon import Fehler
-from .zustand import faeden_von, review_datei, review_laden, review_speichern
+from .zustand import faeden_von, review_datei, zustand, zustand_lesen
 from .quellen import quelle
 
 # ---- Wer bekommt das Feedback?
@@ -26,8 +26,8 @@ def _prozess(pid):
         stat = open(f"/proc/{pid}/stat").read()
     except OSError:
         return None
-    zustand, ppid = stat[stat.rindex(")") + 2:].split()[:2]
-    return None if zustand == "Z" else (stat[stat.index("(") + 1:stat.rindex(")")], int(ppid))  # Zombie: schon beendet
+    prozess_zustand, ppid = stat[stat.rindex(")") + 2:].split()[:2]
+    return None if prozess_zustand == "Z" else (stat[stat.index("(") + 1:stat.rindex(")")], int(ppid))  # Zombie: schon beendet
 
 
 def agent_session(pid):
@@ -200,8 +200,7 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
         return " und ".join(gestartet) + " gestartet", None
     if not shutil.which("todo"):
         return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {waggon.id}“ sagen", None
-    with SPERRE:
-        tid = review_laden(waggon).get("todo_id")
+    tid = zustand_lesen(waggon).get("todo_id")
     zeile = f"{n} neue Nachricht(en) um {datetime.now().strftime('%H:%M')}"
     if todo_offen(tid):
         subprocess.run(["todo", "notiz", tid, zeile, "--von", "merge-train"], capture_output=True)
@@ -212,8 +211,8 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
         tid = (r.stdout.strip().splitlines() or [""])[-1].strip() if r.returncode == 0 else None
         if not tid:
             return f"todo-Eintrag ließ sich nicht anlegen: {(r.stderr or r.stdout).strip()[:200]}", None
-        with SPERRE:
-            st = review_laden(waggon); st["todo_id"] = tid; review_speichern(waggon, st)
+        with zustand(waggon) as st:
+            st["todo_id"] = tid
     subprocess.run(["todo", "heute", tid, "-t", f"Fragen/Feedback aus merge-train ({zeile})"], capture_output=True)
     return "Keine Session hört zu – als todo eingetragen (Panel), „▶ Session starten“ öffnet sie", tid
 
@@ -224,8 +223,7 @@ def feedback_senden(waggon):
         wurzel, _ = quelle(waggon).ort(waggon)
     except Fehler as e:
         return False, str(e), None
-    with SPERRE:
-        st = review_laden(waggon)
+    with zustand(waggon) as st:
         n, namen = 0, []
         for k in faeden_von(st):
             for m in k["nachrichten"]:
@@ -235,14 +233,12 @@ def feedback_senden(waggon):
                         namen.append(k.get("an") or "Claude")
         if not n:
             return False, "Keine Entwürfe zum Senden", None
-        review_speichern(waggon, st)
     text, tid = benachrichtigen(waggon, wurzel, n, namen)
     return True, f"{n} Nachricht(en) gesendet · {text}", tid
 
 
 def session_starten(waggon):
-    with SPERRE:
-        tid = review_laden(waggon).get("todo_id")
+    tid = zustand_lesen(waggon).get("todo_id")
     if not todo_offen(tid):
         return False, "Kein offener todo-Eintrag"
     r = subprocess.run(["todo", "los", tid], capture_output=True, text=True)

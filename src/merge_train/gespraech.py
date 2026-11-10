@@ -1,10 +1,11 @@
 """Gespräch mit dem Agenten: Fäden an Zeilen, Nachrichten, Daten für die Seite."""
 import glob, hashlib, json, os, re
-from .einstellungen import DATEN, KONF, SPERRE, jetzt
+from .einstellungen import DATEN, KONF, jetzt
 from .waggon import Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, im_diff, zeile_vorwaerts
-from .zustand import datei_index, faden_status, faeden_von, review_laden, review_speichern, struktur_laden
+from .zustand import (datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_status, faeden_von, struktur_laden, zustand,
+    zustand_lesen)
 from .hinweise import see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
@@ -15,9 +16,7 @@ from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_
 # Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
 # schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
 # Bei MRs genauso, für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen als Fäden (mit „nachrichten“) in der
-# Review-Datei des MR und gehen nie nach GitLab.
-# Zustand: gleiche Form wie bei MRs (kommentare mit path/a/b, refs des Stands beim Schreiben), je Faden
-# „nachrichten“: [{id, von: ich|claude, wer, text, zeit, gesendet, abgeholt}], „erledigt“: {von, zeit} oder None, „an“.
+# Review-Datei des MR und gehen nie nach GitLab. Felder eines Fadens: siehe zustand.py.
 # Wer zuhört: „agent horchen“ legt <zustand>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
 # Agenten aus [agenten] bzw. feedback_befehl – oder legt einen todo-Eintrag an („Session starten“ öffnet ihn).
 
@@ -29,8 +28,7 @@ def wagen_daten(waggon, ansicht=None):
         return gs
     rv = review_daten(waggon, ansicht) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
-    with SPERRE:
-        st = review_laden(waggon)
+    st = zustand_lesen(waggon)
     return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], kontext=gs["kontext"], todo=gs["todo"],
                 agenten=gs["agenten"], kann=waggon.kann, stand=stand(waggon, st), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
 
@@ -46,8 +44,7 @@ def gespraech_agenten(waggon):
 
 def gespraech_daten(mr, ansicht=None):
     """Wie review_daten, für ein Gespräch: Fäden auf den Stand der Seite umgerechnet."""
-    with SPERRE:
-        st = review_laden(mr)
+    st = zustand_lesen(mr)
     struktur = struktur_laden(st)
     if struktur is None:
         try:
@@ -104,8 +101,7 @@ def gespraech_aktion(mr, d):
     aktion = d.get("aktion")
     ansicht = ansicht_lesen(d.get("ansicht"))
     text = str(d.get("text") or "").strip()
-    with SPERRE:
-        st = review_laden(mr)
+    with zustand(mr) as st:
         struktur = struktur_laden(st)
         if aktion == "neu":
             if ansicht and ansicht[0] == "commit":
@@ -126,10 +122,9 @@ def gespraech_aktion(mr, d):
                     t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
                     zeilen = t.split("\n")
                     k["zeile_text"] = zeilen[ort["b"] - 1] if ort["b"] <= len(zeilen) else None
-            st["kommentare"].append(k)
-            review_speichern(mr, st)
+            faden_anhaengen(st, k)
             return True, ""
-        k = next((k for k in faeden_von(st) if k["id"] == d.get("id")), None)
+        k = faden_finden(st, d.get("id"))
         if not k:
             return False, "Gespräch nicht gefunden – Seite neu laden"
         m = next((m for m in k["nachrichten"] if m["id"] == d.get("nid")), None) if d.get("nid") else None
@@ -148,14 +143,13 @@ def gespraech_aktion(mr, d):
             if m:
                 k["nachrichten"].remove(m)
             if not m or not k["nachrichten"]:
-                st["kommentare"].remove(k)
+                eintrag_entfernen(st, k)
         elif aktion == "erledigt":
             k["erledigt"] = {"von": "ich", "zeit": jetzt()}
         elif aktion == "oeffnen":
             k["erledigt"] = None
         else:
             return False, "unbekannte Aktion"
-        review_speichern(mr, st)
     return True, ""
 
 

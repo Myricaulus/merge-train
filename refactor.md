@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–3 sind
-erledigt, 4–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–4 sind
+erledigt, 5–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -49,7 +49,7 @@ python3 tests/test_gitlab.py                                             # Ende-
   Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
   nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
 
-## Stand nach den Schritten 1–3
+## Stand nach den Schritten 1–4
 
 | Commit | Inhalt |
 |---|---|
@@ -58,6 +58,7 @@ python3 tests/test_gitlab.py                                             # Ende-
 | `0c14fc2` | Kürzel ausgeschrieben: `g_…` → `faden_…`/`gespraech_…`, `rk` → `review_kommentare`, `k_status` → `kommentar_status` |
 | `eaa1ce2` | Merge von `claude` (Kontext-Füllstand im HUD) |
 | `a6f6a12` | Schritt 3: Typ `Waggon` (waggon.py), `Fehler` als Basis von `GitLabFehler`, Quellen entschlackt, kein Import-Zyklus mehr |
+| Schritt 4 | Zustand kapseln: `with zustand(waggon) as st:`, `zustand_lesen`, `kommentar_finden`/`faden_finden`, `…_anhaengen`, `eintrag_entfernen`, `ist_staged`/`ist_sent`, Aufbau der Datei oben in `zustand.py` |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
@@ -130,6 +131,16 @@ auseinandergehalten.
 
 **Fertig, wenn** kein Modul außer `zustand.py` mehr `SPERRE` zusammen mit `review_laden` benutzt, Tests und
 `namen_pruefen` grün sind. Commit: „Zustand kapseln: with zustand(waggon) …“.
+
+**Erledigt**, mit zwei Abweichungen vom Plan:
+- `zustand_lesen` sperrt **nicht**: `ersetzen()` schreibt atomar, Lesende sehen immer eine ganze Datei. Mit Sperre
+  hätte jedes `api/stand` gewartet, solange `abschliessen` unter der Sperre GitLab fragt.
+- `abschliessen` ruft innerhalb von `with zustand(mr)` weiter `review_speichern` nach jedem Kommentar (vergebene
+  `gitlab_id`s überstehen einen Abbruch). Fällt mit Schritt 6 weg; dann ist `review.py` der letzte Nutzer außerhalb
+  von `zustand.py` gewesen.
+- Nebenbei: in `kommentar_aktion` wird ein Hinweis erst nach der Prüfung auf leeren Text als „übernommen“ markiert
+  (sonst hätte das automatische Speichern beim frühen `return` den Hinweis ohne Kommentar übernommen). Lokale
+  Variablen `zustand` in `agent_main`/`_prozess` heißen jetzt `befund`/`prozess_zustand`.
 
 ## Schritt 5: Server als Routen-Tabelle
 

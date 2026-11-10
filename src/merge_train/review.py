@@ -1,13 +1,13 @@
 """Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
 import hashlib, os, re
 from datetime import datetime
-from .einstellungen import SPERRE
 from .waggon import Fehler, Waggon
 from .git import ANLASS, anlass, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zurueck_diffs
 from .diff_html import datei_tabelle
-from .zustand import (ausstehend, datei_index, kommentar_status, review_datei, review_kommentare, review_laden, review_speichern, struktur_laden)
+from .zustand import (ausstehend, datei_index, eintrag_entfernen, kommentar_anhaengen, kommentar_finden, kommentar_status, review_datei, review_kommentare,
+    review_speichern, struktur_laden, zustand, zustand_lesen)
 from .gitlab import alle, glab, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
@@ -43,12 +43,11 @@ def gitlab_reihenfolge(st, kom, hinweise):
 
 
 def review_daten(mr, ansicht=None):
-    with SPERRE:
-        st = review_laden(mr)
+    st = zustand_lesen(mr)
     struktur = struktur_laden(st)
     if struktur is None:
         _, struktur, mr = mr_seite(mr)
-        st = review_laden(mr)
+        st = zustand_lesen(mr)
     hinweise, quellen = hinweise_aufloesen(mr, st, struktur)
     kom = []
     for k in review_kommentare(st):
@@ -80,9 +79,7 @@ def seiten_struktur(sid, ansicht=None):
             return None
         struktur = struktur_laden({"struktur": p})
     else:
-        with SPERRE:
-            st = review_laden(waggon)
-        struktur = struktur_laden(st)
+        struktur = struktur_laden(zustand_lesen(waggon))
     if ansicht and struktur:
         struktur = ansicht_struktur(struktur, ansicht)
     return struktur
@@ -184,8 +181,7 @@ def kommentar_aktion(mr, d):
     ansicht = ansicht_lesen(d.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
-    with SPERRE:
-        st = review_laden(mr)
+    with zustand(mr) as st:
         struktur = struktur_laden(st)
         if aktion == "neu":
             text = str(d.get("text") or "").strip()
@@ -200,8 +196,6 @@ def kommentar_aktion(mr, d):
                 i = h["datei"]
                 k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                          hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
-                st["hinweise"][h["key"]] = "uebernommen"
-                st["reihenfolge"] = [k["id"] if i == h["key"] else i for i in st.get("reihenfolge") or []]  # Platz behalten
             elif d.get("datei") is not None:
                 fehler, ort = zeile_aus_klick(struktur, d, ansicht)
                 if fehler:
@@ -211,14 +205,17 @@ def kommentar_aktion(mr, d):
                 k.update(text=text, path=None, a=None, b=None)
             if not k["text"]:
                 return False, "leerer Kommentar"
-            st["kommentare"].append(k)
+            if k.get("hinweis"):  # erst nach allen Prüfungen ändern: frühe returns speichern sonst mit
+                st["hinweise"][k["hinweis"]] = "uebernommen"
+                st["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in st.get("reihenfolge") or []]  # Platz behalten
+            kommentar_anhaengen(st, k)
         elif aktion == "reihenfolge":  # Box „GitLab-Kommentare“ umsortiert (bestimmt die Sende-Reihenfolge)
             ids = d.get("ids")
             if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
                 return False, "Reihenfolge ungültig"
             st["reihenfolge"] = ids
         else:
-            k = next((k for k in review_kommentare(st) if k["id"] == d.get("id")), None)
+            k = kommentar_finden(st, d.get("id"))
             if not k:
                 return False, "Kommentar nicht gefunden"
             if aktion == "aendern":
@@ -232,12 +229,11 @@ def kommentar_aktion(mr, d):
                 if k.get("gitlab_id") and not k.get("gitlab_weg"):
                     k["geloescht"] = True  # Entwurf in GitLab wird beim Abschließen gelöscht
                 else:
-                    st["kommentare"].remove(k)
+                    eintrag_entfernen(st, k)
             elif aktion == "wiederherstellen":
                 k.pop("geloescht", None)
             else:
                 return False, "unbekannte Aktion"
-        review_speichern(mr, st)
     return True, ""
 
 
@@ -245,8 +241,7 @@ def hinweis_aktion(mr, d):
     ansicht = ansicht_lesen(d.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
-    with SPERRE:
-        st = review_laden(mr)
+    with zustand(mr) as st:
         key = str(d.get("key") or "")
         if d.get("aktion") == "verwerfen":
             st["hinweise"][key] = "verworfen"
@@ -254,7 +249,6 @@ def hinweis_aktion(mr, d):
             st["hinweise"].pop(key, None)
         else:
             return False, "unbekannte Aktion"
-        review_speichern(mr, st)
     return True, ""
 
 
@@ -334,7 +328,7 @@ def meta_und_entwuerfe(mr):
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
     host, P = mr.host, mr_pfad(mr)
-    head = ((struktur_laden(review_laden(mr)) or {}).get("refs") or {}).get("head_sha")
+    head = ((struktur_laden(zustand_lesen(mr)) or {}).get("refs") or {}).get("head_sha")
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
     if head and gl_head and gl_head != head:
@@ -344,8 +338,7 @@ def abschliessen(mr):
         pos = {i: n for n, i in enumerate(review_daten(mr)["reihenfolge"])}  # wie in der Box „GitLab-Kommentare“
     except Fehler:
         pos = {}
-    with SPERRE:
-        st = review_laden(mr)
+    with zustand(mr) as st:  # GitLab-Anfragen unter der Sperre: kommt in Schritt 6 heraus
         web = st["mr"].get("web_url", "")
         proj_url = web.split("/-/merge_requests/")[0]
         if isinstance(vorhanden, Fehler):
@@ -362,7 +355,7 @@ def abschliessen(mr):
                 if k.get("geloescht"):
                     if k.get("gitlab_id") in vorhanden:
                         glab(host, f'{P}/draft_notes/{k["gitlab_id"]}', "DELETE"); z["weg"] += 1
-                    st["kommentare"].remove(k)
+                    eintrag_entfernen(st, k)
                 elif k.get("gitlab_weg"):
                     pass
                 elif k.get("gitlab_id"):
@@ -383,10 +376,9 @@ def abschliessen(mr):
                         vergeben.add(k["gitlab_id"]); z["neu"] += 1; z["allg"] += art == "allgemein"
             except Fehler as e:
                 fehler.append(f'{k.get("path") or "allgemein"}{":" + str(k.get("b") or k.get("a")) if k.get("b") or k.get("a") else ""}: {e}')
-            review_speichern(mr, st)
+            review_speichern(mr, st)  # nach jedem Kommentar: vergebene gitlab_ids überstehen einen Abbruch
         if not fehler:
             st["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
-            review_speichern(mr, st)
     teile = []
     if z["neu"]: teile.append(f'{z["neu"]} neu' + (f' ({z["allg"]} als allgemeiner Kommentar mit Link)' if z["allg"] else ""))
     if z["akt"]: teile.append(f'{z["akt"]} aktualisiert')

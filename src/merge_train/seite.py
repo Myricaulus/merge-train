@@ -1,14 +1,14 @@
 """Die Seiten bauen: Diff-Seite eines Projekts bzw. MRs, Güterbahnhof mit Zug, Startseite."""
 import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
-from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, SKRIPT, SPERRE, VON, dateiname, ersetzen, projektname, schluessel
+from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, SKRIPT, VON, dateiname, ersetzen, projektname, schluessel
 from .waggon import Waggon, fertig_moeglich
 from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, projekt_wurzel, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_BAHNHOF, JS_DIFF, JS_REVIEW, JS_ZUG
 from .diff_html import datei_html, spaeter_grund, zeilenzahl
-from .zustand import STRUKTUR, review_laden, review_speichern
+from .zustand import STRUKTUR, zustand, zustand_lesen
 from .gitlab import MetaFehlt, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
 
@@ -36,7 +36,7 @@ def dateiliste_html(dateien):
 
 def mr_seite(mr, ansicht=None):
     """MR-Seite aus dem lokalen Klon (im Cache je Stand). Rückgabe (html-pfad, struktur, mr). Keine GitLab-Anfrage."""
-    st = review_laden(mr)
+    st = zustand_lesen(mr)
     meta = st.get("meta")
     if not meta:
         raise MetaFehlt(f'Für {mr.projekt}!{mr.iid} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
@@ -51,11 +51,8 @@ def mr_seite(mr, ansicht=None):
     pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix,
                                  lambda *a: mr_html(mr, meta, *a), ansicht)
     if not ansicht:
-        with SPERRE:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
-            s = review_laden(mr)
-            if s.get("struktur") != praefix_json(praefix):
-                s["struktur"] = praefix_json(praefix)
-                review_speichern(mr, s)
+        with zustand(mr) as s:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
+            s["struktur"] = praefix_json(praefix)
     return pfad, struktur, mr
 
 
@@ -223,11 +220,8 @@ def projekt_seite(wurzel, ansicht=None):
                                  lambda *a: projekt_html(projekt, von, bis, *a), ansicht)
     if not ansicht:
         ersetzen(projekt_zeiger(projekt), praefix_json(praefix))
-        with SPERRE:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
-            st = review_laden(waggon)
-            if st.get("struktur") != praefix_json(praefix):
-                st["struktur"] = praefix_json(praefix)
-                review_speichern(waggon, st)
+        with zustand(waggon) as st:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
+            st["struktur"] = praefix_json(praefix)
     return pfad, struktur
 
 

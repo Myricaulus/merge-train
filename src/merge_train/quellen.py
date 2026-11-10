@@ -4,7 +4,7 @@ from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich
 from .git import arbeitsstand, finde_repos, git, projekt_wurzel, statistik
-from .zustand import ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, review_laden, struktur_laden
+from .zustand import ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden, zustand_lesen
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
 
@@ -68,7 +68,7 @@ def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
     def wagen_fuer(mr, titel, aenderungen):
-        st = review_laden(mr)
+        st = zustand_lesen(mr)
         n = sum(1 for k in review_kommentare(st) if not k.get("geloescht"))
         fertig = bool(st.get("abgeschlossen")) and not ausstehend(st)
         kurz = mr.projekt.rsplit("/", 1)[-1]
@@ -87,7 +87,7 @@ def mr_wagen(akt=None):
         try:
             mr = Waggon.aus_id(akt)
             if not mr.lokal:
-                wagen.insert(0, wagen_fuer(mr, review_laden(mr)["mr"].get("titel", ""), 0))
+                wagen.insert(0, wagen_fuer(mr, zustand_lesen(mr)["mr"].get("titel", ""), 0))
         except Fehler:
             pass
     return wagen
@@ -137,8 +137,7 @@ class GitLab:
 
     def ort(self, waggon):
         """(Klon, Stand) des MR, wie ihn die Seite zuletzt gebaut hat."""
-        with SPERRE:
-            struktur = struktur_laden(review_laden(waggon))
+        struktur = struktur_laden(zustand_lesen(waggon))
         if struktur is None:
             _, struktur = self.seite(waggon)
         return struktur["ordner"], struktur["refs"]["head_sha"]
