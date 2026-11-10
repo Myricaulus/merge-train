@@ -157,7 +157,10 @@ if(abk)abk.addEventListener('click',()=>{abk.disabled=true;meld.textContent='üb
   meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
   if(d.review){Object.assign(RV,d.review);zeichnen()}
   zugHolen()})});
-// auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt)
-setInterval(()=>{fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
+// auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut oder
+// Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist
+setInterval(()=>{fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{
+ if(d.version&&MR.version&&d.version!==MR.version&&!document.querySelector('textarea')){try{sessionStorage.meldung='merge-train wurde aktualisiert – Seite neu geladen'}catch(_){}location.reload();return}
+ if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
  .catch(()=>{meld.textContent=WEG})},4000);
 laden();

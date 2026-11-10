@@ -584,6 +584,8 @@ def main():
         zst = json.load(open(rp0)); zst["meta"]["_zeit"] = "01.01. 00:00"; json.dump(zst, open(rp0, "w"))
         get(f"/mr/{mr}")
         pruefe(json.load(open(rp0))["struktur"] == vor, "MR-Daten: andere Abrufzeit baut die Seite nicht neu")
+        sv = json.loads(get(f"/api/stand?mr={mr}&k={k}")).get("version")
+        pruefe(sv and f'"version": "{sv}"' in get(f"/mr/{mr}"), "Version des Servers in /api/stand und auf der Seite (neuer Server → Seite lädt neu)")
         r1 = post("/api/gitlab", dict(basis, aktion="mrdaten"))
         r2 = post("/api/gitlab", dict(basis, aktion="mrdaten"))
         pruefe(r1["ok"] and r2["ok"] and r2["neu_laden"] is False, "MR-Daten unverändert: Seite muss nicht neu laden")
