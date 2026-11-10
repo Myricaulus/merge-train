@@ -179,12 +179,8 @@ def main():
                                              "(„merge-train agent -h“ für Agent-Hinweise)")
     ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects), oder ein GitLab-MR "
                                               "(URL, '!42', gruppe/projekt!42); ohne: der ganze Zug, beginnend beim größten")
-    ap.add_argument("--von", default=VON)
-    ap.add_argument("--bis", default=BIS)
     ap.add_argument("--mrs", action="store_true", help="GitLab-MRs zum Review (Reviewer = ich) zeigen")
-    ap.add_argument("--alle", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--inline", action="store_true", help="inline statt nebeneinander starten")
-    ap.add_argument("--nur-datei", action="store_true", help="HTML erzeugen bzw. URL ausgeben, nicht öffnen")
+    ap.add_argument("--nur-datei", action="store_true", help="nur die URL ausgeben, nicht öffnen")
     ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--projekte", action="store_true", help=argparse.SUPPRESS)  # für die Shell-Vervollständigung
     o = ap.parse_args()
@@ -223,34 +219,15 @@ def main():
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
             sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")
-    if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False) for b in (o.von, o.bis)):
-        sys.exit(f"merge-train: Branch {o.von} oder {o.bis} fehlt in {wurzel}")
-    if not (o.nur_datei or o.von != VON or o.bis != BIS or o.inline) and server_sicherstellen():
-        # Der Server baut die Seite beim Abruf (und danach die übrigen offenen im Hintergrund)
-        if wurzel:
-            return im_browser("/" + dateiname(projektname(wurzel)))
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(8) as ex:
-            wagen = lokal_wagen(list(ex.map(statistik, finde_repos())))
-        offen = [w for w in wagen if w["status"] == "offen"]
-        if not offen:
-            print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
-        return im_browser(offen[0]["datei"])
-    repos, wagen = alles_erzeugen(o.von, o.bis, o.inline)
-    if wurzel:
-        ziel, _ = projekt_seite(wurzel, o.von, o.bis)
-    else:
-        offen = [w for w in wagen if w["status"] == "offen"]
-        if not offen:
-            print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
-        ziel = next(projekt_seite(r)[0] for r in repos if projektname(r) == offen[0]["p"])
-    if o.nur_datei or o.von != VON or o.bis != BIS or o.inline:
-        print(ziel)
-        if not o.nur_datei:
-            oeffnen(ziel)
-        return
-    print(ziel)  # Server startet nicht: Datei direkt öffnen („fertig“ geht dann nicht)
-    oeffnen(ziel)
+    if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False)
+                          for b in (VON, "HEAD" if BIS == ARBEITSSTAND else BIS)):
+        sys.exit(f"merge-train: Branch {VON} oder {BIS} fehlt in {wurzel}")
+    if wurzel:  # der Server baut die Seite beim Abruf (und danach die übrigen offenen im Hintergrund)
+        return im_browser("/" + dateiname(projektname(wurzel)), o.nur_datei)
+    offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
+    if not offen:
+        print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
+    return im_browser(offen[0]["datei"], o.nur_datei)
 
 if __name__ == "__main__":
     main()

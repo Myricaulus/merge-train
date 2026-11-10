@@ -3,14 +3,13 @@
 Dazu: Review von GitLab-Merge-Requests (über glab) mit Kommentaren und Agent-Hinweisen.
 
 Aufruf:
-  merge-train [projekt] [--von reviewed] [--bis claude] [--inline] [--nur-datei]
+  merge-train [projekt] [--nur-datei]                   lokaler Zug bzw. nur dieses Projekt
   merge-train <MR-URL> | '!42' | gruppe/projekt!42      GitLab-MR reviewen
   merge-train --mrs                                     Zug der MRs, bei denen ich Reviewer bin
   merge-train agent zeigen|pruefen <hinweise.json>      Agent-Hinweise zu einem MR (siehe docs/agent-hinweise.md)
 
-Erzeugt eine HTML-Seite wie der „Changes“-Reiter in GitLab und öffnet sie:
-oben (schwebend) Commits mit vollen Nachrichten, links (schwebend) die
-Dateiliste, rechts alle Diffs nebeneinander mit Syntaxhervorhebung.
+Ein kleiner Server auf 127.0.0.1 baut die Seiten beim Abruf (wie der „Changes“-Reiter in GitLab): oben Güterbahnhof
+und Zug, darunter Commits, links die Dateiliste, rechts die Diffs mit Syntaxhervorhebung.
 Verglichen wird wie in GitLab ab dem gemeinsamen Vorgänger (reviewed...claude).
 
 Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf,

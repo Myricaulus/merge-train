@@ -56,13 +56,6 @@ def zeile_vorwaerts(ordner, von, bis, pfad, b):
 def g_wurzel(projekt):
     return next((r for r in finde_repos() if projektname(r) == projekt), None)
 
-def g_name(g):
-    return quelle(g).name_von(g)
-
-def g_ort(g):
-    """(Klon, Stand), auf den sich die Zeilen beziehen (lokal der Branch BIS, beim MR der Stand der Seite)."""
-    return quelle(g).ort(g)
-
 def g_agenten(g):
     """Namen, an die man im GitLab-Modus fragen kann: eingerichtete [agenten] und wer gerade zuhört."""
     namen = list(KONF.get("agenten") or {})
@@ -107,7 +100,7 @@ def g_daten(mr, ansicht=None):
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         ausserhalb = vorher - len(kom)
     entwuerfe = sum(1 for k in g_faeden(st) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
-    return {"ok": True, "lokal": True, "kommentare": kom, "hinweise": [], "quellen": [], "stand": stand(mr, st),
+    return {"ok": True, "kommentare": kom, "stand": stand(mr, st),
             "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "agenten": g_agenten(mr),
             "todo": st.get("todo_id") if todo_offen(st.get("todo_id")) else None}
 
@@ -246,17 +239,14 @@ def todo_offen(tid):
     basis = os.environ.get("TODO_DIR") or os.path.expanduser("~/todo")
     return os.path.exists(os.path.join(basis, "offen", tid + ".md"))
 
-def g_prompt(g, wurzel=""):
-    return quelle(g).prompt(g, wurzel)
-
 def benachrichtigen(g, wurzel, n, namen=("Claude",)):
     """Nach „Feedback senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
     todo-Eintrag. Rückgabe (text für die Seite, todo_id oder None)."""
     wer = horcht(g)
     if wer:
         return f"an die Session übergeben, die zuhört ({wer})", None
-    projekt = g_name(g)
-    prompt = g_prompt(g, wurzel)
+    projekt = quelle(g).name_von(g)
+    prompt = quelle(g).prompt(g, wurzel)
     agenten = KONF.get("agenten") or {}
     befehle = [(nm, agenten[nm]) for nm in namen if nm in agenten]
     if not befehle and KONF.get("feedback_befehl"):
@@ -294,7 +284,7 @@ def benachrichtigen(g, wurzel, n, namen=("Claude",)):
 def feedback_senden(g):
     """Alle Entwürfe abschicken. Rückgabe (ok, text, todo_id)."""
     try:
-        wurzel, _ = g_ort(g)
+        wurzel, _ = quelle(g).ort(g)
     except GitLabFehler as e:
         return False, str(e), None
     with SPERRE:
@@ -424,7 +414,7 @@ def g_abholen(ziele, alle=False, markieren=True):
     """Text mit allen Fäden, die auf den Agenten warten (alle: auch beantwortete). Markiert Nachrichten als abgeholt."""
     teile, gesamt = [], 0
     for g in ziele:
-        wurzel, head = g_ort(g)
+        wurzel, head = quelle(g).ort(g)
         with SPERRE:
             st = review_laden(g)
             faeden = [k for k in g_faeden(st) if g_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
@@ -437,7 +427,7 @@ def g_abholen(ziele, alle=False, markieren=True):
                 if zeigen:
                     review_speichern(g, st)
         wo = f"{BIS} {head[:8]}" if g.get("lokal") else f"MR {mr_id(g)} · Stand {head[:8]} · Klon {wurzel}"
-        kopf = (f'merge-train · {g_name(g)} · {wo} · {sum(1 for k in faeden if g_status(k) == "wartet")} '
+        kopf = (f'merge-train · {quelle(g).name_von(g)} · {wo} · {sum(1 for k in faeden if g_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
             if len(ziele) == 1:
@@ -585,7 +575,7 @@ def g_antworten(fid, text, erledigt=False, als=None, ziele=None):
         review_speichern(g, st)
         rest = sum(1 for x in g_faeden(st) if g_status(x) == "wartet")
         tid = st.get("todo_id")
-    melden(f"{g_name(g)}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
+    melden(f"{quelle(g).name_von(g)}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
     if not rest and todo_offen(tid):
         subprocess.run(["todo", "erledigt", tid, "-n", "Alle Fragen/Feedback in merge-train beantwortet"], capture_output=True)
     return k["id"], rest

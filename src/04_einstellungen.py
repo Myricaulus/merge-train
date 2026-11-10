@@ -184,7 +184,6 @@ def statistik(wurzel, von=None, bis=None):
             "sha": bis}
 
 def runde_laden():
-    import json
     try:
         r = json.load(open(RUNDE))
     except (FileNotFoundError, ValueError):
@@ -224,19 +223,6 @@ def dateiliste_html(dateien):
                   f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
     return fl
 
-def alles_erzeugen(von, bis, inline):
-    from concurrent.futures import ThreadPoolExecutor
-    schluessel()  # einmal vorab anlegen, sonst Wettlauf zwischen den Threads
-    repos = finde_repos()
-    with ThreadPoolExecutor(8) as ex:
-        stats = list(ex.map(lambda r: statistik(r, von, bis), repos))
-    wagen = lokal_wagen(stats)
-    offen = {w["p"] for w in wagen if w["status"] == "offen"}
-    with ThreadPoolExecutor(8) as ex:
-        list(ex.map(lambda r: projekt_seite(r, von, bis),
-                    [r for r in repos if projektname(r) in offen]))
-    return repos, wagen
-
 def oeffnen(ziel):
     """Im Browser öffnen: browser aus der Einstellung, sonst xdg-open / wslview / explorer.exe (WSL)."""
     if KONF["browser"]:
@@ -253,11 +239,8 @@ def melden(text):
     if shutil.which("notify-send"):
         subprocess.run(["notify-send", "-a", "merge-train", "-i", "vcs-merge-request", "merge-train", text], check=False)
 
-def fertig(projekt, sha, k):
-    """VON auf den gesehenen Stand setzen. Rückgabe (ok, text)."""
-    import json
-    if k != schluessel():
-        return False, "Abgelehnt: falscher Schlüssel."
+def fertig(projekt, sha):
+    """VON auf den gesehenen Stand setzen (den Schlüssel prüft der Server). Rückgabe (ok, text)."""
     repos = {projektname(r): r for r in finde_repos()}
     if projekt not in repos:
         return False, f"Unbekanntes Projekt: {projekt}"

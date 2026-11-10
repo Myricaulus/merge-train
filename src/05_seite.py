@@ -96,9 +96,9 @@ def dateien_html(dateien, texte):
 def projekt_zeiger(projekt):
     return os.path.join(LOKAL_ORDNER, dateiname(projekt) + ".zeiger")
 
-def projekt_seite(wurzel, von=None, bis=None, ansicht=None):
+def projekt_seite(wurzel, ansicht=None):
     """Seite eines lokalen Projekts (BIS gegen VON ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
-    von, bis = von or VON, bis or BIS
+    von, bis = VON, BIS
     projekt = projektname(wurzel)
     head = bis_sha(wurzel, bis)
     refs = {"base_sha": git(wurzel, "merge-base", von, head).strip(), "start_sha": git(wurzel, "rev-parse", von).strip(),

@@ -68,7 +68,7 @@ class GitLab:
         return bool(KONF["gitlab"])
 
     def passt(self, x):
-        return not Lokal.passt(None, x)
+        return not LOKAL.passt(x)
 
     def name_von(self, g):
         return f'{g["projekt"]}!{g["iid"]}'

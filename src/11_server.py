@@ -201,7 +201,7 @@ def server():
                     g = schluessel_von(d.get("mr") or "projekt:" + str(d.get("projekt", "")))
                     if not quelle(g).kann["fertig"]:
                         return self.senden(404, "nicht gefunden", "text/plain")
-                    ok, text = fertig(g["lokal"], str(d.get("sha", "")), str(d.get("k", "")))
+                    ok, text = fertig(g["lokal"], str(d.get("sha", "")))
                     return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(mr_id(g))})
                 if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gespraech"):
                     return self.senden(404, "nicht gefunden", "text/plain")
