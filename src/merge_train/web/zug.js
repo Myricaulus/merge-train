@@ -228,7 +228,7 @@
             weiterZumNaechsten();
             if (!naechsterWagen()) abfahrtFeiern();
           })
-          .catch(e => {
+          .catch(() => {
             fertigKnopf.disabled = false;
             App.melden('merge-train-Server nicht erreichbar – merge-train erneut aufrufen');
           });

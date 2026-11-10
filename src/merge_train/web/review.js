@@ -809,9 +809,10 @@
       });
     });
   // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut oder
-  // Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist
+  // Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist.
+  // --beobachten: veraltet = im Repo hat sich etwas geändert → neu laden (beobachten.js rahmt danach das Neue ein)
   function pruefen() {
-    fetch('/api/stand?' + waggonAbfrage())
+    fetch('/api/stand?' + waggonAbfrage() + '&sha=' + encodeURIComponent(waggon.sha || ''))
       .then(r => r.json())
       .then(d => {
         if (d.server) App.serverStandSetzen(d.server);
@@ -820,6 +821,17 @@
           if (!document.querySelector('textarea')) {
             try {
               sessionStorage.meldung = 'merge-train wurde aktualisiert – Seite neu geladen';
+            } catch (_) {}
+            location.reload();
+          }
+          return;
+        }
+        if (d.veraltet) {
+          App.serverLed('neu');
+          if (!document.querySelector('textarea')) {
+            try {
+              sessionStorage.meldung = 'Änderung im Repo – Seite neu geladen';
+              sessionStorage.beobachtetAlt = waggon.sha || '';
             } catch (_) {}
             location.reload();
           }

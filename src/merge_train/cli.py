@@ -5,12 +5,14 @@ from .waggon import Fehler
 from .git import ANLASS, finde_repos, git, projekt_ordner, statistik
 from .gitlab import ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig
 from .quellen import LOKAL
-from .server import im_browser, server
+from .server import im_browser, server, server_stoppen
+from .instanz import beobachten_starten, zur_instanz
 from .agent_cli import agent_main
 
 def main():
     ANLASS.name = ("cli " + " ".join(sys.argv[1:3]))[:32]
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
+        zur_instanz(sys.argv[1:])  # läuft für dieses Repo eine --beobachten-Instanz: dort weiter
         sys.exit(agent_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(prog="merge-train", description=f"merge-train: Merge-Requests {BIS} → {VON} aller Projekte, GitLab-MRs reviewen "
                                              "(„merge-train agent -h“ für Agent-Hinweise)")
@@ -18,11 +20,26 @@ def main():
                                               "(URL, '!42', gruppe/projekt!42); ohne: der ganze Zug, beginnend beim größten")
     ap.add_argument("--mrs", action="store_true", help="GitLab-MRs zum Review (Reviewer = ich) zeigen")
     ap.add_argument("--nur-datei", action="store_true", help="nur die URL ausgeben, nicht öffnen")
+    ap.add_argument("--stopp", action="store_true", help="den Server (Port aus der Einstellung) beenden; "
+                                                         "mit --beobachten den dieses Repos")
+    ap.add_argument("--beobachten", action="store_true",
+                    help="Arbeitsverzeichnis (auch nicht Committetes) gegen HEAD bzw. --von live beobachten: eigene Instanz "
+                         "mit freiem Port, Seite lädt bei Änderungen neu, endet mit dem Tab")
+    ap.add_argument("--von", help="nur mit --beobachten: Vergleichsstand (Standard HEAD)")
     ap.add_argument("--server", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--projekte", action="store_true", help=argparse.SUPPRESS)  # für die Shell-Vervollständigung
     o = ap.parse_args()
     if o.server:
         return server()
+    if o.von and not o.beobachten:
+        ap.error("--von gibt es nur mit --beobachten (sonst: von in der Einstellung)")
+    if o.stopp:
+        if o.beobachten:
+            zur_instanz(["--stopp"], o.ordner, immer=True)
+            print("merge-train: keine --beobachten-Instanz für dieses Repo"); return
+        sys.exit(server_stoppen())
+    if o.beobachten:
+        return beobachten_starten(o.ordner, o.von, o.nur_datei)
     if o.projekte:
         if not KONF["lokal"]:
             return

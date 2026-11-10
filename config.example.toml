@@ -26,6 +26,7 @@
 # browser = ""
 
 # port = 8771
+# leerlauf = 3600            # Sekunden ohne Anfrage, dann beendet sich der Server (offene Seiten fragen alle 4 s)
 
 # Log der Anfragen an die Quellen (lokales git, GitLab): ~/.cache/merge-train/aussen-<datum>.log, eine Datei je Tag.
 # Wie viele Tage aufbewahren; 0 = kein Log.

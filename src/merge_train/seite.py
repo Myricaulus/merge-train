@@ -176,7 +176,7 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
 def seiten_daten(sid, head, n, ans, **mehr):
     """const MR = … für die Seite (kann: was der Waggon kann, siehe Quellen)."""
     return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n, kann=Waggon.aus_id(sid).kann, version=VERSION,
-                           ansicht=f'{ans["art"]}:{ans["sha"]}' if ans else "",
+                           beobachten=bool(KONF["beobachten"]), ansicht=f'{ans["art"]}:{ans["sha"]}' if ans else "",
                            lesen=bool(ans and ans["art"] == "commit")), ensure_ascii=False)
 
 

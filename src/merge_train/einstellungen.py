@@ -8,7 +8,9 @@ def _xdg(var, std):
 
 # Das gebaute Skript (zipapp), beim Start aus dem Quellbaum der Ordner src/ – beides lässt sich mit python3 starten
 SKRIPT = os.path.realpath(os.path.dirname(os.path.dirname(__file__)))
-KONFIG_DATEI = os.environ.get("MERGE_TRAIN_CONFIG") or \
+# Eigene Instanz (merge-train --beobachten): Einstellung, Cache und Daten in einem Ordner, eigener Port
+INSTANZ = os.environ.get("MERGE_TRAIN_INSTANZ") or ""
+KONFIG_DATEI = os.environ.get("MERGE_TRAIN_CONFIG") or (INSTANZ and os.path.join(INSTANZ, "config.toml")) or \
     os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "merge-train", "config.toml")
 
 
@@ -24,6 +26,8 @@ STANDARD = {
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
     "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"
     "port": 8771,
+    "leerlauf": 3600,         # Server beendet sich nach so vielen Sekunden ohne Anfrage (offene Seiten fragen alle 4 s)
+    "beobachten": False,      # von merge-train --beobachten gesetzt: Seite lädt bei Änderungen im Repo neu
     "feedback_befehl": "",    # lokaler Modus: Befehl, wenn keine Session zuhört (sonst todo-Eintrag)
     "agenten": {},            # Gespräch auch im GitLab-Modus: Name = Startbefehl, z. B. copilot = "… copilot -i {prompt}"
     "kontext_fenster": 0,     # HUD „ctx“: Kontextfenster der Agenten-Session in Tokens; 0 = 200k (1M bei [1m])
@@ -69,10 +73,11 @@ def konfig_laden():
 KONF = konfig_laden()
 
 
-ORDNER = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "merge-train")
+ORDNER = os.path.join(INSTANZ, "cache") if INSTANZ else os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "merge-train")
 
 
-DATEN = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "merge-train")
+DATEN_HAUPT = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "merge-train")  # Instanzen liegen darunter
+DATEN = os.path.join(INSTANZ, "daten") if INSTANZ else DATEN_HAUPT
 
 
 # projekte: Ordner mit Repos (auch eine Ebene tiefer) oder einzelne Repos – ein Eintrag oder eine Liste

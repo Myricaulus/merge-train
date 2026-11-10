@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
 Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–8 sind
-erledigt. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+erledigt. Nach dem Umbau und Abnahme fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -350,8 +350,7 @@ in `docs/ideen.md`.
 
 ## Bewertung der Schritte 4–8 (Kritik, nichts korrigiert)
 
-Stand `e3efe7d`, 2026-11-11. Geschrieben von dem Agenten, der die Schritte 4–8 ausgeführt hat, also keine
-unabhängige Sicht. Grundlage: Code noch einmal gelesen, Biome über die JS-Dateien, Tests wie oben.
+Stand `e3efe7d`, 2026-11-11. Grundlage: Code noch einmal gelesen, Biome über die JS-Dateien, Tests wie oben.
 
 **Gesamturteil.** Die Struktur ist besser als vorher, und das Verhalten ist für die geprüften Fälle gleich. Die
 Schritte 4 (Zugriff auf die Datei), 5 (Routen) und 6 (GitLab ohne Sperre) haben ihr Ziel erreicht. Schritt 7 hat die

@@ -8,6 +8,7 @@
   web            CSS, JavaScript, Bilder aus web/
   diff_html      HTML eines Datei-Diffs
   zustand        Zustand je Waggon (JSON): Kommentare, Fäden, Struktur der Seite
+  beobachter     --beobachten: Änderungen im Repo merken (inotify), Seite veraltet, neue Zeilen
   gitlab         GitLab über glab
   hinweise       Agent-Hinweise (drafts) lesen und auflösen
   ansichten      Ansichten: alles, commit:<sha>, seit:<sha>
@@ -17,6 +18,7 @@
   review         Review-Kommentare, Abgleich mit GitLab, abschließen
   gespraech      Gespräch mit dem Agenten
   server         HTTP-Server
+  instanz        --beobachten: eigene Instanz je Repo (Port, Ordner), agent-Befehle dorthin
   agent_cli      merge-train agent …
   cli            Aufruf von der Kommandozeile
 """

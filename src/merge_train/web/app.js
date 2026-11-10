@@ -12,7 +12,7 @@ const App = {
   }
 };
 /** Element bauen: el('a', {class: 'x', onclick: f}, 'Text', kind, …) */
-App.el = function (tag, attrs, ...kinder) {
+App.el = (tag, attrs, ...kinder) => {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === 'class') e.className = v;
@@ -26,7 +26,7 @@ App.el = function (tag, attrs, ...kinder) {
   return e;
 };
 /** Uhrzeit (heute) bzw. Datum und Uhrzeit aus einem ISO-Zeitpunkt */
-App.uhrzeit = function (iso) {
+App.uhrzeit = iso => {
   if (!iso) return '';
   const d = new Date(iso),
     hm = d.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});

@@ -630,9 +630,9 @@
     for (const r of tab.querySelectorAll('tr[data-a],tr[data-b]')) {
       if (
         b != null
-          ? r.dataset.b == String(b)
-          : (r.dataset.a == String(a) && r.dataset.b == null) ||
-            (tab.classList.contains('sbs') && r.dataset.a == String(a))
+          ? r.dataset.b === String(b)
+          : (r.dataset.a === String(a) && r.dataset.b == null) ||
+            (tab.classList.contains('sbs') && r.dataset.a === String(a))
       )
         return r;
     }

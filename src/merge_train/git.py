@@ -79,12 +79,17 @@ def zerlegen(diff):
     return dateien
 
 
+def ist_repo(ordner):
+    """Ordner ist ein Repo: .git ist ein Ordner oder (Worktree, Submodul) eine Datei."""
+    return os.path.exists(os.path.join(ordner, ".git"))
+
+
 def projekt_ordner(name):
     """Projektname → Ordner (unter einem Eintrag von projekte oder ein dort genanntes Repo)."""
     for p in PROJEKTE_LISTE:
-        if os.path.isdir(os.path.join(p, name)) and not os.path.isdir(os.path.join(p, ".git")):
+        if os.path.isdir(os.path.join(p, name)) and not ist_repo(p):
             return os.path.join(p, name)
-        if os.path.basename(p.rstrip("/")) == name and os.path.isdir(os.path.join(p, ".git")):
+        if os.path.basename(p.rstrip("/")) == name and ist_repo(p):
             return p
     return os.path.join(PROJEKTE, name)
 
@@ -98,7 +103,8 @@ def arbeitsstand(wurzel):
     ergibt denselben sha (die Seite bleibt im Cache). Ohne Änderungen: HEAD."""
     import tempfile
     head = git(wurzel, "rev-parse", "HEAD").strip()
-    status = git(wurzel, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False) or ""
+    status = git(wurzel, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False,  # Index nicht auffrischen:
+                 env=dict(os.environ, GIT_OPTIONAL_LOCKS="0")) or ""  # sonst meldet der Beobachter die eigene Prüfung
     if not status:
         return head
     merkmal = [head, status]
@@ -141,13 +147,12 @@ def finde_repos():
     """Alle Repos aus projekte (Ordner: auch eine Ebene tiefer, z. B. cachy-patch/*; oder direkt ein Repo) mit VON und BIS."""
     out, kandidaten = [], []
     for wo in PROJEKTE_LISTE:
-        if os.path.isdir(os.path.join(wo, ".git")):  # direkt ein Repo
+        if ist_repo(wo):  # direkt ein Repo
             kandidaten.append(wo); continue
         for e in sorted(os.listdir(wo)) if os.path.isdir(wo) else []:
             d = os.path.join(wo, e)
             if not os.path.isdir(d): continue
-            kandidaten += [d] if os.path.isdir(os.path.join(d, ".git")) else \
-                [os.path.join(d, u) for u in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, u, ".git"))]
+            kandidaten += [d] if ist_repo(d) else [os.path.join(d, u) for u in sorted(os.listdir(d)) if ist_repo(os.path.join(d, u))]
     for k in kandidaten:
         if git(k, "rev-parse", "--verify", "-q", VON, check=False) and \
            git(k, "rev-parse", "--verify", "-q", "HEAD" if BIS == ARBEITSSTAND else BIS, check=False):

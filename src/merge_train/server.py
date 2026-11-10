@@ -7,6 +7,7 @@ from .waggon import Fehler, Waggon
 from .git import ANLASS, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
 from .zustand import zustand, zustand_lesen
+from .beobachter import neue_zeilen, veraltet
 from .gitlab import mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
@@ -30,13 +31,13 @@ ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{IC
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
 
 
-LEERLAUF_S = 3600
+LEERLAUF_S = int(KONF["leerlauf"])
 
 
-def server_laeuft():
+def server_laeuft(port=None):
     import urllib.request
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/ping", timeout=0.5) as r:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port or PORT}/ping", timeout=0.5) as r:
             return r.read() == b"merge-train"
     except OSError:
         return False
@@ -251,8 +252,16 @@ def api_review(anfrage, waggon):
 
 @route("GET", "api/stand", waggon=True)
 def api_stand(anfrage, waggon):
+    """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden."""
     seite_lebt(waggon)
-    return {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION, "server": server_stand()}
+    return {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION, "server": server_stand(),
+            "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
+
+
+@route("GET", "api/neu", waggon=True)
+def api_neu(anfrage, waggon):
+    """--beobachten nach dem Neuladen: Zeilen, die seit dem vorher gezeigten Stand neu sind (Rahmen auf der Seite)."""
+    return {"ok": True, "zeilen": neue_zeilen(waggon, anfrage.daten.get("alt", ""), anfrage.daten.get("sha", ""))}
 
 
 @route("GET", "api/zeilen", struktur=True)
@@ -362,10 +371,28 @@ def mr_daten_holen(mr):
     return {"ok": True, "text": text, "neu_laden": neu_laden}
 
 
+@route("POST", "/stopp")
+def api_stopp(anfrage):
+    """merge-train --stopp: wie Leerlauf, laufende Aktionen werden noch fertig."""
+    _STOPP.set()
+    return {"ok": True, "text": "Server beendet sich"}
+
+
+@route("POST", "/tschuess")
+def api_tschuess(anfrage):
+    """--beobachten: Tab verlassen (Beacon bei pagehide, auch beim Neuladen). Kommt danach nichts mehr, endet der Server."""
+    if KONF["beobachten"]:
+        _ABSCHIED[0] = _LETZTE_ANFRAGE[0]
+    return {"ok": True}
+
+
 # ---- HTTP
 
 HERKUNFT = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 _LETZTE_ANFRAGE = [time.time()]
+_STOPP = threading.Event()  # merge-train --stopp
+_ABSCHIED = [None]  # --beobachten: Zeit der letzten Anfrage vor dem Beacon „Tab zu“
+ABSCHIED_S = 10  # so lange nach dem Beacon auf eine neue Anfrage (Neuladen) warten
 _LAUFEND, _LAUF_SPERRE = [0], threading.Lock()  # Anfragen in Arbeit: ein Neustart wartet auf sie
 
 
@@ -429,12 +456,17 @@ def dateizeiten(pfade):
     return out
 
 
-def beobachten(srv, beobachtet):
-    """Bis LEERLAUF_S ohne Anfrage oder bis Skript/Einstellung sich ändern; dann laufende Aktionen (z. B. „Review
-    abschließen“) fertig werden lassen und den Server anhalten. Rückgabe: True = mit neuem Stand neu starten."""
+def server_bewachen(srv, beobachtet):
+    """Bis LEERLAUF_S ohne Anfrage, „merge-train --stopp“, Tab zu (--beobachten) oder bis Skript/Einstellung sich ändern;
+    dann laufende Aktionen (z. B. „Review abschließen“) fertig werden lassen und den Server anhalten.
+    Rückgabe: True = mit neuem Stand neu starten."""
     anfang, neu = dateizeiten(beobachtet), False
     while time.time() - _LETZTE_ANFRAGE[0] < LEERLAUF_S:
-        time.sleep(2)
+        if _STOPP.wait(2):
+            break
+        abschied = _ABSCHIED[0]
+        if abschied is not None and _LETZTE_ANFRAGE[0] <= abschied and time.time() - abschied > ABSCHIED_S:
+            break
         jetzt = dateizeiten(beobachtet)
         if jetzt[0] is None:  # Skript umbenannt/gelöscht: beenden
             break
@@ -449,14 +481,15 @@ def beobachten(srv, beobachtet):
 
 def server():
     """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
-    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage, startet neu bei neuem Skript/neuer Einstellung."""
+    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage oder auf „merge-train --stopp“, startet neu bei
+    neuem Skript/neuer Einstellung."""
     schluessel()
     _LETZTE_ANFRAGE[0] = time.time()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     syntax.SERVER_SOCKET = srv.socket
     beobachtet = [SKRIPT, KONFIG_DATEI]
     neu = []
-    threading.Thread(target=lambda: neu.append(beobachten(srv, beobachtet)), daemon=True).start()
+    threading.Thread(target=lambda: neu.append(server_bewachen(srv, beobachtet)), daemon=True).start()
     srv.serve_forever()
     srv.server_close()
     if neu and neu[0]:
@@ -480,6 +513,25 @@ def server_stand():
                   "geaendert": False}
         _SERVER_STAND[:] = [time.time(), st]
     return _SERVER_STAND[1]
+
+
+def server_stoppen():
+    """merge-train --stopp: den Server auf PORT beenden (laufende Aktionen werden noch fertig). Rückgabe: Exit-Code."""
+    import urllib.request
+    if not server_laeuft():
+        print(f"merge-train: kein Server auf Port {PORT}"); return 0
+    anfrage = urllib.request.Request(f"http://127.0.0.1:{PORT}/stopp", method="POST",
+                                     data=json.dumps({"k": schluessel()}).encode(),
+                                     headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(anfrage, timeout=5).read()
+    except OSError as e:
+        print(f"merge-train: Server auf Port {PORT} lehnt ab: {e}", file=sys.stderr); return 1
+    for _ in range(100):
+        if not server_laeuft():
+            print(f"merge-train: Server auf Port {PORT} beendet"); return 0
+        time.sleep(0.1)
+    print(f"merge-train: Server auf Port {PORT} beendet sich, sobald laufende Aktionen fertig sind"); return 0
 
 
 def im_browser(pfad, nur_url=False):

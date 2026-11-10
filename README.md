@@ -19,7 +19,8 @@ weitere Klasse in `src/merge_train/quellen.py`.
 
 Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit `pygments`, GitLab mit `glab`).
 Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
-Ein kleiner Server auf `127.0.0.1:8771` liefert die Seiten aus und beendet sich nach einer Stunde ohne Anfrage.
+Ein kleiner Server auf `127.0.0.1:8771` liefert die Seiten aus und beendet sich nach einer Stunde ohne Anfrage
+(`leerlauf`; offene Seiten fragen alle 4 s nach und halten ihn wach) oder mit `merge-train --stopp`.
 
 ## Aufruf
 
@@ -30,6 +31,8 @@ merge-train https://gitlab.example.com/gruppe/projekt/-/merge_requests/42
 merge-train '!42'               # MR 42 des Projekts im aktuellen Ordner (git remote origin)
 merge-train gruppe/projekt!42
 merge-train --mrs               # MRs, bei denen ich Reviewer bin
+merge-train --stopp             # Server beenden (laufende Aktionen werden noch fertig)
+merge-train --beobachten [ordner] [--von REF]   # Arbeitsstand live, siehe „Beobachten“
 merge-train agent pruefen tasks/PROJ-824-review-markers.json   # siehe docs/agent-hinweise.md
 merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-Update seit reviewed_commit
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
@@ -180,9 +183,31 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
+| `port`, `leerlauf` | `8771`, `3600` | Port des Servers; nach so vielen Sekunden ohne Anfrage beendet er sich. Offene Seiten fragen alle 4 s, ein kurzer Leerlauf (z. B. `120`, Hintergrund-Tabs drosselt der Browser) beendet ihn also bald nach dem Schließen des Tabs |
 | `log_tage` | `7` | Log der Anfragen an die Quellen (lokales git, GitLab) mit Dauer und Anlass, eine Datei je Tag in `~/.cache/merge-train/aussen-<datum>.log`; so viele Tage aufbewahrt, `0` = aus |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.
+
+### Beobachten: Arbeitsstand live (z. B. was ein Agent in einem Worktree baut)
+
+```sh
+merge-train --beobachten ~/worktrees/merge-train-fable              # nicht Committetes gegen HEAD
+merge-train --beobachten ~/worktrees/merge-train-fable --von main   # alles seit main, samt nicht Committetem
+merge-train --beobachten --stopp [ordner]                           # diese Instanz beenden
+```
+
+Ohne Ordner das aktuelle Repo. Jedes Repo bekommt eine eigene Instanz mit freiem Port. Einstellung, Cache und Gespräch
+liegen in `~/.local/share/merge-train/beobachten/<name>-<hash>/`, dein normaler Server und sein Zug bleiben unberührt.
+
+- Ein Watcher (inotify) meldet Änderungen im Arbeitsverzeichnis (ohne ignorierte Dateien, neue Ordner kommen dazu) und an
+  HEAD, Index und Branches. Erst dann prüft git, ob sich der Stand wirklich geändert hat, und die Seite lädt neu (nicht, solange
+  ein Eingabefeld offen ist). Ohne inotify wird alle 5 s geprüft.
+- Nach dem Neuladen hat das seit dem vorigen Stand Neue einen lila Rahmen, die Seite scrollt sanft zur ersten Stelle. Der
+  Rahmen bleibt bis zur nächsten Änderung.
+- Schließt du den Tab, beendet sich die Instanz nach etwa 10 s (Beacon beim Verlassen der Seite; Neuladen zählt nicht).
+  Sonst nach 90 s ohne Anfrage.
+- `merge-train agent …` aus diesem Repo landet von selbst bei der Instanz, solange sie läuft (außer das Repo ist ohnehin im
+  normalen Zug). Feedback heißt hier: im Arbeitsverzeichnis umsetzen, nicht committen.
 
 ## Auf einen anderen Rechner übertragen (z. B. WSL, nur GitLab)
 
@@ -240,8 +265,8 @@ python3 werkzeug/imports_richten.py                                             
 ```
 
 Neue Module in `werkzeug/imports_richten.py` (`REIHENFOLGE`) und `src/merge_train/__init__.py` eintragen; Namen müssen
-paketweit eindeutig sein. Die Seite im Browser ausprobieren: eigenen Server mit eigener Konfig (`port = …`,
-`MERGE_TRAIN_CONFIG=…`) starten, nie den auf 8771.
+paketweit eindeutig sein. Die Seite im Browser ausprobieren: `python3 src --beobachten` (eigene Instanz, eigener Port)
+oder eigener Server mit eigener Konfig (`port = …`, `MERGE_TRAIN_CONFIG=…`), nie der auf 8771.
 
 ## Tests
 
@@ -251,6 +276,7 @@ python3 tests/test_gitlab.py      # GitLab-Modus komplett, mit tests/fake-glab s
 ```
 
 Die Syntax des Seiten-Skripts prüft `test_gitlab.py` mit `node --check`, ohne node mit `biome`.
+`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt.
 
 `tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien und Draft-Notes.
 Mit `--behalten` bleibt der Testordner liegen.

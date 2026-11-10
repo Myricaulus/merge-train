@@ -145,3 +145,7 @@ body.mit-hud #rvstand{display:none}
 .ke .zu{flex:none;font-size:12px;color:var(--tn);cursor:pointer;width:12px;text-align:center} .ke .zu:hover{color:var(--p);font-weight:700} .ke .zu.erledigt{color:var(--muted);cursor:default}
 .mt a.codelink{color:var(--tn);cursor:pointer;font-family:ui-monospace,monospace;font-size:.95em} .mt a.codelink:hover{text-decoration:underline}
 .mt code{font:.92em ui-monospace,monospace;background:var(--bg2,rgba(127,127,127,.15));padding:0 3px;border-radius:3px}
+/* --beobachten: Rahmen um das seit dem vorigen Stand Neue (beobachten.js) */
+tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>td:last-child{box-shadow:inset -3px 0 0 var(--tf)}
+tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
+tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}

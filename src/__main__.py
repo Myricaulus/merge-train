@@ -5,6 +5,8 @@ Aufruf:
   merge-train [projekt] [--nur-datei]                   lokaler Zug bzw. nur dieses Projekt
   merge-train <MR-URL> | '!42' | gruppe/projekt!42      GitLab-MR reviewen
   merge-train --mrs                                     Zug der MRs, bei denen ich Reviewer bin
+  merge-train --stopp                                   Server beenden
+  merge-train --beobachten [ordner] [--von HEAD]        Arbeitsstand live beobachten (eigene Instanz)
   merge-train agent zeigen|pruefen <hinweise.json>      Agent-Hinweise zu einem MR (siehe docs/agent-hinweise.md)
 
 Ein kleiner Server auf 127.0.0.1 baut die Seiten beim Abruf (wie der „Changes“-Reiter in GitLab): oben Güterbahnhof

@@ -2,6 +2,19 @@
 
 Noch nicht entschieden, nur geparkt.
 
+## Beobachten als Bildschirmschoner
+
+Zu `merge-train --beobachten`: zum Zuschauen und Entspannen, während ein Agent oder ein eigener Refactor läuft.
+
+- ~~**Rahmen um das Neue**~~ (erledigt, `web/beobachten.js`, `api/neu`): Nach dem Neuladen wegen einer Änderung bekommen
+  die Zeilen, die sich seit dem zuletzt angezeigten Stand geändert haben, einen Rahmen; die Seite scrollt sanft hin. Er
+  bleibt bis zur nächsten Änderung. Offen: Stellen in eingeklapptem Kontext oder in nachzuladenden Dateien bekommen keinen
+  Rahmen (die Zeilen sind nicht auf der Seite), und eine zurückgenommene Änderung (wieder auf HEAD-Stand) zeigt nichts.
+- **Rest schrumpft**: Nur die gerahmten Stellen mit etwas Kontext bleiben groß, der übrige Code schrumpft zügig zusammen
+  (zusammengeklappt oder klein skaliert).
+- **Weiche Bewegungen** (nice to have): Rahmen gleitet zur neuen Stelle, Schrumpfen/Aufziehen animiert statt Sprung.
+  Sanftes Scrollen gibt es schon. Für weiche Übergänge eher nicht neu laden, sondern die Seite per fetch tauschen.
+
 ## Weitere geparkte Punkte
 
 - **Aussagekräftigere Namen**: „zustand“ ist zu allgemein – Zustand wovon? Gemeint ist die Review-/Gesprächsdatei eines

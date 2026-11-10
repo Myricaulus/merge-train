@@ -8,8 +8,8 @@ Neues Modul: in REIHENFOLGE eintragen (und in src/merge_train/__init__.py). Name
 import ast, os, sys
 
 P = "src/merge_train"
-REIHENFOLGE = ["einstellungen", "waggon", "git", "syntax", "zeilen", "web", "diff_html", "zustand", "gitlab", "hinweise",
-               "ansichten", "seite", "quellen", "zuhoerer", "review", "gespraech", "server", "agent_cli", "cli"]
+REIHENFOLGE = ["einstellungen", "waggon", "git", "syntax", "zeilen", "web", "diff_html", "zustand", "beobachter", "gitlab", "hinweise",
+               "ansichten", "seite", "quellen", "zuhoerer", "review", "gespraech", "server", "instanz", "agent_cli", "cli"]
 STD = ["argparse", "base64", "difflib", "glob", "hashlib", "html", "json", "os", "pkgutil", "re", "shlex", "shutil",
        "subprocess", "sys", "threading", "time"]
 

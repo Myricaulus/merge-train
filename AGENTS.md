@@ -33,6 +33,10 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 
 ## Tests
 
+`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (ohne Node; Regeln in `biome.json`). Nicht
+`biome lint src/merge_train/web` direkt: `App` und `MR` sind Globale aus dem Bündel, einzeln geprüft gibt es falsche
+„undeclared“.
+
 `python3 tests/test_einheiten.py` (schnell, zuerst), dann `python3 tests/test_gitlab.py` (GitLab-Modus mit `tests/fake-glab`, Port 8799).
 Die Einzeltests rufen Funktionen beim Namen auf, `test_gitlab.py` über `alles_laden` auch – beim Umbenennen mitziehen. Nicht `pkill -f "merge-train --server"`:
 das trifft auch den Server des Nutzers auf Port 8771.
