@@ -35,7 +35,7 @@ function autoLaden(){[...RV.kommentare,...RV.hinweise].forEach(x=>{const d=x.dat
 function uhr(iso){if(!iso)return'';const d=new Date(iso),hm=d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
  return d.toDateString()===new Date().toDateString()?hm:d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})+' '+hm}
 function fadenBox(k,mitOrt){ // Gespräch: Verlauf wie im Messenger, eigene Nachrichten rechts
- const wer=k.an||'Claude',[st0,cl]=STATUS[k.status]||['?',''],st=st0.replace('Claude',wer),box=el('div',{class:'kbox km gs st-'+k.status+(k.status==='erledigt'?' erledigt':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
+ const wer=k.an||'Claude',[st0,cl]=STATUS[k.status]||['?',''],st=(k.vom_agenten&&k.status==='antwort'&&k.nachrichten.length===1?'neu von Claude':st0).replace('Claude',wer),box=el('div',{class:'kbox km gs st-'+k.status+(k.status==='erledigt'?' erledigt':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
  const offen=!LESEN&&!k.lesen;
  const antw=()=>el('button',{onclick:()=>{const b=el('div',{class:'msg ich entwurf'});v.append(b);
   bearbeiten(b,'',t=>gsPost({aktion:'antworten',id:k.id,text:t}).then(sofortSenden),()=>b.remove(),undefined,true)}},'↩ antworten');
@@ -53,10 +53,19 @@ function fadenBox(k,mitOrt){ // Gespräch: Verlauf wie im Messenger, eigene Nach
   const mk=el('div',{class:'mk'},el('b',{},ich?'Du':'🤖 '+(m.wer||wer)),el('span',{},uhr(m.gesendet||m.zeit)),haken);
   if(ent&&offen)mk.append(el('button',{onclick:()=>bearbeiten(mb,m.text,t=>gsPost({aktion:'aendern',id:k.id,nid:m.id,text:t}))},'✎'),
    el('button',{onclick:()=>gsPost({aktion:'loeschen',id:k.id,nid:m.id})},'🗑'));
-  mb.append(mk,el('div',{class:'mt'},m.text));v.append(mb)});
- box.append(v);
+  mb.append(mk,el('div',{class:'mt'},...verlinkt(m.text,k.links)));v.append(mb)});
+ box.append(v);const sa=siehe(k.see_also);if(sa)box.append(sa);
  if(offen&&k.nachrichten.length>1)box.append(el('div',{class:'unten'},antw())); // auch unten, bei langen Fäden
  return box}
+function verlinkt(text,links){ // etwas Markdown (`code`, **fett**) und Code-Verweise (pfad:zeile, Dateiname) als Links aufs Popup
+ return text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).flatMap((t,i)=>i%2===0?links_(t,links)
+  :t[0]==='`'?[el('code',{},...links_(t.slice(1,-1),links))]:[el('b',{},...links_(t.slice(2,-2),links))])}
+function links_(text,links){
+ if(!links||!links.length||!text)return [text];const L={};links.forEach(l=>L[l.t]=l);
+ const esc=t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),rx=new RegExp('(?<![\\w/.-])('+Object.keys(L).sort((a,b)=>b.length-a.length).map(esc).join('|')+')(?![\\w/])','g');
+ const out=[];let i=0,m;while((m=rx.exec(text))){const l=L[m[1]];out.push(text.slice(i,m.index),
+  el('a',{class:'codelink',title:l.path+(l.zeile?':'+l.zeile+(l.bis?'-'+l.bis:''):''),onclick:()=>popup(l.path,l.zeile,null,l.bis)},m[1]));i=m.index+m[1].length}
+ out.push(text.slice(i));return out}
 function kommentarBox(k,mitOrt){
  const [st,cl]=STATUS[k.status]||['?',''],box=el('div',{class:'kbox km'+(k.status==='loeschen'?' weg':''),'data-id':k.id}),kn=el('span',{class:'knoepfe'});
  if(LESEN||k.lesen);

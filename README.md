@@ -36,6 +36,7 @@ merge-train agent zeigen  tasks/PROJ-824-review-markers.json
 merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
 merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „Feedback/Fragen senden“ gedrückt wird
+merge-train agent thread [--ort pfad:zeile] [--siehe …] [--vergleich A B] "…"   # Agent: eigenen Thread anlegen
 ```
 
 In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion.
@@ -52,6 +53,10 @@ Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ei
    (`--erledigt`, wenn umgesetzt). Die Antwort erscheint sofort an der Zeile (die Seite fragt alle 4 s nach),
    dazu eine Desktop-Meldung. Im Zug zeigt der Waggon „💬 n neu“, der Tab-Titel „(n)“.
 4. Mit **„↩ antworten“** geht das Gespräch weiter, „✓ erledigt“ schließt einen Faden.
+
+Der Agent kann auch selbst Threads anlegen (`merge-train agent thread`), etwa nach einer Umsetzung: je offenem Punkt
+einer an der Zeile („neu von Claude“), mit Siehe-auch-Links und Dateivergleich (`--siehe`, `--vergleich A B`), und
+die Zusammenfassung als allgemeiner Thread oben. Dateinamen und `pfad:zeile` in Nachrichten sind Links ins Popup.
 
 Nach neuen Commits wandern die Fäden mit ihrer Zeile mit. Wurde die Zeile selbst geändert, steht der Faden unter dem
 Dateinamen, mit dem damaligen Zeilentext. „fertig“ warnt bei offenen Fäden oder ungesendeten Entwürfen und räumt

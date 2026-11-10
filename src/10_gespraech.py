@@ -92,7 +92,12 @@ def g_daten(mr, ansicht=None):
         kom.append({"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": imd, "unter": unter if i is not None else None,
                     "problem": unter, "zeile_text": k.get("zeile_text"), "status": g_status(k),
-                    "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude"})
+                    "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
+                    "vom_agenten": bool(k.get("vom_agenten")),
+                    "see_also": see_also_aufloesen(struktur["ordner"], head, k.get("see_also"), None, k.get("path"))
+                    if k.get("see_also") else [],
+                    "links": code_links(struktur["ordner"], head, [m["text"] for m in k["nachrichten"]],
+                                        [d["neu"] for d in struktur["dateien"]])})
     ausserhalb = 0
     if ansicht:
         ans_st = ansicht_struktur(struktur, ansicht)
@@ -520,6 +525,87 @@ def g_kommentar(ziel, text, ziele=None):
     ort = f"{path}:{b}" if path and b else "allgemein"
     return (f"neuer Agent-Hinweis (draft) bei {ort} in {kurzpfad(datei)} – der Nutzer übernimmt oder verwirft ihn; "
             "der bisherige Kommentar bleibt unverändert")
+
+def g_anlegen(ziele, text, ort=None, siehe=(), als=None):
+    """Neuer Faden vom Agenten (erste Nachricht von ihm, gesendet): an pfad:zeile oder allgemein (ort None). siehe: see_also-
+    Einträge wie in der Review-JSON ("pfad:zeile-bis", {"path", "line", "end", "label", "diff"}). Rückgabe: (id, Meldung)."""
+    text = (text or "").strip()
+    if not text:
+        raise GitLabFehler("Text fehlt")
+    if len(ziele) > 1:
+        lokal = [g for g in ziele if g.get("lokal")]
+        if not lokal:
+            raise GitLabFehler("mehrere MRs zu diesem Repo – mit -p den MR angeben: " + ", ".join(mr_id(g) for g in ziele))
+        ziele = lokal[:1]
+    g = ziele[0]
+    wurzel, head = g_ort(g)
+    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": {"head_sha": head}, "erstellt": jetzt(),
+         "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True}
+    if als:
+        k["an"] = als
+    if ort:
+        m = re.fullmatch(r"(.+?)(?::(\d+))?", ort.strip())
+        path = pfad_norm(m.group(1))
+        t = inhalt(wurzel, head, path)
+        if t is None:
+            raise GitLabFehler(f"{path} gibt es im Stand {head[:8]} nicht")
+        b = int(m.group(2)) if m.group(2) else None
+        zeilen = t.split("\n")
+        if b and not 1 <= b <= zeilenzahl(t):
+            raise GitLabFehler(f"{path} hat keine Zeile {b} ({zeilenzahl(t)} Zeilen)")
+        k.update(path=path, b=b, zeile_text=zeilen[b - 1] if b else None)
+    sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"])
+    kaputt = [f'{s["path"] or "?"}: {s["problem"]}' for s in sa if s["problem"]]
+    if kaputt:
+        raise GitLabFehler("siehe auch: " + "; ".join(kaputt))
+    if siehe:
+        k["see_also"] = list(siehe)
+    k["nachrichten"].append(g_nachricht("claude", text, gesendet=True, wer=als))
+    with SPERRE:
+        st = review_laden(g)
+        st["kommentare"].append(k)
+        review_speichern(g, st)
+    wo = f'{k["path"]}:{k["b"]}' if k["b"] else (k["path"] or "allgemein")
+    melden(f"{g_name(g)}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
+    return k["id"], f'[{k["id"]}] Thread bei {wo} in {g_name(g)} angelegt'
+
+_DATEIEN = {}
+_LINK = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-][\w.-]*\.[A-Za-z]\w{0,9})(?::(\d+)(?:-(\d+))?)?(?![\w/])")
+
+def code_links(ordner, sha, texte, bevorzugt=()):
+    """Code-Verweise in Nachrichten (pfad, pfad:zeile, pfad:von-bis, auch nur der Dateiname, wenn eindeutig – bei
+    mehreren gewinnen die Dateien des Diffs) → [{t: Text im Original, path, zeile, bis}] für Links auf der Seite."""
+    texte = [t for t in texte if t]
+    if not texte or not sha:
+        return []
+    if (ordner, sha) not in _DATEIEN:
+        if len(_DATEIEN) > 20:
+            _DATEIEN.clear()
+        alle = (git(ordner, "-c", "core.quotepath=false", "ls-tree", "-r", "--name-only", sha, check=False) or "").splitlines()
+        namen = {}
+        for p in alle:
+            namen.setdefault(p.rsplit("/", 1)[-1], []).append(p)
+        _DATEIEN[(ordner, sha)] = (alle, set(alle), namen)
+    alle, menge, namen = _DATEIEN[(ordner, sha)]
+    bevorzugt, out = set(bevorzugt), {}
+    for text in texte:
+        for m in _LINK.finditer(text):
+            t, pfad = m.group(0), m.group(1)
+            pfad = pfad[2:] if pfad.startswith("./") else pfad
+            if t in out:
+                continue
+            if pfad in menge:
+                p = pfad
+            else:
+                kand = [x for x in alle if x.endswith("/" + pfad)] if "/" in pfad else namen.get(pfad, [])
+                if len(kand) > 1:
+                    kand = [x for x in kand if x in bevorzugt] or kand
+                if len(kand) != 1:
+                    continue
+                p = kand[0]
+            z = int(m.group(2)) if m.group(2) else None
+            out[t] = {"t": t, "path": p, "zeile": z, "bis": int(m.group(3)) if m.group(3) and z and int(m.group(3)) > z else None}
+    return list(out.values())
 
 def hinweis_text_aendern(h, text):
     """text eines Markers in der Review-JSON ersetzen, Formatierung der Datei möglichst erhalten."""

@@ -70,7 +70,7 @@ function kasten(id,name,items,sortierbar){const k=document.getElementById(id);if
  if(sortierbar&&items.length>1)sm.append(el('button',{class:'sortknopf',title:SORT?'Sortieren beenden':'Reihenfolge ändern – in dieser Reihenfolge gehen die Kommentare an GitLab',
   onclick:e=>{e.preventDefault();SORT=!SORT;k.open=true;kliste()}},SORT?'✓ fertig':'⇅ sortieren'));
  const titel=x=>x.title||(x.hinweis&&(RV.hinweise.find(h=>h.key===x.hinweis)||{}).title)||null;
- k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||(i.x.nachrichten&&i.x.nachrichten[0]||{}).text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
+ k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||(i.x.nachrichten&&i.x.nachrichten[0]||{}).text||'').replace(/\*\*|`/g,''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
   const e=el('div',{class:'ke '+i.art+(s?' sort':''),title:f,onclick:s?null:()=>springen(i)},
    s?el('span',{class:'griff',title:'ziehen zum Umsortieren'},'⠿'):null,
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
@@ -122,7 +122,7 @@ function popup(pfad,zeile,label,bisZ){schliessen(); // Code im MR-Stand; liegt d
  const zu=el('button',{title:'schließen (Esc)',onclick:schliessen},'✕');
  if(mitDiff){const d=ds[di];info.textContent='Diff im MR';
   kn.append(el('button',{title:'alle ausgeblendeten Zeilen dieser Datei laden',onclick:()=>alleAuf(pb)},'alles aufklappen'),
-   zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):null,gl,zu);
+   zeile?el('button',{onclick:()=>{schliessen();zeigen({datei:di,a:null,b:zeile,path:pfad})}},'im Diff zeigen'):'',gl||'',zu);
   dateiLaden(d).then(ok=>{if(!pb.isConnected)return; // Popup inzwischen zu
    if(!ok){pb.textContent='Diff nicht verfügbar';return}
    // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie dort
@@ -137,7 +137,7 @@ function popup(pfad,zeile,label,bisZ){schliessen(); // Code im MR-Stand; liegt d
  const st={von:Math.max(1,(zeile||1)-12),bis:(ende||1)+12},tb=el('tbody');
  const hoch=el('button',{onclick:()=>{st.von=Math.max(1,st.von-30);lade('oben')}},'▲ mehr'),runter=el('button',{onclick:()=>{st.bis+=30;lade('unten')}},'▼ mehr');
  const ganz=el('button',{title:'ganze Datei laden',onclick:()=>{st.von=1;st.bis=1e6;lade('erst')}},'ganze Datei');
- kn.append(hoch,runter,ganz,gl,zu);
+ kn.append(hoch,runter,ganz,gl||'',zu);
  pb.append(el('table',{},el('colgroup',{},el('col',{class:'cn'}),el('col',{})),tb));
  function lade(wie){const rest=pb.scrollHeight-pb.scrollTop;
   zeilenHolen(pfad,st.von,st.bis,true).then(r=>{if(!r.ok){tb.replaceChildren(el('tr',{},el('td',{},''),el('td',{class:'warn'},r.text)));return}

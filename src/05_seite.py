@@ -116,6 +116,14 @@ def projekt_seite(wurzel, ansicht=None):
                 review_speichern({"lokal": projekt}, st)
     return pfad, struktur
 
+def stand_name(wurzel, bis, head):
+    """Titel für bis: beim Arbeitsstand „Arbeitsstand <branch>“ (nicht Committetes dabei) bzw. „HEAD <branch>“ (sauber)."""
+    if bis != ARBEITSSTAND:
+        return bis
+    branch = (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(detached)"
+    sauber = head == (git(wurzel, "rev-parse", "HEAD", check=False) or "").strip()
+    return f"{'HEAD' if sauber else 'Arbeitsstand'} {branch}"
+
 def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     head = struktur["refs"]["head_sha"]
     ans = struktur.get("ansicht")
@@ -135,7 +143,7 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
     return diff_seite(titel=f"MR {html.escape(projekt)}", sid="projekt:" + projekt, lesen=lesen, daten=daten, head=head,
                       dateien=dateien, texte=texte, commits=commits,
-                      h1=f"{html.escape(projekt)}: {html.escape(bis)} → {html.escape(von)}",
+                      h1=f"{html.escape(projekt)}: {html.escape(stand_name(struktur['ordner'], bis, head))} → {html.escape(von)}",
                       fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
                       commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer)
 

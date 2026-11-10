@@ -1,6 +1,6 @@
 ---
 name: merge-train
-description: Answer the user's questions and feedback from merge-train (the user's local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, and listen for more with `merge-train agent horchen` in the background. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works in any repo: the merge-train repo itself (local mode, changes allowed) and GitLab MR clones (answer only).
+description: Answer the user's questions and feedback from merge-train (the user's local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, listen for more with `merge-train agent horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works in any repo: the merge-train repo itself (local mode, changes allowed) and GitLab MR clones (answer only).
 argument-hint: "[MR-URL | gruppe/projekt!42]"
 ---
 
@@ -106,6 +106,34 @@ EOF
 - Then answer the thread **very briefly**: "Done" for small things, otherwise one line on what changed (e.g. "Done:
   Finding-ID raus, auf 2 Sätze gekürzt"). Don't repeat the comment text in the thread.
 - If it's unclear which comment is meant (several on the line, none listed), ask back in the thread.
+
+## Starting threads yourself
+
+You can open threads too, e.g. after implementing something: points the user should check, decisions you made
+on your own, open questions. The user answers on the page; the answers reach you via `feedback`/`horchen` as usual.
+
+```sh
+merge-train agent thread --ort <pfad>:<zeile> "Text"      # at a code line (current state, see the header of feedback)
+merge-train agent thread - <<'EOF'                         # general thread (no --ort), text from stdin
+…
+EOF
+#   --siehe <pfad>[:<zeile>[-<bis>]][|Label]   "see also" link (repeatable)
+#   --vergleich <A> <B>[|Label]                two files side by side in a popup (repeatable)
+#   -p <MR|Projekt>                            other conversation (default: current repo, local before MR)
+```
+
+- **One thread per point**, at the line it is about: the problem or decision in 2–5 German sentences, what you
+  chose and why, what is open or what the user should decide. Unsure about something → thread, don't bury it in
+  a summary.
+- `--siehe` for the other places that matter (caller, test, the old behaviour), `--vergleich` when two files should
+  be read side by side (a copied handler, the old and the new variant, a test double and the real class).
+- **General output** (summary of the work, test results, list of the points) goes into **one general thread**
+  without `--ort`. File names and `pfad:zeile` in the text become links to the code on the page (exact path or
+  a unique file name; best in backticks, like `Foo.cs:42`).
+- Don't open threads for things the user already decided in the conversation, and don't open a thread per file
+  you touched – only where there is something to read, decide or check.
+- `thread` prints the id; leave it to the user to close the threads. If it fails with "kein Gespräch" (repo not in
+  merge-train), report in the console as before.
 
 ## Listen
 

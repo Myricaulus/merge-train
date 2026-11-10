@@ -81,6 +81,21 @@ esac
 
 ARBEIT_PRUEFEN = r"""
 import json, os, runpy, subprocess, sys
+def thread_pruefen(m, w):
+    g = {"lokal": m["projektname"](w)}
+    fid, _ = m["g_anlegen"]([g], "Unklar: a.py:1 und `neu.py` – fehlt.py nicht", "a.py:1",
+                            [{"path": "neu.py", "line": 1, "label": "neu"}, {"path": "neu.py", "diff": "a.py"}])
+    allg, _ = m["g_anlegen"]([g], "Zusammenfassung", None)
+    fehler = []
+    for args in (("x", "gibtsnicht.py:1"), ("x", "a.py:99"), ("x", None, ["gibtsnicht.py"])):
+        try:
+            m["g_anlegen"]([g], *args); fehler.append(False)
+        except m["GitLabFehler"]:
+            fehler.append(True)
+    d = m["g_daten"](g)
+    k = {x["id"]: x for x in d["kommentare"]}
+    text, n = m["g_abholen"]([g], markieren=False)
+    return {"faden": k.get(fid), "allg": k.get(allg), "fehler": fehler, "abholen": n}
 m = runpy.run_path(sys.argv[1], run_name="pruefen")
 w = sys.argv[2]
 g = lambda *a: subprocess.run(["git", "-C", w, *a], capture_output=True, text=True).stdout
@@ -93,7 +108,8 @@ pfad, struktur = m["projekt_seite"](w)
 print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
                   "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
                   "stat": st, "fertig": m["LOKAL"].kann["fertig"], "dateien": [d["neu"] for d in struktur["dateien"]],
-                  "seite": os.path.exists(pfad)}))
+                  "seite": os.path.exists(pfad), "titel": open(pfad, encoding="utf-8").read().split("<h1>")[1].split("</h1>")[0],
+                  **thread_pruefen(m, w)}))
 """
 
 def arbeitsstand_test():
@@ -124,6 +140,20 @@ def arbeitsstand_test():
     pruefe(d["stat"]["dateien"] == 4 and d["stat"]["sha"] == d["s1"] and sorted(d["dateien"]) == [".gitignore", "a.py", "neu.py", "weg.py"]
            and d["seite"], "Arbeitsstand: Waggon-Statistik und Diff-Seite gegen von")
     pruefe(d["fertig"] is False, "Arbeitsstand: „fertig“ ist aus (würde von verschieben)")
+    pruefe(d["titel"] == "klon: Arbeitsstand feature/x → main", "Arbeitsstand: Titel „Arbeitsstand <branch>“ – " + d["titel"])
+    f, a = d["faden"] or {}, d["allg"] or {}
+    pruefe(f.get("path") == "a.py" and f.get("b") == 1 and f.get("vom_agenten") and f.get("status") == "antwort"
+           and a.get("path") is None and a.get("status") == "antwort", "agent thread: an der Zeile und allgemein, wartet auf den Nutzer")
+    pruefe(sorted((l["t"], l["path"], l["zeile"]) for l in f.get("links") or []) == [("a.py:1", "a.py", 1), ("neu.py", "neu.py", None)],
+           "agent thread: Code-Verweise im Text werden Links (unbekannte Dateien nicht)")
+    pruefe([(x["path"], x["zeile"], x["vergleich"], x["problem"]) for x in f.get("see_also") or []] == [("neu.py", 1, None, None), ("neu.py", None, "a.py", None)],
+           "agent thread: siehe auch und Vergleich")
+    pruefe(d["fehler"] == [True, True, True] and d["abholen"] == 0, "agent thread: falsche Orte abgelehnt, nichts für den Agenten offen")
+    g("add", "-A"); g("commit", "-qm", "alles")
+    r = subprocess.run([sys.executable, "-c", "import runpy,sys; m=runpy.run_path(sys.argv[1],run_name='p'); "
+                        "print(open(m['projekt_seite'](sys.argv[2])[0],encoding='utf-8').read().split('<h1>')[1].split('</h1>')[0])",
+                        SKRIPT, w], capture_output=True, text=True, env=env)
+    pruefe(r.stdout.strip() == "klon: HEAD feature/x → main", "Arbeitsstand: ohne offene Änderungen „HEAD <branch>“ – " + r.stdout.strip() + r.stderr[-300:])
 
 def lokal_test():
     """Lokaler Projekt-Diff (claude gegen reviewed): gleiche Seite wie im GitLab-Modus, ohne glab."""

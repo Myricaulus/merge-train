@@ -55,6 +55,18 @@ def agent_main(argv):
     p.add_argument("ziel", help="h:<key> (draft), Kommentar-id oder Faden-id (Anfang genügt)")
     p.add_argument("text", help="neuer Kommentartext; - = von stdin")
     p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
+    p = sub.add_parser("thread", help="Gespräch: neuen Thread anlegen (Hinweis, offene Frage, Zusammenfassung)",
+                       description=gs + "Neuer Thread vom Agenten, an einer Code-Zeile oder allgemein (ohne --ort, z. B. die "
+                                   "Zusammenfassung am Ende). Datei- und pfad:zeile-Angaben im Text werden auf der Seite zu "
+                                   "Links. Antworten des Nutzers kommen wie sonst über feedback/horchen.")
+    p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")
+    p.add_argument("--ort", metavar="PFAD[:ZEILE]", help="Zeile im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon)")
+    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
+                   help="Siehe-auch-Link (mehrfach möglich)")
+    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A", "B[|LABEL]"),
+                   help="zwei Dateien nebeneinander vergleichen (Popup); mehrfach möglich")
+    p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
+    p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: Claude)")
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
                        description=gs + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")
@@ -64,7 +76,7 @@ def agent_main(argv):
     o = ap.parse_args(argv)
     if not o.befehl:
         ap.print_help(); return 2
-    if o.befehl in ("feedback", "antworten", "horchen", "kommentar"):
+    if o.befehl in ("feedback", "antworten", "horchen", "kommentar", "thread"):
         try:
             if o.befehl == "feedback":
                 text, _ = g_abholen(g_ziele(o.projekt), alle=o.alle)
@@ -73,6 +85,22 @@ def agent_main(argv):
                 text, n = g_horchen(g_ziele(o.projekt), o.timeout, o.als)
                 print(text); return 0 if n else 1
             text = sys.stdin.read().strip() if o.text == "-" else o.text.strip()
+            if o.befehl == "thread":
+                def eintrag(x, diff=None):
+                    x, _, label = x.partition("|")
+                    m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", x.strip())
+                    e = {"path": m.group(1)}
+                    if m.group(2):
+                        e["line"] = int(m.group(2))
+                    if m.group(3):
+                        e["end"] = int(m.group(3))
+                    if label.strip():
+                        e["label"] = label.strip()
+                    if diff:
+                        e["diff"] = diff.strip()
+                    return e
+                siehe = [eintrag(x) for x in o.siehe] + [eintrag(b, a) for a, b in o.vergleich]
+                print(g_anlegen(g_ziele(o.projekt), text, o.ort, siehe, o.als)[1]); return 0
             if o.befehl == "kommentar":
                 print(g_kommentar(o.ziel, text, g_ziele(o.projekt) if o.projekt else None)); return 0
             if not text and not o.erledigt:
