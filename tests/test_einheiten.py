@@ -18,7 +18,7 @@ from merge_train.git import zerlegen
 from merge_train.zeilen import alt_zeile, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts, zurueck_diffs
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
-from merge_train.review import abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
+from merge_train.review import Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
 
 
 def git(*a):
@@ -195,31 +195,31 @@ class Abschliessen(unittest.TestCase):
         vorhanden = {11: {"id": 11}, 12: {"id": 12}, 13: {"id": 13},
                      20: {"id": 20, "note": "**[`a.txt:5`](link)**\n\nschon in GitLab"}}
         s = abschluss_planen(akte, vorhanden, {"loeschen": 0, "neu": 1})
-        self.assertEqual([(x["id"], x["art"]) for x in s],
+        self.assertEqual([(x.id, x.art) for x in s],
                          [("loeschen", "loeschen"), ("neu", "anlegen"), ("da", "uebernehmen"), ("geaendert", "aendern"),
                           ("entfernen", "entfernen")])
-        da = next(x for x in s if x["id"] == "da")
-        self.assertEqual((da["gitlab_id"], da["gitlab_art"]), (20, "allgemein"))
-        self.assertEqual(next(x for x in s if x["id"] == "neu")["kommentar"]["text"], "ganz neu")
+        da = next(x for x in s if x.id == "da")
+        self.assertEqual((da.gitlab_id, da.gitlab_art), (20, "allgemein"))
+        self.assertEqual(next(x for x in s if x.id == "neu").kommentar["text"], "ganz neu")
 
     def test_ein_entwurf_nur_einmal_uebernommen(self):
         akte = {"kommentare": [kommentar(id="a", text="gleich"), kommentar(id="b", text="gleich")]}
         s = abschluss_planen(akte, {5: {"id": 5, "note": "gleich", "position": {"new_line": 5}}}, {})
-        self.assertEqual([x["art"] for x in s], ["uebernehmen", "anlegen"])
-        self.assertEqual(s[0]["gitlab_art"], "position")
+        self.assertEqual([x.art for x in s], ["uebernehmen", "anlegen"])
+        self.assertEqual(s[0].gitlab_art, "position")
 
     def test_eintragen(self):
         akte = {"kommentare": [kommentar(id="k", text="getippt, während gesendet wurde")]}
-        ok = schritt_eintragen(akte, {"art": "anlegen", "id": "k", "text": "gesendet"}, {"gitlab_id": 7, "gitlab_art": "position"})
+        ok = schritt_eintragen(akte, Schritt("anlegen", "k", "a.txt:5", "gesendet"), 7, "position")
         self.assertTrue(ok)
         self.assertEqual(kommentar_status(akte["kommentare"][0]), "geaendert")  # nichts still überschrieben
-        self.assertFalse(schritt_eintragen(akte, {"art": "anlegen", "id": "weg", "text": "x"}, {"gitlab_id": 8, "gitlab_art": "mr"}))
+        self.assertFalse(schritt_eintragen(akte, Schritt("anlegen", "weg", "allgemein", "x"), 8, "mr"))
 
     def test_eintragen_loeschen(self):
         akte = {"kommentare": [kommentar(id="weg", gitlab_id=1, geloescht=True),
                              kommentar(id="zurueck", gitlab_id=2, gitlab_text="Text")]}  # währenddessen wiederhergestellt
-        schritt_eintragen(akte, {"art": "loeschen", "id": "weg", "text": "Text"}, {})
-        schritt_eintragen(akte, {"art": "loeschen", "id": "zurueck", "text": "Text"}, {})
+        schritt_eintragen(akte, Schritt("loeschen", "weg", "a.txt:5", "Text", 1), None, None)
+        schritt_eintragen(akte, Schritt("loeschen", "zurueck", "a.txt:5", "Text", 2), None, None)
         self.assertEqual([k["id"] for k in akte["kommentare"]], ["zurueck"])
         self.assertEqual(kommentar_status(akte["kommentare"][0]), "neu")
 

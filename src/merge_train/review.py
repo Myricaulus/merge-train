@@ -1,5 +1,5 @@
 """Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
-import hashlib, os, re
+import hashlib, os, re, threading
 from datetime import datetime
 from .waggon import Fehler, Waggon
 from .git import ANLASS, anlass, git, inhalt, zerlegen
@@ -13,6 +13,8 @@ from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
 from .zuhoerer import horcht, kontext
+from collections import Counter
+from dataclasses import dataclass
 
 def stand(mr, akte):
     teile = [akte.get("struktur") or ""]
@@ -42,6 +44,27 @@ def gitlab_reihenfolge(akte, kom, hinweise):
     return out
 
 
+def kommentare_fuer_seite(akte, struktur):
+    """Review-Kommentare, wie die Seite sie braucht: Datei-Index, im Diff, Stufe."""
+    out = []
+    for k in review_kommentare(akte):
+        i = datei_index(struktur, k.get("path"))
+        f = struktur["dateien"][i] if i is not None else None
+        out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
+                    "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
+                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k)})
+    return out
+
+
+def sende_reihenfolge(mr, akte):
+    """id → Platz in der Box „GitLab-Kommentare“ (= Reihenfolge beim Senden). Ohne Struktur: leer."""
+    struktur = struktur_laden(akte)
+    if struktur is None:
+        return {}
+    hinweise, _ = hinweise_aufloesen(mr, akte, struktur)
+    return {i: n for n, i in enumerate(gitlab_reihenfolge(akte, kommentare_fuer_seite(akte, struktur), hinweise))}
+
+
 def review_daten(mr, ansicht=None):
     akte = akte_lesen(mr)
     struktur = struktur_laden(akte)
@@ -49,13 +72,7 @@ def review_daten(mr, ansicht=None):
         _, struktur, mr = mr_seite(mr)
         akte = akte_lesen(mr)
     hinweise, quellen = hinweise_aufloesen(mr, akte, struktur)
-    kom = []
-    for k in review_kommentare(akte):
-        i = datei_index(struktur, k.get("path"))
-        f = struktur["dateien"][i] if i is not None else None
-        kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
-                    "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
-                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k)})
+    kom = kommentare_fuer_seite(akte, struktur)
     reihenfolge = gitlab_reihenfolge(akte, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
@@ -368,138 +385,203 @@ def meta_und_entwuerfe(mr):
         return f_meta.result()[1], ent
 
 
-# ---- Review abschließen: planen (rein) → ausführen (GitLab, ohne Sperre) → je Schritt eintragen (kurz unter der Sperre)
+def mit_gitlab_abgleichen(mr, vorhanden, danach=None):
+    """Gesendete Kommentare mit den Entwürfen in GitLab abgleichen: eigene Kommentartexte ohne Sperre holen, dann
+    gesperrt eintragen. danach(akte) läuft in derselben Sperre (abschliessen plant dort).
+    Rückgabe (veröffentlicht, verworfen, Ergebnis von danach)."""
+    eigene_texte = abgleich_vorbereiten(mr, vorhanden)  # GitLab, ohne Sperre
+    with akte_bearbeiten(mr) as akte:
+        veroeffentlicht, verworfen = entwuerfe_abgleichen(akte, vorhanden, eigene_texte)
+        return veroeffentlicht, verworfen, danach(akte) if danach else None
+
+
+def mr_daten_holen(mr):
+    """Güterbahnhof „MR-Daten“: MR-Daten und Entwürfe aus GitLab, gesendete Kommentare abgleichen, Seite gleich bauen."""
+    vorher = akte_lesen(mr).get("struktur")
+    _, vorhanden = meta_und_entwuerfe(mr)
+    if isinstance(vorhanden, Fehler):
+        raise vorhanden
+    veroeffentlicht, verworfen, _ = mit_gitlab_abgleichen(mr, vorhanden)
+    try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
+        mr_seite(mr)
+        neu_laden = akte_lesen(mr).get("struktur") != vorher
+    except Fehler:
+        neu_laden = True
+    text = "MR-Daten geholt"
+    if verworfen:
+        text += f" · {verworfen} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, „Review abschließen“ sendet sie neu"
+    if veroeffentlicht:
+        text += f" · {veroeffentlicht} in GitLab veröffentlicht"
+    return {"ok": True, "text": text, "neu_laden": neu_laden}
+
+
+# ---- Review abschließen: planen (rein) → ausführen (GitLab, ohne Sperre) → je Schritt eintragen (kurz gesperrt)
 
 def kommentar_ort(k):
     z = k.get("b") or k.get("a")
     return (k.get("path") or "allgemein") + (f":{z}" if z else "")
 
 
-def abschluss_planen(akte, vorhanden, pos):
-    """Reine Funktion: was „Review abschließen“ in GitLab tun muss, in der Reihenfolge der Box „GitLab-Kommentare“
-    (pos: id → Platz). Schritte {art, id, ort, gitlab_id, text, …}, art:
+@dataclass
+class Schritt:
+    """Ein Schritt von „Review abschließen“. art:
       loeschen     Entwurf in GitLab löschen, dann lokal entfernen
       entfernen    zu löschen, aber in GitLab schon weg: nur lokal entfernen
       aendern      Text des Entwurfs in GitLab ersetzen
       uebernehmen  gleicher Entwurf ist schon in GitLab (z. B. Abbruch zwischen Anlegen und Speichern): nur merken
       anlegen      neuen Entwurf anlegen (kommentar: Kopie des Kommentars)"""
+    art: str
+    id: str             # Kommentar
+    ort: str            # für Meldungen: pfad:zeile bzw. „allgemein“
+    text: str           # Text, der gesendet wird
+    gitlab_id: object = None
+    gitlab_art: str = None  # bei uebernehmen: position | allgemein | mr
+    kommentar: dict = None  # bei anlegen
+
+
+def schritt_fuer(k, art, **mehr):
+    return Schritt(art, k["id"], kommentar_ort(k), k["text"], **{"gitlab_id": k.get("gitlab_id"), **mehr})
+
+
+def abschluss_planen(akte, vorhanden, platz):
+    """Reine Funktion: was „Review abschließen“ in GitLab tun muss, als Liste von Schritten in der Reihenfolge der Box
+    „GitLab-Kommentare“ (platz: id → Platz). Gesprächsfäden bleiben privat."""
     schritte = []
     vergeben = {k.get("gitlab_id") for k in review_kommentare(akte) if k.get("gitlab_id")}
-    for k in sorted(review_kommentare(akte), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
-        s = {"id": k["id"], "ort": kommentar_ort(k), "gitlab_id": k.get("gitlab_id"), "text": k["text"]}
+    for k in sorted(review_kommentare(akte), key=lambda k: platz.get(k["id"], len(platz))):
         if k.get("geloescht"):
-            s["art"] = "loeschen" if k.get("gitlab_id") in vorhanden else "entfernen"
-        elif k.get("gitlab_weg"):
-            continue
+            schritte.append(schritt_fuer(k, "loeschen" if k.get("gitlab_id") in vorhanden else "entfernen"))
+        elif k.get("gitlab_weg") or k.get("gitlab_id") and k["text"] == k.get("gitlab_text"):
+            continue  # veröffentlicht bzw. unverändert in GitLab
         elif k.get("gitlab_id"):
-            if k["text"] == k.get("gitlab_text"):
-                continue
-            s["art"] = "aendern"
+            schritte.append(schritt_fuer(k, "aendern"))
         else:
             da = next((d for i, d in vorhanden.items() if i not in vergeben and
                        ((d.get("note") or "") == k["text"] or (d.get("note") or "").endswith("\n\n" + k["text"]))), None)
             if da:
-                s.update(art="uebernehmen", gitlab_id=da["id"],
-                         gitlab_art="position" if da.get("position") else ("allgemein" if k.get("path") else "mr"))
                 vergeben.add(da["id"])
+                schritte.append(schritt_fuer(k, "uebernehmen", gitlab_id=da["id"], gitlab_art="position" if da.get("position")
+                                    else ("allgemein" if k.get("path") else "mr")))
             else:
-                s.update(art="anlegen", kommentar=dict(k))
-        schritte.append(s)
+                schritte.append(schritt_fuer(k, "anlegen", kommentar=dict(k)))
     return schritte
 
 
 def schritt_ausfuehren(mr, s, head, proj_url):
-    """Einen Schritt in GitLab ausführen (ohne Sperre). Rückgabe: Ergebnis-Felder (gitlab_id, gitlab_art)."""
-    P = mr_pfad(mr)
-    if s["art"] == "loeschen":
-        glab(mr.host, f'{P}/draft_notes/{s["gitlab_id"]}', "DELETE")
-    elif s["art"] == "aendern":
-        glab(mr.host, f'{P}/draft_notes/{s["gitlab_id"]}', "PUT", {"note": s["text"]})
-    elif s["art"] == "anlegen":
-        r, art = entwurf_anlegen(mr, s["kommentar"], head, proj_url)
-        return {"gitlab_id": (r or {}).get("id"), "gitlab_art": art}
-    elif s["art"] == "uebernehmen":
-        return {"gitlab_id": s["gitlab_id"], "gitlab_art": s["gitlab_art"]}
-    return {}
+    """Einen Schritt in GitLab ausführen (ohne Sperre). Rückgabe: (gitlab_id, gitlab_art) des Entwurfs bzw. (None, None)."""
+    entwurf = f"{mr_pfad(mr)}/draft_notes/{s.gitlab_id}"
+    if s.art == "loeschen":
+        glab(mr.host, entwurf, "DELETE")
+    elif s.art == "aendern":
+        glab(mr.host, entwurf, "PUT", {"note": s.text})
+    elif s.art == "anlegen":
+        antwort, gitlab_art = entwurf_anlegen(mr, s.kommentar, head, proj_url)
+        return (antwort or {}).get("id"), gitlab_art
+    elif s.art == "uebernehmen":
+        return s.gitlab_id, s.gitlab_art
+    return None, None
 
 
-def schritt_eintragen(akte, s, ergebnis):
+GITLAB_FELDER = ("gitlab_id", "gitlab_text", "gitlab_art", "gitlab_weg")
+
+
+def schritt_eintragen(akte, s, gitlab_id, gitlab_art):
     """Ergebnis eines Schritts in die Akte. gitlab_text = der gesendete Text: hat der Nutzer währenddessen getippt,
     ist der Kommentar danach „geaendert“ (staged) statt still überschrieben. Rückgabe False: Kommentar inzwischen weg."""
-    k = kommentar_finden(akte, s["id"])
+    k = kommentar_finden(akte, s.id)
     if k is None:
         return False
-    if s["art"] in ("loeschen", "entfernen"):
+    if s.art in ("loeschen", "entfernen"):
         if k.get("geloescht"):
             eintrag_entfernen(akte, k)
         else:  # währenddessen wiederhergestellt: in GitLab ist er weg, also wieder neu
-            for f in ("gitlab_id", "gitlab_text", "gitlab_art", "gitlab_weg"):
+            for f in GITLAB_FELDER:
                 k.pop(f, None)
-    elif s["art"] == "aendern":
-        k["gitlab_text"] = s["text"]
+    elif s.art == "aendern":
+        k["gitlab_text"] = s.text
+    elif s.art in ("anlegen", "uebernehmen"):
+        k.update(gitlab_id=gitlab_id, gitlab_text=s.text, gitlab_art=gitlab_art)
     else:
-        k.update(gitlab_id=ergebnis["gitlab_id"], gitlab_text=s["text"], gitlab_art=ergebnis["gitlab_art"])
+        raise ValueError(f"unbekannte Art {s.art}")
     return True
 
 
+def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler):
+    """Text nach „Review abschließen“. gezaehlt: Counter über die ausgeführten Arten, dazu „allgemein“."""
+    teile = []
+    if gezaehlt["anlegen"]:
+        teile.append(f'{gezaehlt["anlegen"]} neu' +
+                     (f' ({gezaehlt["allgemein"]} als allgemeiner Kommentar mit Link)' if gezaehlt["allgemein"] else ""))
+    if gezaehlt["aendern"]: teile.append(f'{gezaehlt["aendern"]} aktualisiert')
+    if gezaehlt["uebernehmen"]: teile.append(f'{gezaehlt["uebernehmen"]} waren schon da (nicht doppelt angelegt)')
+    if gezaehlt["loeschen"]: teile.append(f'{gezaehlt["loeschen"]} gelöscht')
+    text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
+            if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
+    if verworfen:
+        text += f" {verworfen} davon waren in GitLab verworfen und wurden neu angelegt."
+    if veroeffentlicht:
+        text += f" {veroeffentlicht} Entwurf/Entwürfe sind in GitLab schon veröffentlicht."
+    if fehler:
+        text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
+    return text
+
+
+_ABSCHLUSS_LAEUFT, _ABSCHLUSS_SPERRE = set(), threading.Lock()  # Waggons, deren „Review abschließen“ gerade läuft
+LAEUFT_SCHON = "„Review abschließen“ läuft für diesen MR schon (anderer Tab?) – danach die Seite neu laden."
+
+
 def abschliessen(mr):
-    """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen. Rückgabe (ok, text, web_url)."""
-    head = ((struktur_laden(akte_lesen(mr)) or {}).get("refs") or {}).get("head_sha")
+    """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen. Rückgabe (ok, text, web_url).
+    Je MR nur ein Lauf gleichzeitig: zwei Läufe planten denselben Stand und legten jeden Entwurf doppelt an."""
+    with _ABSCHLUSS_SPERRE:
+        if mr.id in _ABSCHLUSS_LAEUFT:
+            return False, LAEUFT_SCHON, akte_lesen(mr)["mr"].get("web_url", "")
+        _ABSCHLUSS_LAEUFT.add(mr.id)
+    try:
+        return abschluss_lauf(mr)
+    finally:
+        with _ABSCHLUSS_SPERRE:
+            _ABSCHLUSS_LAEUFT.discard(mr.id)
+
+
+def abschluss_lauf(mr):
+    akte = akte_lesen(mr)
+    head = ((struktur_laden(akte) or {}).get("refs") or {}).get("head_sha")
+    web = akte["mr"].get("web_url", "")
+    proj_url = web.split("/-/merge_requests/")[0]
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
     if head and gl_head and gl_head != head:
         return (False, f"GitLab steht auf {gl_head[:8]}, die Seite auf {head[:8]} – erst den lokalen Stand aktualisieren "
-                       "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or "")
-    try:
-        pos = {i: n for n, i in enumerate(review_daten(mr)["reihenfolge"])}  # wie in der Box „GitLab-Kommentare“
-    except Fehler:
-        pos = {}
-    web = akte_lesen(mr)["mr"].get("web_url", "")
-    proj_url = web.split("/-/merge_requests/")[0]
+                       "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or web)
     if isinstance(vorhanden, Fehler):
         return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
     try:
-        eigene_texte = abgleich_vorbereiten(mr, vorhanden)
+        veroeffentlicht, verworfen, schritte = mit_gitlab_abgleichen(
+            mr, vorhanden, lambda akte: abschluss_planen(akte, vorhanden, sende_reihenfolge(mr, akte)))
     except Fehler as e:
         return False, f"Kommentare des MR nicht abrufbar: {e}", web
-    z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "wieder": 0}
-    with akte_bearbeiten(mr) as akte:
-        z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(akte, vorhanden, eigene_texte)
-        schritte = abschluss_planen(akte, vorhanden, pos)
-    fehler = []
+    gezaehlt, fehler = Counter(), []
     for s in schritte:
         try:
-            ergebnis = schritt_ausfuehren(mr, s, head, proj_url)
+            gitlab_id, gitlab_art = schritt_ausfuehren(mr, s, head, proj_url)
         except Fehler as e:
-            fehler.append(f'{s["ort"]}: {e}')
+            fehler.append(f"{s.ort}: {e}")
             continue
         with akte_bearbeiten(mr) as akte:  # sofort eintragen: vergebene gitlab_ids überstehen einen Abbruch
-            noch_da = schritt_eintragen(akte, s, ergebnis)
-        if not noch_da and s["art"] == "anlegen" and ergebnis.get("gitlab_id"):  # währenddessen gelöscht: nicht verwaisen lassen
+            noch_da = schritt_eintragen(akte, s, gitlab_id, gitlab_art)
+        if not noch_da and s.art == "anlegen" and gitlab_id:  # währenddessen gelöscht: nicht verwaisen lassen
             try:
-                glab(mr.host, f'{mr_pfad(mr)}/draft_notes/{ergebnis["gitlab_id"]}', "DELETE")
+                glab(mr.host, f"{mr_pfad(mr)}/draft_notes/{gitlab_id}", "DELETE")
             except Fehler:
                 pass
             continue
-        z["neu"] += s["art"] == "anlegen"; z["allg"] += s["art"] == "anlegen" and ergebnis["gitlab_art"] == "allgemein"
-        z["akt"] += s["art"] == "aendern"; z["weg"] += s["art"] == "loeschen"; z["wieder"] += s["art"] == "uebernehmen"
+        gezaehlt[s.art] += 1
+        gezaehlt["allgemein"] += s.art == "anlegen" and gitlab_art == "allgemein"
     if not fehler:
         with akte_bearbeiten(mr) as akte:
             akte["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
-    teile = []
-    if z["neu"]: teile.append(f'{z["neu"]} neu' + (f' ({z["allg"]} als allgemeiner Kommentar mit Link)' if z["allg"] else ""))
-    if z["akt"]: teile.append(f'{z["akt"]} aktualisiert')
-    if z["wieder"]: teile.append(f'{z["wieder"]} waren schon da (nicht doppelt angelegt)')
-    if z["weg"]: teile.append(f'{z["weg"]} gelöscht')
-    text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
-            if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
-    if z["verworfen"]:
-        text += f' {z["verworfen"]} davon waren in GitLab verworfen und wurden neu angelegt.'
-    if z["veroeffentlicht"]:
-        text += f' {z["veroeffentlicht"]} Entwurf/Entwürfe sind in GitLab schon veröffentlicht.'
-    if fehler:
-        text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
-    return not fehler, text, web
+    return not fehler, abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler), web
 
 
 def ansicht_zuordnen(haupt, ans_st, eintraege):

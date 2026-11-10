@@ -9,6 +9,10 @@ class Fehler(Exception):
     """Fehler mit einer Meldung für den Nutzer bzw. den Agenten (kein Programmfehler)."""
 
 
+class Ungueltig(Fehler):
+    """Ungültige Eingabe (Kennung, Parameter einer Anfrage): beim Server 400."""
+
+
 def fertig_moeglich():
     """„fertig“ setzt den Branch von – nur bei lokalen Branches, nicht gegen origin/… oder den Arbeitsstand."""
     return BIS != ARBEITSSTAND and not VON.startswith(("origin/", "refs/remotes/"))
@@ -28,12 +32,12 @@ class Waggon(NamedTuple):
         if kennung.startswith("projekt:"):
             name = kennung[len("projekt:"):]
             if not name or any(t in ("", ".", "..") for t in name.split("/")):
-                raise Fehler(f"ungültige Projekt-Kennung: {kennung}")
+                raise Ungueltig(f"ungültige Projekt-Kennung: {kennung}")
             return cls(lokal=name)
         teile = kennung.split("/")
         if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
            or any(t in ("", ".", "..") for t in teile[1:-1]):
-            raise Fehler(f"ungültige MR-Kennung: {kennung}")
+            raise Ungueltig(f"ungültige MR-Kennung: {kennung}")
         return cls(host=teile[0], projekt="/".join(teile[1:-1]), iid=int(teile[-1]))
 
     @classmethod

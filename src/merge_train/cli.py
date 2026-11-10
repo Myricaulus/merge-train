@@ -5,7 +5,7 @@ from .waggon import Fehler
 from .git import ANLASS, finde_repos, git, projekt_ordner, statistik
 from .gitlab import ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig
 from .quellen import LOKAL
-from .server import im_browser, server, server_stoppen
+from .prozess import im_browser, server, server_stoppen
 from .instanz import beobachten_starten, zur_instanz
 from .agent_cli import agent_main
 

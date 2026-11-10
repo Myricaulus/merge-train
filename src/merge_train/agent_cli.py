@@ -15,7 +15,7 @@ from .quellen import quelle
 from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, seite_datei, todo_offen
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
-from .server import im_browser
+from .prozess import im_browser
 
 def gespraech_ziele(name=None):
     """Welche Gespräche meint der Agent? MR-Kennung/URL → dieses; Projekt → dessen lokales Gespräch;

@@ -9,7 +9,7 @@ import ast, os, sys
 
 P = "src/merge_train"
 REIHENFOLGE = ["einstellungen", "waggon", "git", "syntax", "zeilen", "web", "diff_html", "akte", "beobachter", "gitlab", "hinweise",
-               "ansichten", "seite", "quellen", "zuhoerer", "review", "gespraech", "server", "instanz", "agent_cli", "cli"]
+               "ansichten", "seite", "quellen", "zuhoerer", "review", "gespraech", "server", "prozess", "instanz", "agent_cli", "cli"]
 STD = ["argparse", "fcntl", "base64", "difflib", "glob", "hashlib", "html", "json", "os", "pkgutil", "re", "shlex", "shutil",
        "subprocess", "sys", "threading", "time"]
 

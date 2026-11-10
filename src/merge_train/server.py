@@ -1,22 +1,23 @@
 """Der kleine HTTP-Server auf 127.0.0.1: liefert Seiten und nimmt die Aktionen der Seite entgegen."""
-import json, os, re, subprocess, sys, threading, time
+import json, os, re, threading, time
 import urllib.parse
 from datetime import datetime
-from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, VON, dateiname, oeffnen, projektname, schluessel
-from .waggon import Fehler, Waggon
+from .einstellungen import BIS, KONF, SKRIPT, VON, dateiname, projektname, schluessel
+from .waggon import Fehler, Ungueltig, Waggon
 from .git import ANLASS, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
-from .akte import akte_bearbeiten, akte_lesen
+from .akte import akte_lesen
 from .beobachter import neue_zeilen, veraltet
-from .gitlab import mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
+from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
-from .review import (NUR_LESEN, abgleich_vorbereiten, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe,
-    seiten_struktur, stand, vergleich_daten, zeilen_daten)
+from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_daten_holen, seiten_struktur, stand,
+    vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from dataclasses import dataclass
 from typing import NamedTuple
 from . import syntax
 
@@ -29,31 +30,6 @@ ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{IC
 .durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
 <body><main class="durch"><section><div>👍</div><p>Alles durch – überall {VON} = {BIS}</p>
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
-
-
-LEERLAUF_S = int(KONF["leerlauf"])
-
-
-def server_laeuft(port=None):
-    import urllib.request
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port or PORT}/ping", timeout=0.5) as r:
-            return r.read() == b"merge-train"
-    except OSError:
-        return False
-
-
-def server_sicherstellen():
-    if server_laeuft():
-        return True
-    log = open(os.path.join(ORDNER, "server.log"), "a")
-    subprocess.Popen([sys.executable, SKRIPT, "--server"], start_new_session=True,
-                     stdin=subprocess.DEVNULL, stdout=log, stderr=log)
-    for _ in range(40):
-        time.sleep(0.1)
-        if server_laeuft():
-            return True
-    return False
 
 
 _VORBAU = threading.Lock()
@@ -75,11 +51,14 @@ def vorbauen(repos):
     threading.Thread(target=los, daemon=True).start()
 
 
-# ---- Routen: Handler auf Modulebene, ein Eintrag je (Methode, Pfad). Was viele brauchen, erledigt bearbeiten():
-# Schlüssel (mit_schluessel), eingeschaltete Quelle (quelle), Waggon aus „mr“ (waggon), „kann review“ (review),
-# Struktur der Seite (struktur), Fehler. Rückgabe eines Handlers: dict → JSON 200, (status, dict) → JSON, Antwort → roh.
+# ---- Routen: Handler auf Modulebene, ein Eintrag je (Methode, Pfad ohne führendes „/“). Was viele brauchen, erledigt
+# bearbeiten(): Schlüssel (mit_schluessel), eingeschaltete Quelle (quelle), Waggon aus „mr“ (waggon), „kann review“
+# (review), Struktur der Seite (struktur), Fehler.
+# Aufruf: handler(anfrage, *gruppen_der_regex, waggon=…, struktur=…) – die Schlüsselwörter nur, wenn die Route sie hat.
+# Rückgabe: dict → JSON 200, sonst eine Antwort (json_antwort für einen anderen Status).
 
-class Antwort(NamedTuple):
+@dataclass(frozen=True)
+class Antwort:
     status: int
     inhalt: object = b""
     typ: str = "text/html; charset=utf-8"
@@ -88,6 +67,14 @@ class Antwort(NamedTuple):
 
 def text_antwort(status, text, typ="text/plain; charset=utf-8"):
     return Antwort(status, text, typ)
+
+
+def json_antwort(status, d):
+    return Antwort(status, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
+
+
+def abgelehnt(status, text):
+    return json_antwort(status, {"ok": False, "text": text})
 
 
 def weiterleitung(ziel):
@@ -99,10 +86,15 @@ NICHT_GEFUNDEN = Antwort(404, "nicht gefunden", "text/plain")
 
 class Anfrage(NamedTuple):
     methode: str
-    pfad: str            # ohne führendes „/“ (GET) bzw. wie gesendet (POST)
+    pfad: str            # ohne führendes „/“ und ohne Query
     abfrage: str         # roher Query-String
     daten: dict          # GET: Query-Parameter, POST: JSON-Rumpf
     seiten_ansicht: tuple  # GET ?commit=… / ?seit=… für Seiten
+
+    @property
+    def will_json(self):
+        """Fehler als JSON (POST und api/…) oder als Text (Seiten)."""
+        return self.methode == "POST" or self.pfad.startswith("api/")
 
     @property
     def ansicht(self):
@@ -138,8 +130,13 @@ def route_finden(methode, pfad):
     return None, None, ()
 
 
-FALSCHER_SCHLUESSEL = {"GET": "falscher Schlüssel – Seite neu laden",
-                       "POST": "Abgelehnt: falscher Schlüssel – Seite neu laden."}
+def fehler_antwort(anfrage, status, text):
+    return abgelehnt(status, text) if anfrage.will_json else text_antwort(status, f"merge-train: {text}")
+
+
+def fehler_status(e):
+    """Ungueltig → 400 (Eingabe), GitLabFehler → 502 (GitLab/glab), sonst Fehler → 409 (passt nicht zum Stand)."""
+    return 400 if isinstance(e, Ungueltig) else 502 if isinstance(e, GitLabFehler) else 409
 
 
 def bearbeiten(anfrage):
@@ -147,32 +144,24 @@ def bearbeiten(anfrage):
     f, bed, gruppen = route_finden(anfrage.methode, anfrage.pfad)
     if not f or bed["quelle"] and not bed["quelle"].an():
         return NICHT_GEFUNDEN
-    als_json = lambda status, d: Antwort(status, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
     try:
         if bed["mit_schluessel"] and str(anfrage.daten.get("k", "")) != schluessel():
-            return als_json(403, {"ok": False, "text": FALSCHER_SCHLUESSEL[anfrage.methode]})
-        args = list(gruppen)
+            return fehler_antwort(anfrage, 403, "falscher Schlüssel – Seite neu laden")
+        mehr = {}
         if bed["waggon"]:
-            waggon = schluessel_von(anfrage.daten.get("mr", ""))
-            if bed["review"] and not waggon.kann["review"]:
-                return als_json(400, {"ok": False, "text": "Dieser Waggon hat kein Review"})
-            args.append(waggon)
+            mehr["waggon"] = schluessel_von(anfrage.daten.get("mr", ""))
+            if bed["review"] and not mehr["waggon"].kann["review"]:
+                return abgelehnt(400, "Dieser Waggon hat kein Review")
         if bed["struktur"]:
-            struktur = seiten_struktur(anfrage.daten.get("mr", ""), anfrage.ansicht)
-            if struktur is None:
-                return als_json(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
-            args.append(struktur)
-        r = f(anfrage, *args)
+            mehr["struktur"] = seiten_struktur(anfrage.daten.get("mr", ""), anfrage.ansicht)
+            if mehr["struktur"] is None:
+                return json_antwort(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
+        r = f(anfrage, *gruppen, **mehr)
     except Fehler as e:
-        r = (502, {"ok": False, "text": str(e)}) if anfrage.methode == "POST" else text_antwort(502, f"merge-train: {e}")
+        return fehler_antwort(anfrage, fehler_status(e), str(e))
     except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
-        t = f"merge-train: {type(e).__name__}: {e}"
-        r = (500, {"ok": False, "text": t}) if anfrage.methode == "POST" else text_antwort(500, t)
-    if isinstance(r, Antwort):  # vor tuple: Antwort ist selbst ein (Named)Tuple
-        return r
-    if isinstance(r, dict):
-        r = (200, r)
-    return als_json(*r)
+        return fehler_antwort(anfrage, 500, f"{type(e).__name__}: {e}")
+    return json_antwort(200, r) if isinstance(r, dict) else r
 
 
 # ---- GET: Seiten
@@ -270,7 +259,7 @@ def api_zeilen(anfrage, struktur):
     try:
         von, bis = int(anfrage.daten.get("von", 1)), int(anfrage.daten.get("bis", 1))
     except ValueError:
-        return 400, {"ok": False, "text": "von/bis ungültig"}
+        return abgelehnt(400, "von/bis ungültig")
     return zeilen_daten(struktur, anfrage.daten.get("pfad", ""), von, bis)
 
 
@@ -280,7 +269,7 @@ def api_datei(anfrage, struktur):
     try:
         return datei_nachladen(struktur, int(anfrage.daten.get("i", -1)))
     except ValueError:
-        return 400, {"ok": False, "text": "i ungültig"}
+        return abgelehnt(400, "i ungültig")
 
 
 @route("GET", "api/vergleich", struktur=True)
@@ -295,7 +284,7 @@ def mit_review(waggon, anfrage, ok, text, **mehr):
     return dict(mehr, ok=ok, text=text, review=wagen_daten(waggon, anfrage.ansicht) if ok else None)
 
 
-@route("POST", "/api/kommentar", waggon=True)
+@route("POST", "api/kommentar", waggon=True)
 def api_kommentar(anfrage, waggon):
     if anfrage.daten.get("gespraech") or not waggon.kann["review"]:  # Fragen an den Agenten: Fäden, nie nach außen
         ok, text = gespraech_aktion(waggon, anfrage.daten)
@@ -304,23 +293,31 @@ def api_kommentar(anfrage, waggon):
     return mit_review(waggon, anfrage, ok, text)
 
 
-@route("POST", "/api/gespraech", waggon=True)
+def feedback_senden_aktion(anfrage, waggon):
+    ok, text, todo_id = feedback_senden(waggon)
+    return mit_review(waggon, anfrage, ok, text, todo=todo_id)
+
+
+def session_starten_aktion(anfrage, waggon):
+    return mit_review(waggon, anfrage, *session_starten(waggon))
+
+
+GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_starten_aktion}
+
+
+@route("POST", "api/gespraech", waggon=True)
 def api_gespraech(anfrage, waggon):
-    aktion = anfrage.daten.get("aktion")
-    if aktion == "senden":
-        ok, text, tid = feedback_senden(waggon)
-        return mit_review(waggon, anfrage, ok, text, todo=tid)
-    if aktion == "starten":
-        return mit_review(waggon, anfrage, *session_starten(waggon))
-    return 400, {"ok": False, "text": "unbekannte Aktion"}
+    """Ganzes Gespräch: Feedback senden, Agenten-Session starten."""
+    aktion = GESPRAECH_AKTIONEN.get(anfrage.daten.get("aktion"))
+    return aktion(anfrage, waggon) if aktion else abgelehnt(400, "unbekannte Aktion")
 
 
-@route("POST", "/api/hinweis", waggon=True, review=True)
+@route("POST", "api/hinweis", waggon=True, review=True)
 def api_hinweis(anfrage, waggon):
     return mit_review(waggon, anfrage, *hinweis_aktion(waggon, anfrage.daten))
 
 
-@route("POST", "/api/abschliessen", waggon=True, review=True)
+@route("POST", "api/abschliessen", waggon=True, review=True)
 def api_abschliessen(anfrage, waggon):
     ansicht = anfrage.ansicht
     if ansicht and ansicht[0] == "commit":
@@ -329,56 +326,43 @@ def api_abschliessen(anfrage, waggon):
     return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht)}
 
 
-@route("POST", "/fertig")
+@route("POST", "fertig")
 def api_fertig(anfrage):
     d = anfrage.daten
     waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
     if not waggon.kann["fertig"]:
         return NICHT_GEFUNDEN
     ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
-    return 200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)}
+    return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
 
 
-@route("POST", "/api/gitlab", quelle=GITLAB)
+def mr_liste_aktion(anfrage):
+    items, _ = mr_liste_holen()
+    return {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"}
+
+
+def mr_daten_aktion(anfrage):
+    return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
+
+
+GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion}
+
+
+@route("POST", "api/gitlab", quelle=GITLAB)
 def api_gitlab(anfrage):
     """Güterbahnhof: GitLab nur auf Knopfdruck."""
-    aktion = anfrage.daten.get("aktion")
-    if aktion == "mrliste":
-        items, _ = mr_liste_holen()
-        return {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"}
-    if aktion == "mrdaten":
-        return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
-    return 400, {"ok": False, "text": "unbekannte Aktion"}
+    aktion = GITLAB_AKTIONEN.get(anfrage.daten.get("aktion"))
+    return aktion(anfrage) if aktion else abgelehnt(400, "unbekannte Aktion")
 
 
-def mr_daten_holen(mr):
-    """MR-Daten und Entwürfe aus GitLab, gesendete Kommentare abgleichen, Seite gleich bauen."""
-    vorher = akte_lesen(mr).get("struktur")
-    _, vorhanden = meta_und_entwuerfe(mr)
-    if isinstance(vorhanden, Fehler):
-        raise vorhanden
-    eigene_texte = abgleich_vorbereiten(mr, vorhanden)  # GitLab, ohne Sperre
-    with akte_bearbeiten(mr) as akte:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
-        pub, verw = entwuerfe_abgleichen(akte, vorhanden, eigene_texte)
-    try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
-        mr_seite(mr)
-        neu_laden = akte_lesen(mr).get("struktur") != vorher
-    except Fehler:
-        neu_laden = True
-    text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
-                                "„Review abschließen“ sendet sie neu" if verw else "") + \
-        (f" · {pub} in GitLab veröffentlicht" if pub else "")
-    return {"ok": True, "text": text, "neu_laden": neu_laden}
-
-
-@route("POST", "/stopp")
+@route("POST", "stopp")
 def api_stopp(anfrage):
     """merge-train --stopp: wie Leerlauf, laufende Aktionen werden noch fertig."""
     _STOPP.set()
     return {"ok": True, "text": "Server beendet sich"}
 
 
-@route("POST", "/tschuess")
+@route("POST", "tschuess")
 def api_tschuess(anfrage):
     """--beobachten: Tab verlassen (Beacon bei pagehide, auch beim Neuladen). Kommt danach nichts mehr, endet der Server."""
     if KONF["beobachten"]:
@@ -430,13 +414,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Origin", f"http://127.0.0.1:{PORT}") not in HERKUNFT:
             return Antwort(403, "verboten", "text/plain")
         try:
-            d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-        except Exception as e:
-            return Antwort(500, json.dumps({"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"},
-                                           ensure_ascii=False), "application/json; charset=utf-8")
-        if d.get("aktion"):
-            ANLASS.name = f"{self.path} {d['aktion']}"[:32]
-        return bearbeiten(Anfrage("POST", self.path, "", d, None))
+            daten = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            if not isinstance(daten, dict):
+                raise ValueError("kein JSON-Objekt")
+        except ValueError as e:
+            return abgelehnt(400, f"merge-train: ungültiges JSON: {e}")
+        if daten.get("aktion"):
+            ANLASS.name = f"{self.path} {daten['aktion']}"[:32]
+        return bearbeiten(Anfrage("POST", self.path.partition("?")[0].lstrip("/"), "", daten, None))
 
     def senden(self, antwort):
         if antwort.ort:
@@ -446,54 +431,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(antwort.status); self.send_header("Content-Type", antwort.typ)
         self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
         self.end_headers(); self.wfile.write(body)
-
-
-def dateizeiten(pfade):
-    out = []
-    for p in pfade:
-        try: out.append(os.path.getmtime(p))
-        except OSError: out.append(None)
-    return out
-
-
-def server_bewachen(srv, beobachtet):
-    """Bis LEERLAUF_S ohne Anfrage, „merge-train --stopp“, Tab zu (--beobachten) oder bis Skript/Einstellung sich ändern;
-    dann laufende Aktionen (z. B. „Review abschließen“) fertig werden lassen und den Server anhalten.
-    Rückgabe: True = mit neuem Stand neu starten."""
-    anfang, neu = dateizeiten(beobachtet), False
-    while time.time() - _LETZTE_ANFRAGE[0] < LEERLAUF_S:
-        if _STOPP.wait(2):
-            break
-        abschied = _ABSCHIED[0]
-        if abschied is not None and _LETZTE_ANFRAGE[0] <= abschied and time.time() - abschied > ABSCHIED_S:
-            break
-        jetzt = dateizeiten(beobachtet)
-        if jetzt[0] is None:  # Skript umbenannt/gelöscht: beenden
-            break
-        if jetzt != anfang:
-            neu = True; break
-    bis = time.time() + 600
-    while _LAUFEND[0] > 0 and time.time() < bis:
-        time.sleep(0.2)
-    srv.shutdown()
-    return neu
-
-
-def server():
-    """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
-    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage oder auf „merge-train --stopp“, startet neu bei
-    neuem Skript/neuer Einstellung."""
-    schluessel()
-    _LETZTE_ANFRAGE[0] = time.time()
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    syntax.SERVER_SOCKET = srv.socket
-    beobachtet = [SKRIPT, KONFIG_DATEI]
-    neu = []
-    threading.Thread(target=lambda: neu.append(server_bewachen(srv, beobachtet)), daemon=True).start()
-    srv.serve_forever()
-    srv.server_close()
-    if neu and neu[0]:
-        os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
 
 
 _SERVER_STAND = [0, None]
@@ -513,31 +450,3 @@ def server_stand():
                   "geaendert": False}
         _SERVER_STAND[:] = [time.time(), akte]
     return _SERVER_STAND[1]
-
-
-def server_stoppen():
-    """merge-train --stopp: den Server auf PORT beenden (laufende Aktionen werden noch fertig). Rückgabe: Exit-Code."""
-    import urllib.request
-    if not server_laeuft():
-        print(f"merge-train: kein Server auf Port {PORT}"); return 0
-    anfrage = urllib.request.Request(f"http://127.0.0.1:{PORT}/stopp", method="POST",
-                                     data=json.dumps({"k": schluessel()}).encode(),
-                                     headers={"Content-Type": "application/json"})
-    try:
-        urllib.request.urlopen(anfrage, timeout=5).read()
-    except OSError as e:
-        print(f"merge-train: Server auf Port {PORT} lehnt ab: {e}", file=sys.stderr); return 1
-    for _ in range(100):
-        if not server_laeuft():
-            print(f"merge-train: Server auf Port {PORT} beendet"); return 0
-        time.sleep(0.1)
-    print(f"merge-train: Server auf Port {PORT} beendet sich, sobald laufende Aktionen fertig sind"); return 0
-
-
-def im_browser(pfad, nur_url=False):
-    if not server_sicherstellen():
-        sys.exit(f"merge-train: Server startet nicht – siehe {os.path.join(ORDNER, 'server.log')}")
-    url = f"http://127.0.0.1:{PORT}{pfad}"
-    print(url)
-    if not nur_url:
-        oeffnen(url)

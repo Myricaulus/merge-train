@@ -17,7 +17,8 @@
   zuhoerer       Agenten-Sessions, die zuhören
   review         Review-Kommentare, Abgleich mit GitLab, abschließen
   gespraech      Gespräch mit dem Agenten
-  server         HTTP-Server
+  server         HTTP-Server: Routen und Handler
+  prozess        der Server als Prozess: starten, bewachen, beenden
   instanz        --beobachten: eigene Instanz je Repo (Port, Ordner), agent-Befehle dorthin
   agent_cli      merge-train agent …
   cli            Aufruf von der Kommandozeile

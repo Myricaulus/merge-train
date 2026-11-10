@@ -7,7 +7,7 @@ Server beendet sich, wenn ihr Tab zu ist. agent-Befehle aus dem Repo landen von 
 import hashlib, json, os, re, subprocess, sys, time
 from .einstellungen import ARBEITSSTAND, DATEN_HAUPT, INSTANZ, KONF, SKRIPT, dateiname, ersetzen, oeffnen
 from .git import finde_repos, git, projekt_ordner
-from .server import server_laeuft
+from .prozess import server_laeuft
 
 def repo_wurzel(ordner):
     """Ordner oder Projektname → Wurzel des Repos (realpath), sonst None."""
