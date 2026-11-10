@@ -33,8 +33,8 @@ tr.blink td{animation:blink 1.8s ease-out} @keyframes blink{0%,30%{background:va
 background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
 #popup .pk{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand);border-radius:8px 8px 0 0;font-size:13px}
 #popup .pb{overflow:auto} #popup tr.ziel td{background:var(--akt)}
-#kliste{border-bottom:1px solid var(--rand)} #kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
-#kliste>div{max-height:38vh;overflow-y:auto;overflow-x:hidden}
+details.kliste{border-bottom:1px solid var(--rand)} details.kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
+details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px;border-left:3px solid transparent}
 .ke:hover{background:var(--kopf)} .ke.hw{border-left-color:var(--tf)} .ke.km{border-left-color:var(--tn)}
 .ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}

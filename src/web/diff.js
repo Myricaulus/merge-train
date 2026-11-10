@@ -53,14 +53,15 @@ function springen(i){ // aus der Kommentarliste: zum Kasten (bei Bedarf Kontext/
   b.scrollIntoView({block:'center'});markiere();blinken(b);return true};
  if(hin())return;
  (i.x.datei!=null?zeigen(i.x,true):Promise.resolve(false)).then(()=>{if(!hin())zeigen(i.x)})}
-function kliste(){const k=document.getElementById('kliste');if(!k)return;
- const items=[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
-  ...(RV.faeden||[]).map(x=>({art:'km',id:x.id,x,st:x.status})), // Gesprächsfäden
-  ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))]
-  .sort((p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0)));
- k.querySelector('summary').textContent='Kommentare ('+items.length+')';
+function kliste(){ // links: GitLab-Kommentare (Entwürfe, Agent-Hinweise) und KI-Threads (privat) getrennt
+ const nach=(p,q)=>((p.x.datei??-1)-(q.x.datei??-1))||((p.x.b||p.x.a||0)-(q.x.b||q.x.a||0));
+ kasten('kliste','GitLab-Kommentare',[...RV.kommentare.filter(x=>x.status!=='loeschen').map(x=>({art:'km',id:x.id,x,f:x.finding,st:x.status})),
+  ...RV.hinweise.filter(h=>h.status==='offen').map(h=>({art:'hw',id:h.key,x:h,f:h.finding}))].sort(nach));
+ kasten('kliste-ki','KI-Threads',(RV.faeden||[]).map(x=>({art:'km',id:x.id,x,st:x.status})).sort(nach))}
+function kasten(id,name,items){const k=document.getElementById(id);if(!k)return;
+ k.hidden=!items.length;k.querySelector('summary').textContent=name+' ('+items.length+')';
  const titel=x=>x.title||(x.hinweis&&(RV.hinweise.find(h=>h.key===x.hinweis)||{}).title)||null;
- k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
+ k.querySelector('div').replaceChildren(...items.map(i=>{const t=String(i.x.text||(i.x.nachrichten&&i.x.nachrichten[0]||{}).text||''),f=titel(i.x)||(i.f&&t.startsWith(i.f)?t.slice(i.f.length).trim():t);
   return el('div',{class:'ke '+i.art,title:f,onclick:()=>springen(i)},
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
    i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f))}))}
