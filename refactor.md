@@ -345,3 +345,119 @@ in `docs/ideen.md`.
 - Weitere lange Funktionen (`agent_main` ~170 Zeilen mit argparse-Unterbefehlen, `seite_bauen`, `hinweise_aufloesen`)
   nur anfassen, wenn ein Schritt sie ohnehin berührt. Ein naheliegender Nachfolger wäre, `agent_main` in je eine
   Funktion pro Unterbefehl zu teilen (`argparse` mit `set_defaults(aufruf=…)`).
+
+---
+
+## Bewertung der Schritte 4–8 (Kritik, nichts korrigiert)
+
+Stand `e3efe7d`, 2026-11-11. Geschrieben von dem Agenten, der die Schritte 4–8 ausgeführt hat, also keine
+unabhängige Sicht. Grundlage: Code noch einmal gelesen, Biome über die JS-Dateien, Tests wie oben.
+
+**Gesamturteil.** Die Struktur ist besser als vorher, und das Verhalten ist für die geprüften Fälle gleich. Die
+Schritte 4 (Zugriff auf die Datei), 5 (Routen) und 6 (GitLab ohne Sperre) haben ihr Ziel erreicht. Schritt 7 hat die
+Namen und die Dateigrenzen verbessert, aber nicht die Größe der Funktionen. Schritt 8 ist dünn. Ein Punkt ist ein
+echtes neues Risiko (doppeltes Abschließen, siehe unten), der Rest sind Halbheiten und Dinge, die der Umbau sichtbar
+gemacht, aber nicht gelöst hat.
+
+### Neues Risiko
+
+- **Zwei „Review abschließen“ gleichzeitig legen Entwürfe doppelt an.** Vorher hielt `abschliessen` die Sperre über den
+  ganzen Lauf, ein zweiter Aufruf wartete und fand danach die `gitlab_id`s vor. Jetzt planen beide Läufe unter der
+  Sperre denselben Stand und senden danach beide. Der zweite überschreibt die `gitlab_id` des ersten, dessen Entwurf
+  bleibt in GitLab verwaist. Der Knopf ist während des Laufs gesperrt, das schützt aber nur denselben Tab. Schritt 6
+  hat die Sperre entfernt, ohne einen Ersatz („läuft schon“ je Waggon) einzubauen. Nicht getestet.
+
+### Schritt 4: Zustand
+
+- **Die Sperre gilt nur im Serverprozess.** `merge-train agent …` läuft als eigener Prozess und schreibt dieselbe Datei
+  mit `with zustand(…)`. Laden–ändern–speichern von Server und Agent können sich gegenseitig überschreiben. Das war
+  vorher schon so, aber der Kopfkommentar („Zugriff nur hierüber … unter SPERRE“) klingt jetzt sicherer, als es ist.
+  Ein Schritt namens „Zustand kapseln“ wäre der Ort für eine Dateisperre gewesen.
+- **Speichern beim Verlassen ist eine Falle.** Aktionen melden Fehler als Rückgabe `(False, text)`, nicht als
+  Ausnahme. Der Kontextmanager kann Erfolg und Misserfolg nicht unterscheiden und speichert alles, was bis dahin
+  geändert wurde. Dass das hält, hängt an der Regel „erst prüfen, dann ändern“, die nur als Kommentar in
+  `kommentar_neu` steht.
+- `review_laden` macht aus einer kaputten Datei stillschweigend `{}`; das nächste `with zustand` speichert den leeren
+  Stand darüber. Alt, aber durch das automatische Speichern leichter zu treffen.
+- Namen: `zustand` (Hinweis des Nutzers, oben). Dazu heißen die Funktionen darunter weiter `review_datei/_laden/
+  _speichern`, auch für lokale Gespräche ohne Review, und der Parameter mal `mr`, mal `waggon` (`review_laden(mr)`,
+  `faeden_archivieren(mr)`, `gespraech_daten(mr)` für lokale Projekte).
+
+### Schritt 5: Server
+
+- **Die Handler haben eine stille Aufrufkonvention.** Welche Argumente ein Handler bekommt, hängt von den Schaltern
+  der Route ab (`anfrage`, Regex-Gruppen, `waggon`, `struktur`, in dieser Reihenfolge). Die Rückgabe hat drei Formen
+  (dict, `(status, dict)`, `Antwort`), und `Antwort` ist selbst ein Tupel. Genau darüber ist beim Umbau ein Fehler
+  entstanden. Die Stelle ist jetzt richtig, die Konstruktion bleibt fehleranfällig.
+- **Die Tabellen sind nur halb durchgezogen.** `api_gespraech`, `api_gitlab` und `hinweis_aktion` verteilen weiter mit
+  `if aktion == …`. „neu“ ist bei Fäden ein Sonderfall neben `AM_FADEN`, bei Kommentaren eine zweite Tabelle. Die
+  Funktionen in den Tabellen nehmen Parameter, die sie nicht brauchen (`faden_erledigen(st, k, m, text)`,
+  `kommentare_sortieren(mr, st, d, ansicht)`).
+- `mr_daten_holen` ist Fachlogik und steht in `server.py`. Die Folge „Entwürfe holen → `abgleich_vorbereiten` → unter
+  der Sperre `entwuerfe_abgleichen`“ steht zweimal (dort und in `abschliessen`).
+- Unschönes wurde übernommen statt bereinigt: jeder `Fehler` wird 502, auch Eingabefehler; kaputtes JSON im POST ist
+  500; falscher Schlüssel bei GET kommt als JSON, andere GET-Fehler als Text; GET-Pfade ohne, POST-Pfade mit „/“.
+  Das war die Vorgabe („Verhalten gleich“), verschenkt aber den Moment, in dem es billig gewesen wäre.
+- `server.py` hat weiter 491 Zeilen und fünf Aufgaben (Prozess starten, Routen, HTTP, Wächter, Stand fürs HUD).
+- Der Vergleich alter/neuer Server (~45 Anfragen) lief aus einem Skript im Temp-Ordner und ist nicht im Repo. Für
+  `bearbeiten()` und die Routen gibt es keinen Einzeltest.
+
+### Schritt 6: Abschließen
+
+- `abschliessen` ist mit 58 Zeilen weiter die zweitlängste Funktion. Knapp die Hälfte baut den Meldungstext aus dem
+  Zähler-Dict `z`.
+- Ein Schritt ist ein Dict mit Feldern je nach `art`; drei Funktionen verzweigen über denselben String
+  (`abschluss_planen`, `schritt_ausfuehren`, `schritt_eintragen`). Der `else`-Zweig in `schritt_eintragen` meint
+  „anlegen oder uebernehmen“, ohne es zu sagen.
+- Vor dem Planen wird der Zustand viermal ohne Sperre gelesen (`head`, `review_daten`, `web`,
+  `abgleich_vorbereiten`). `pos` stammt aus einem älteren Stand als der Plan. Folgen sind harmlos (Reihenfolge),
+  die Stelle ist aber unnötig schwer zu durchschauen.
+- Die neuen Zwischenzustände (Nutzer tippt, löscht, stellt wieder her, während gesendet wird) sind nur in
+  `schritt_eintragen` einzeln getestet. Der Ablauf drumherum (Fehler mitten in der Liste, verwaisten Entwurf wieder
+  löschen) hat keinen Test.
+
+### Schritt 7: JavaScript
+
+- **Lesbarer, aber nicht kleiner.** `review.js` 840 und `diff.js` 654 Zeilen; `popup` 149, `fadenBox` 118, `kasten`
+  111, `hudZeichnen` 102 Zeilen. Zerlegt wurde nach Dateien, nicht nach Funktionen.
+- **`App` ist ein Sammelbecken mit rund 35 Einträgen.** Die gegenseitige Abhängigkeit von `diff.js` und `review.js`
+  besteht weiter, nur über `App` („später geladen, daher erst beim Aufruf“). Die Ladereihenfolge bleibt eine
+  stille Voraussetzung. `toasts.js` ersetzt `App.melden` nachträglich; wer `melden` am Dateianfang aus `App`
+  herausnimmt, bekommt die alte Fassung. Heute tut das keine Datei, nichts verhindert es.
+- **Die Kopfkommentare „Braucht von App / Stellt bereit“ pflegt niemand.** Die Prüfung dazu (freie Namen, jedes
+  gelesene `App.x` wird gesetzt) lag im Temp-Ordner und ist nicht im Repo. Dasselbe gilt für den Browser-Vergleich
+  der 25 Schritte. Die Aussage „geprüft“ in diesem Dokument lässt sich so nicht wiederholen.
+- Zeilen über 120 Zeichen gibt es weiter (bis 251 in `zeichnungen.js`, 183 in `hud.js`): lange Zeichenketten und
+  Kommentare, die prettier nicht umbricht.
+- 7b ist ein einziger Commit mit Umbenennen, `App`, neuen Dateien und zwei Verhaltensänderungen (`melden`, Startseite).
+  Umbenannt wurde mit einem selbst geschriebenen Lexer plus Nacharbeit von Hand. Das lässt sich im Diff nicht
+  nachvollziehen, nur glauben.
+- Biome (Regeln aus `biome.json` von `claude`) meldet außer den erwarteten globalen `App`/`MR`: 3× `==` in `diff.js`,
+  eine unbenutzte Variable in `zug.js`. Das `./pruefen` auf `claude` passt nicht mehr (Dateinamen, Pfad, Annahme
+  „ein gemeinsamer Scope“) und muss beim Zusammenführen neu geschrieben werden. Es wird dabei einfacher.
+
+### Schritt 8: Tests
+
+- 24 Tests auf 272 Zeilen für rund 4.000 Zeilen Python. Abgedeckt sind die reinen Funktionen, die der Plan nannte.
+  Nicht abgedeckt ist, was die Schritte 4–6 neu gebaut haben: `zustand()` (speichert nur bei Änderung, nicht bei
+  Ausnahme, `speichern=False`), `bearbeiten()`/Routen, `abschliessen` als Ganzes, `entwurf_anlegen` mit Rückfall auf
+  den allgemeinen Kommentar, die Aktionen aus `AM_FADEN`/`AM_KOMMENTAR`.
+- JS hat weiter keinen Test, nur die Syntaxprüfung.
+- Mehrere Tests waren beim ersten Lauf rot, weil die Erwartung falsch war, nicht der Code. Sie wurden an den Code
+  angepasst. Solche Tests halten den Ist-Stand fest, sie belegen nicht, dass er richtig ist.
+
+### Übergreifend
+
+- **„Am Verhalten ändert sich nichts“ stimmt nicht ganz.** Bewusst geändert und oben vermerkt: 404 statt 403,
+  „unbekannte Aktion“, Hinweis erst nach der Prüfung übernommen, `--kopfh`. Dazu kommt das geänderte Verhalten bei
+  Gleichzeitigkeit aus Schritt 6. Jede Abweichung ist klein, zusammen sind es mehr, als ein reiner Umbau haben sollte.
+- **Kurze Namen in Python sind geblieben**, obwohl die Regel oben `kom`, `rv`, `gs` ausschließt: `kom`, `rv`, `gs`,
+  `imd`, `ans_st`, `P`, `z`, `pub`, `verw` in `review.py`, `gespraech.py`, `agent_cli.py`. Ausgeschrieben wurde nur
+  im JS.
+- **Was bewusst liegen blieb, ist das Größte:** `agent_main` mit 169 Zeilen, `seite_bauen`, `hinweise_aufloesen`.
+- **Der Abstand zu `claude` wächst.** `claude` hat inzwischen `--stopp`, `leerlauf` und `--beobachten`, alle in
+  `server.py`/`cli`/`einstellungen`. `server.py` ist hier neu geschrieben, und `claude` hat noch die alte
+  Dateistruktur. Jede Python-Änderung dort muss von Hand übertragen werden. Das ist das größte praktische Risiko
+  des Umbaus, größer als alles oben.
+- Dieses Dokument selbst: Pfade unter `/home/wsl/…`, Regeln („stoppen“, `node --check`), die nicht mehr gelten, und
+  die Tabelle nennt für die Schritte 4–8 keine Commits.
