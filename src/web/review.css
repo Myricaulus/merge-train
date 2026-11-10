@@ -46,9 +46,10 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 .kunter{padding:6px 10px;border-bottom:1px solid var(--rand)} .kunter .unter{font-size:12px;margin:6px 0 2px}
 /* Güterbahnhof im Kopf: Kulisse (Bild), Anlage (SVG aus zug.js), Leitstand mit Knöpfen, Zug. Der Himmel (--himmel)
    rutscht beim Scrollen weg, Band und Zug bleiben stehen. Panorama (myr, 7014×775) über die volle Breite, mindestens 2480 px (sonst Lücke über dem Bild, dann seitlich abschneiden);
-   Horizont bei 64 % der Bildhöhe (= .0711 × Breite) immer auf y=176. */
+   Horizont bei 64 % der Bildhöhe (= .0711 × Breite) auf y=176; beim Wegscrollen des Himmels wandert er mit (--hub aus zug.js)
+   bis an den Unterrand, damit im schmalen Streifen die Gebäude ganz zu sehen sind statt des leeren Bodens. */
 #kopf:has(.szene){--himmel:96px;top:calc(-1*var(--himmel))}
-.szene{--bw:max(100vw,2480px);--bb:var(--bw) auto;--bpos:center calc(176px - .0711*var(--bw));position:relative;height:212px;margin:-8px -16px 6px;overflow:hidden;
+.szene{--bw:max(100vw,2480px);--bb:var(--bw) auto;--bpos:center calc(176px + var(--hub,0px) - .0711*var(--bw));position:relative;height:212px;margin:-8px -16px 6px;overflow:hidden;
  background:#7d7268 var(--bild) no-repeat;background-size:var(--bb);background-position:var(--bpos)}
 #anlage{position:absolute;inset:0;width:100%;height:100%}
 .szene #zug{position:absolute;left:0;right:0;bottom:0;z-index:2;margin:0;overflow-x:auto;scrollbar-width:none}
@@ -73,7 +74,7 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
 .szene.laedt .bh-strahl,.szene.laeuft .bh-strahl{opacity:1;animation:fallen .25s linear infinite}
 @keyframes band{to{stroke-dashoffset:-5.5}} @keyframes fallen{to{stroke-dashoffset:-5}} @keyframes ruetteln{50%{transform:translateY(.7px)}}
 @media (prefers-color-scheme:dark){ /* Nacht: blaues Overlay über der Kulisse, Fenster leuchten */
- .szene{background-image:linear-gradient(#0a1030b8,#0a1030b8),var(--bild);background-size:100% 100%,var(--bb);background-position:0 0,var(--bpos)}
+ .szene{background-image:linear-gradient(#0a103080,#0a103080),var(--bild);background-size:100% 100%,var(--bb);background-position:0 0,var(--bpos)}
  .bh-wand{fill:#4f4c4c} .bh-welle{stroke:#45423f} .bh-turm{fill:#4a4746} .bh-dach{fill:#2c2a2a} .bh-schrift{fill:#c9bfa6}
  .bh-fenster{fill:#f2c45a;filter:drop-shadow(0 0 3px #f2b13a)} .bh-glas{fill:#4a3f22;stroke:#2c2a2a} .bh-sprosse{stroke:#2c2a2a} .bh-schild{fill:#8f8672}
  .bh-schotter{fill:#3b3732} .bh-schwelle{fill:#28221d} .bh-schiene{stroke:#8a8a8a} .bh-fachwerk,.bh-stuetze{stroke:#5d636a}}
