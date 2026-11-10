@@ -175,66 +175,91 @@ def zeile_aus_klick(struktur, d, ansicht):
 NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
 
 
+def kommentar_neu(mr, st, d, ansicht):
+    """Neuer Review-Kommentar (staged): aus einem übernommenen Hinweis (draft), an der geklickten Zeile oder allgemein."""
+    struktur = struktur_laden(st)
+    text = str(d.get("text") or "").strip()
+    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
+         "erstellt": datetime.now().isoformat(timespec="seconds")}
+    if d.get("hinweis"):
+        h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
+        if not h:
+            return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
+        if ansicht and h["path"] and not h["b"]:
+            return False, "Der Hinweis lässt sich hier keiner Zeile zuordnen – im ganzen MR übernehmen."
+        i = h["datei"]
+        k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
+                 hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
+    elif d.get("datei") is not None:
+        fehler, ort = zeile_aus_klick(struktur, d, ansicht)
+        if fehler:
+            return False, fehler
+        k.update(text=text, **ort)
+    else:
+        k.update(text=text, path=None, a=None, b=None)
+    if not k["text"]:
+        return False, "leerer Kommentar"
+    if k.get("hinweis"):  # erst nach allen Prüfungen ändern: frühe returns speichern sonst mit
+        st["hinweise"][k["hinweis"]] = "uebernommen"
+        st["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in st.get("reihenfolge") or []]  # Platz behalten
+    kommentar_anhaengen(st, k)
+    return True, ""
+
+
+def kommentare_sortieren(mr, st, d, ansicht):
+    """Box „GitLab-Kommentare“ umsortiert (bestimmt die Sende-Reihenfolge)."""
+    ids = d.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        return False, "Reihenfolge ungültig"
+    st["reihenfolge"] = ids
+    return True, ""
+
+
+# Aktionen an einem bestehenden Kommentar: (st, kommentar, d) → (ok, text)
+
+def kommentar_aendern(st, k, d):
+    text = str(d.get("text") or "").strip()
+    if not text:
+        return False, "leerer Kommentar"
+    k["text"] = text
+    return True, ""
+
+
+def kommentar_loeschen(st, k, d):
+    """Schon in GitLab: dort beim Abschließen löschen (staged „loeschen“), sonst gleich weg."""
+    if k.get("hinweis"):
+        st["hinweise"][k["hinweis"]] = "verworfen"
+    if k.get("gitlab_id") and not k.get("gitlab_weg"):
+        k["geloescht"] = True
+    else:
+        eintrag_entfernen(st, k)
+    return True, ""
+
+
+def kommentar_wiederherstellen(st, k, d):
+    k.pop("geloescht", None)
+    return True, ""
+
+
+KOMMENTAR_AKTIONEN = {"neu": kommentar_neu, "reihenfolge": kommentare_sortieren}
+AM_KOMMENTAR = {"aendern": kommentar_aendern, "loeschen": kommentar_loeschen, "wiederherstellen": kommentar_wiederherstellen}
+
+
 def kommentar_aktion(mr, d):
-    """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
+    """Aktion des Nutzers von der Seite: aus KOMMENTAR_AKTIONEN oder AM_KOMMENTAR (mit „id“). Rückgabe (ok, text)."""
     aktion = d.get("aktion")
     ansicht = ansicht_lesen(d.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
+    if aktion not in KOMMENTAR_AKTIONEN and aktion not in AM_KOMMENTAR:
+        return False, "unbekannte Aktion"
     with zustand(mr) as st:
-        struktur = struktur_laden(st)
-        if aktion == "neu":
-            text = str(d.get("text") or "").strip()
-            k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
-                 "erstellt": datetime.now().isoformat(timespec="seconds")}
-            if d.get("hinweis"):
-                h = next((h for h in hinweise_aufloesen(mr, st, struktur)[0] if h["key"] == d["hinweis"]), None)
-                if not h:
-                    return False, "Hinweis nicht mehr vorhanden – Seite neu laden."
-                if ansicht and h["path"] and not h["b"]:
-                    return False, "Der Hinweis lässt sich hier keiner Zeile zuordnen – im ganzen MR übernehmen."
-                i = h["datei"]
-                k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
-                         hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
-            elif d.get("datei") is not None:
-                fehler, ort = zeile_aus_klick(struktur, d, ansicht)
-                if fehler:
-                    return False, fehler
-                k.update(text=text, **ort)
-            else:
-                k.update(text=text, path=None, a=None, b=None)
-            if not k["text"]:
-                return False, "leerer Kommentar"
-            if k.get("hinweis"):  # erst nach allen Prüfungen ändern: frühe returns speichern sonst mit
-                st["hinweise"][k["hinweis"]] = "uebernommen"
-                st["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in st.get("reihenfolge") or []]  # Platz behalten
-            kommentar_anhaengen(st, k)
-        elif aktion == "reihenfolge":  # Box „GitLab-Kommentare“ umsortiert (bestimmt die Sende-Reihenfolge)
-            ids = d.get("ids")
-            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
-                return False, "Reihenfolge ungültig"
-            st["reihenfolge"] = ids
-        else:
-            k = kommentar_finden(st, d.get("id"))
-            if not k:
-                return False, "Kommentar nicht gefunden"
-            if aktion == "aendern":
-                text = str(d.get("text") or "").strip()
-                if not text:
-                    return False, "leerer Kommentar"
-                k["text"] = text
-            elif aktion == "loeschen":
-                if k.get("hinweis"):
-                    st["hinweise"][k["hinweis"]] = "verworfen"
-                if k.get("gitlab_id") and not k.get("gitlab_weg"):
-                    k["geloescht"] = True  # Entwurf in GitLab wird beim Abschließen gelöscht
-                else:
-                    eintrag_entfernen(st, k)
-            elif aktion == "wiederherstellen":
-                k.pop("geloescht", None)
-            else:
-                return False, "unbekannte Aktion"
-    return True, ""
+        if aktion in KOMMENTAR_AKTIONEN:
+            return KOMMENTAR_AKTIONEN[aktion](mr, st, d, ansicht)
+        k = kommentar_finden(st, d.get("id"))
+        if not k:
+            return False, "Kommentar nicht gefunden"
+        return AM_KOMMENTAR[aktion](st, k, d)
 
 
 def hinweis_aktion(mr, d):

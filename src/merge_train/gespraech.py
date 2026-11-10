@@ -96,61 +96,89 @@ def neue_nachricht(von, text, gesendet=False, wer=None):
     return m
 
 
+def faden_neu(mr, st, d, text, ansicht):
+    """Neuer Faden des Nutzers (Entwurf), an der geklickten Zeile oder allgemein."""
+    if ansicht and ansicht[0] == "commit":
+        return False, NUR_LESEN
+    if not text:
+        return False, "leerer Kommentar"
+    struktur = struktur_laden(st)
+    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
+         "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
+         "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}
+    if d.get("an"):
+        k["an"] = str(d["an"])[:40]
+    if d.get("datei") is not None:
+        fehler, ort = zeile_aus_klick(struktur, d, ansicht)
+        if fehler:
+            return False, fehler if mr.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
+        k.update(ort)
+        if ort["b"]:
+            t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
+            zeilen = t.split("\n")
+            k["zeile_text"] = zeilen[ort["b"] - 1] if ort["b"] <= len(zeilen) else None
+    faden_anhaengen(st, k)
+    return True, ""
+
+
+# Aktionen an einem bestehenden Faden: (st, faden, nachricht | None, text) → (ok, text). Die Nachricht (nid) ist
+# schon geprüft: eigene, noch nicht gesendete.
+
+def faden_nutzer_antwortet(st, k, m, text):
+    if not text:
+        return False, "leere Nachricht"
+    k["nachrichten"].append(neue_nachricht("ich", text))
+    k["erledigt"] = None
+    return True, ""
+
+
+def faden_nachricht_aendern(st, k, m, text):
+    if not m or not text:
+        return False, "leere Nachricht" if m else "Nachricht fehlt"
+    m["text"] = text; m["zeit"] = jetzt()
+    return True, ""
+
+
+def faden_nachricht_loeschen(st, k, m, text):
+    """Ohne Nachricht (oder wenn die letzte weg ist): den ganzen Faden."""
+    if m:
+        k["nachrichten"].remove(m)
+    if not m or not k["nachrichten"]:
+        eintrag_entfernen(st, k)
+    return True, ""
+
+
+def faden_erledigen(st, k, m, text):
+    k["erledigt"] = {"von": "ich", "zeit": jetzt()}
+    return True, ""
+
+
+def faden_wieder_oeffnen(st, k, m, text):
+    k["erledigt"] = None
+    return True, ""
+
+
+AM_FADEN = {"antworten": faden_nutzer_antwortet, "aendern": faden_nachricht_aendern, "loeschen": faden_nachricht_loeschen,
+            "erledigt": faden_erledigen, "oeffnen": faden_wieder_oeffnen}
+
+
 def gespraech_aktion(mr, d):
-    """neu | antworten | aendern | loeschen | erledigt | oeffnen (Nutzer, von der Seite). Rückgabe (ok, text)."""
+    """Aktion des Nutzers von der Seite: neu oder eine aus AM_FADEN. Rückgabe (ok, text)."""
     aktion = d.get("aktion")
+    if aktion != "neu" and aktion not in AM_FADEN:
+        return False, "unbekannte Aktion"
     ansicht = ansicht_lesen(d.get("ansicht"))
     text = str(d.get("text") or "").strip()
     with zustand(mr) as st:
-        struktur = struktur_laden(st)
         if aktion == "neu":
-            if ansicht and ansicht[0] == "commit":
-                return False, NUR_LESEN
-            if not text:
-                return False, "leerer Kommentar"
-            k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
-                 "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
-                 "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}
-            if d.get("an"):
-                k["an"] = str(d["an"])[:40]
-            if d.get("datei") is not None:
-                fehler, ort = zeile_aus_klick(struktur, d, ansicht)
-                if fehler:
-                    return False, fehler if mr.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
-                k.update(ort)
-                if ort["b"]:
-                    t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
-                    zeilen = t.split("\n")
-                    k["zeile_text"] = zeilen[ort["b"] - 1] if ort["b"] <= len(zeilen) else None
-            faden_anhaengen(st, k)
-            return True, ""
+            return faden_neu(mr, st, d, text, ansicht)
         k = faden_finden(st, d.get("id"))
         if not k:
             return False, "Gespräch nicht gefunden – Seite neu laden"
         m = next((m for m in k["nachrichten"] if m["id"] == d.get("nid")), None) if d.get("nid") else None
         if d.get("nid") and (not m or m["von"] != "ich" or m.get("gesendet")):
             return False, "Nur eigene, noch nicht gesendete Nachrichten lassen sich ändern"
-        if aktion == "antworten":
-            if not text:
-                return False, "leere Nachricht"
-            k["nachrichten"].append(neue_nachricht("ich", text))
-            k["erledigt"] = None
-        elif aktion == "aendern":
-            if not m or not text:
-                return False, "leere Nachricht" if m else "Nachricht fehlt"
-            m["text"] = text; m["zeit"] = jetzt()
-        elif aktion == "loeschen":
-            if m:
-                k["nachrichten"].remove(m)
-            if not m or not k["nachrichten"]:
-                eintrag_entfernen(st, k)
-        elif aktion == "erledigt":
-            k["erledigt"] = {"von": "ich", "zeit": jetzt()}
-        elif aktion == "oeffnen":
-            k["erledigt"] = None
-        else:
-            return False, "unbekannte Aktion"
-    return True, ""
+        return AM_FADEN[aktion](st, k, m, text)
 
 
 # ---- Agent-Seite (CLI)

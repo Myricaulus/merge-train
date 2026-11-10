@@ -1,5 +1,5 @@
 """Der kleine HTTP-Server auf 127.0.0.1: liefert Seiten und nimmt die Aktionen der Seite entgegen."""
-import json, os, subprocess, sys, threading, time
+import json, os, re, subprocess, sys, threading, time
 import urllib.parse
 from datetime import datetime
 from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, VON, dateiname, oeffnen, projektname, schluessel
@@ -15,6 +15,8 @@ from .zuhoerer import feedback_senden, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe, seiten_struktur,
     stand, vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import NamedTuple
 from . import syntax
 
 PORT = int(KONF["port"])
@@ -41,7 +43,6 @@ def server_laeuft():
 
 
 def server_sicherstellen():
-    import time
     if server_laeuft():
         return True
     log = open(os.path.join(ORDNER, "server.log"), "a")
@@ -73,218 +74,391 @@ def vorbauen(repos):
     threading.Thread(target=los, daemon=True).start()
 
 
+# ---- Routen: Handler auf Modulebene, ein Eintrag je (Methode, Pfad). Was viele brauchen, erledigt bearbeiten():
+# Schlüssel (mit_schluessel), eingeschaltete Quelle (quelle), Waggon aus „mr“ (waggon), „kann review“ (review),
+# Struktur der Seite (struktur), Fehler. Rückgabe eines Handlers: dict → JSON 200, (status, dict) → JSON, Antwort → roh.
+
+class Antwort(NamedTuple):
+    status: int
+    inhalt: object = b""
+    typ: str = "text/html; charset=utf-8"
+    ort: str = None  # Weiterleitung
+
+
+def text_antwort(status, text, typ="text/plain; charset=utf-8"):
+    return Antwort(status, text, typ)
+
+
+def weiterleitung(ziel):
+    return Antwort(302, ort=ziel)
+
+
+NICHT_GEFUNDEN = Antwort(404, "nicht gefunden", "text/plain")
+
+
+class Anfrage(NamedTuple):
+    methode: str
+    pfad: str            # ohne führendes „/“ (GET) bzw. wie gesendet (POST)
+    abfrage: str         # roher Query-String
+    daten: dict          # GET: Query-Parameter, POST: JSON-Rumpf
+    seiten_ansicht: tuple  # GET ?commit=… / ?seit=… für Seiten
+
+    @property
+    def ansicht(self):
+        """Ansicht, auf die sich eine API-Anfrage bezieht (Feld „ansicht“)."""
+        return ansicht_lesen(self.daten.get("ansicht"))
+
+
+ROUTEN = {}         # (methode, pfad) → (funktion, bedingungen)
+PRAEFIX_ROUTEN = []  # (regex, funktion, bedingungen), nur GET, in dieser Reihenfolge nach ROUTEN
+
+
+def route(methode, pfad, *, mit_schluessel=True, quelle=None, waggon=False, review=False, struktur=False):
+    """Handler eintragen. pfad als re.Pattern: Präfix-Route, der Handler bekommt die Gruppen als Argumente."""
+    bedingungen = dict(mit_schluessel=mit_schluessel, quelle=quelle, waggon=waggon, review=review, struktur=struktur)
+    def eintragen(f):
+        if isinstance(pfad, re.Pattern):
+            PRAEFIX_ROUTEN.append((pfad, f, bedingungen))
+        else:
+            ROUTEN[(methode, pfad)] = (f, bedingungen)
+        return f
+    return eintragen
+
+
+def route_finden(methode, pfad):
+    if (methode, pfad) in ROUTEN:
+        f, bed = ROUTEN[(methode, pfad)]
+        return f, bed, ()
+    if methode == "GET":
+        for muster, f, bed in PRAEFIX_ROUTEN:
+            m = muster.fullmatch(pfad)
+            if m:
+                return f, bed, m.groups()
+    return None, None, ()
+
+
+FALSCHER_SCHLUESSEL = {"GET": "falscher Schlüssel – Seite neu laden",
+                       "POST": "Abgelehnt: falscher Schlüssel – Seite neu laden."}
+
+
+def bearbeiten(anfrage):
+    """Route nachschlagen, Bedingungen prüfen, Handler aufrufen. Rückgabe Antwort."""
+    f, bed, gruppen = route_finden(anfrage.methode, anfrage.pfad)
+    if not f or bed["quelle"] and not bed["quelle"].an():
+        return NICHT_GEFUNDEN
+    als_json = lambda status, d: Antwort(status, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
+    try:
+        if bed["mit_schluessel"] and str(anfrage.daten.get("k", "")) != schluessel():
+            return als_json(403, {"ok": False, "text": FALSCHER_SCHLUESSEL[anfrage.methode]})
+        args = list(gruppen)
+        if bed["waggon"]:
+            waggon = schluessel_von(anfrage.daten.get("mr", ""))
+            if bed["review"] and not waggon.kann["review"]:
+                return als_json(400, {"ok": False, "text": "Dieser Waggon hat kein Review"})
+            args.append(waggon)
+        if bed["struktur"]:
+            struktur = seiten_struktur(anfrage.daten.get("mr", ""), anfrage.ansicht)
+            if struktur is None:
+                return als_json(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
+            args.append(struktur)
+        r = f(anfrage, *args)
+    except Fehler as e:
+        r = (502, {"ok": False, "text": str(e)}) if anfrage.methode == "POST" else text_antwort(502, f"merge-train: {e}")
+    except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
+        t = f"merge-train: {type(e).__name__}: {e}"
+        r = (500, {"ok": False, "text": t}) if anfrage.methode == "POST" else text_antwort(500, t)
+    if isinstance(r, Antwort):  # vor tuple: Antwort ist selbst ein (Named)Tuple
+        return r
+    if isinstance(r, dict):
+        r = (200, r)
+    return als_json(*r)
+
+
+# ---- GET: Seiten
+
+@route("GET", "ping", mit_schluessel=False)
+def ping(anfrage):
+    return Antwort(200, "merge-train", "text/plain")
+
+
+@route("GET", "favicon.ico", mit_schluessel=False)
+@route("GET", "favicon.svg", mit_schluessel=False)
+def favicon(anfrage):
+    return Antwort(200, FAVICON.strip(), "image/svg+xml")
+
+
+@route("GET", "", mit_schluessel=False)
+def start(anfrage):
+    """Start: erster offener lokaler Waggon, sonst Zug (mit MR-Feld)."""
+    if LOKAL.an():
+        offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
+        if offen:
+            return weiterleitung(offen[0]["datei"])
+        if not GITLAB.an():
+            return Antwort(200, ALLES_DURCH)
+    return Antwort(200, startseite())
+
+
+@route("GET", "mrs", mit_schluessel=False, quelle=GITLAB)
+def mrs(anfrage):
+    return Antwort(200, startseite())
+
+
+@route("GET", "mr-oeffnen", mit_schluessel=False, quelle=GITLAB)
+def mr_oeffnen(anfrage):
+    return weiterleitung(mr_vollstaendig(mr_ref(anfrage.daten.get("u", ""))).url)
+
+
+@route("GET", re.compile(r"mr/(.*)", re.S), mit_schluessel=False, quelle=GITLAB)
+def mr_seite_liefern(anfrage, kennung):
+    try:
+        datei, _, mr = mr_seite(Waggon.aus_id(kennung), ansicht=anfrage.seiten_ansicht)
+    except Fehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
+        return Antwort(200, startseite(str(e), kennung))
+    if mr.id != kennung:  # Kennung kanonisch machen
+        return weiterleitung("/mr/" + mr.id + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
+    return Antwort(200, open(datei, "rb").read())
+
+
+@route("GET", re.compile(r".*\.html", re.S), mit_schluessel=False, quelle=LOKAL)
+def projekt_seite_liefern(anfrage):
+    repos = {dateiname(projektname(r)): r for r in finde_repos()}
+    if anfrage.pfad not in repos:
+        return NICHT_GEFUNDEN
+    datei, _ = projekt_seite(repos[anfrage.pfad], ansicht=anfrage.seiten_ansicht)
+    if not anfrage.seiten_ansicht:
+        vorbauen(repos)  # startet im Hintergrund, die Seite geht trotzdem sofort raus
+    return Antwort(200, open(datei, "rb").read())
+
+
+# ---- GET: Daten der Seite
+
+@route("GET", "zug.js", mit_schluessel=False)
+@route("GET", "api/zug", mit_schluessel=False)
+def zug(anfrage):
+    """Der gemischte Zug aller eingeschalteten Quellen."""
+    d = {"wagen": alle_wagen(anfrage.daten.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None}
+    if anfrage.pfad == "api/zug":
+        return d
+    return Antwort(200, "window.MR_ZUG=" + json.dumps(d, ensure_ascii=False) + ";", "text/javascript; charset=utf-8")
+
+
+@route("GET", "api/review", waggon=True)
+def api_review(anfrage, waggon):
+    """Gespräch und (je nach Quelle) Review des Waggons."""
+    return wagen_daten(waggon, anfrage.ansicht)
+
+
+@route("GET", "api/stand", waggon=True)
+def api_stand(anfrage, waggon):
+    seite_lebt(waggon)
+    return {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION, "server": server_stand()}
+
+
+@route("GET", "api/zeilen", struktur=True)
+def api_zeilen(anfrage, struktur):
+    """Kontext nachladen, Code im Popup."""
+    try:
+        von, bis = int(anfrage.daten.get("von", 1)), int(anfrage.daten.get("bis", 1))
+    except ValueError:
+        return 400, {"ok": False, "text": "von/bis ungültig"}
+    return zeilen_daten(struktur, anfrage.daten.get("pfad", ""), von, bis)
+
+
+@route("GET", "api/datei", struktur=True)
+def api_datei(anfrage, struktur):
+    """Zunächst ausgelassene (große/generierte) Datei nachladen."""
+    try:
+        return datei_nachladen(struktur, int(anfrage.daten.get("i", -1)))
+    except ValueError:
+        return 400, {"ok": False, "text": "i ungültig"}
+
+
+@route("GET", "api/vergleich", struktur=True)
+def api_vergleich(anfrage, struktur):
+    return vergleich_daten(struktur, anfrage.daten.get("a", ""), anfrage.daten.get("b", ""))
+
+
+# ---- POST: Aktionen der Seite (alle mit Schlüssel)
+
+def mit_review(waggon, anfrage, ok, text, **mehr):
+    """Antwort einer Aktion: bei Erfolg gleich die neuen Daten der Seite mit."""
+    return dict(mehr, ok=ok, text=text, review=wagen_daten(waggon, anfrage.ansicht) if ok else None)
+
+
+@route("POST", "/api/kommentar", waggon=True)
+def api_kommentar(anfrage, waggon):
+    if anfrage.daten.get("gespraech") or not waggon.kann["review"]:  # Fragen an den Agenten: Fäden, nie nach außen
+        ok, text = gespraech_aktion(waggon, anfrage.daten)
+    else:
+        ok, text = kommentar_aktion(waggon, anfrage.daten)
+    return mit_review(waggon, anfrage, ok, text)
+
+
+@route("POST", "/api/gespraech", waggon=True)
+def api_gespraech(anfrage, waggon):
+    aktion = anfrage.daten.get("aktion")
+    if aktion == "senden":
+        ok, text, tid = feedback_senden(waggon)
+        return mit_review(waggon, anfrage, ok, text, todo=tid)
+    if aktion == "starten":
+        return mit_review(waggon, anfrage, *session_starten(waggon))
+    return 400, {"ok": False, "text": "unbekannte Aktion"}
+
+
+@route("POST", "/api/hinweis", waggon=True, review=True)
+def api_hinweis(anfrage, waggon):
+    return mit_review(waggon, anfrage, *hinweis_aktion(waggon, anfrage.daten))
+
+
+@route("POST", "/api/abschliessen", waggon=True, review=True)
+def api_abschliessen(anfrage, waggon):
+    ansicht = anfrage.ansicht
+    if ansicht and ansicht[0] == "commit":
+        return {"ok": False, "text": NUR_LESEN}
+    ok, text, web = abschliessen(waggon)
+    return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht)}
+
+
+@route("POST", "/fertig")
+def api_fertig(anfrage):
+    d = anfrage.daten
+    waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
+    if not waggon.kann["fertig"]:
+        return NICHT_GEFUNDEN
+    ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
+    return 200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)}
+
+
+@route("POST", "/api/gitlab", quelle=GITLAB)
+def api_gitlab(anfrage):
+    """Güterbahnhof: GitLab nur auf Knopfdruck."""
+    aktion = anfrage.daten.get("aktion")
+    if aktion == "mrliste":
+        items, _ = mr_liste_holen()
+        return {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"}
+    if aktion == "mrdaten":
+        return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
+    return 400, {"ok": False, "text": "unbekannte Aktion"}
+
+
+def mr_daten_holen(mr):
+    """MR-Daten und Entwürfe aus GitLab, gesendete Kommentare abgleichen, Seite gleich bauen."""
+    vorher = zustand_lesen(mr).get("struktur")
+    _, vorhanden = meta_und_entwuerfe(mr)
+    if isinstance(vorhanden, Fehler):
+        raise vorhanden
+    with zustand(mr) as st:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
+        pub, verw = entwuerfe_abgleichen(mr, st, vorhanden)
+    try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
+        mr_seite(mr)
+        neu_laden = zustand_lesen(mr).get("struktur") != vorher
+    except Fehler:
+        neu_laden = True
+    text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
+                                "„Review abschließen“ sendet sie neu" if verw else "") + \
+        (f" · {pub} in GitLab veröffentlicht" if pub else "")
+    return {"ok": True, "text": text, "neu_laden": neu_laden}
+
+
+# ---- HTTP
+
+HERKUNFT = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
+_LETZTE_ANFRAGE = [time.time()]
+_LAUFEND, _LAUF_SPERRE = [0], threading.Lock()  # Anfragen in Arbeit: ein Neustart wartet auf sie
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        self.mit_anlass("GET " + self.path.split("?")[0], self.get)
+
+    def do_POST(self):
+        self.mit_anlass("POST " + self.path, self.post)
+
+    def mit_anlass(self, name, f):
+        ANLASS.name = name[:32]
+        _LETZTE_ANFRAGE[0] = time.time()
+        with _LAUF_SPERRE:
+            _LAUFEND[0] += 1
+        try:
+            self.senden(f())
+        finally:
+            with _LAUF_SPERRE:
+                _LAUFEND[0] -= 1
+            ANLASS.name = None
+
+    def get(self):
+        pfad, _, abfrage = self.path.partition("?")
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(abfrage).items()}
+        ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else f'seit:{q["seit"]}' if q.get("seit") else "")
+        if (q.get("commit") or q.get("seit")) and not ansicht:
+            return text_antwort(400, "merge-train: ungültiger Commit")
+        return bearbeiten(Anfrage("GET", urllib.parse.unquote(pfad).lstrip("/"), abfrage, q, ansicht))
+
+    def post(self):
+        if self.headers.get("Origin", f"http://127.0.0.1:{PORT}") not in HERKUNFT:
+            return Antwort(403, "verboten", "text/plain")
+        try:
+            d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        except Exception as e:
+            return Antwort(500, json.dumps({"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"},
+                                           ensure_ascii=False), "application/json; charset=utf-8")
+        if d.get("aktion"):
+            ANLASS.name = f"{self.path} {d['aktion']}"[:32]
+        return bearbeiten(Anfrage("POST", self.path, "", d, None))
+
+    def senden(self, antwort):
+        if antwort.ort:
+            self.send_response(antwort.status); self.send_header("Location", antwort.ort); self.end_headers()
+            return
+        body = antwort.inhalt.encode() if isinstance(antwort.inhalt, str) else antwort.inhalt
+        self.send_response(antwort.status); self.send_header("Content-Type", antwort.typ)
+        self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+
+def dateizeiten(pfade):
+    out = []
+    for p in pfade:
+        try: out.append(os.path.getmtime(p))
+        except OSError: out.append(None)
+    return out
+
+
+def beobachten(srv, beobachtet):
+    """Bis LEERLAUF_S ohne Anfrage oder bis Skript/Einstellung sich ändern; dann laufende Aktionen (z. B. „Review
+    abschließen“) fertig werden lassen und den Server anhalten. Rückgabe: True = mit neuem Stand neu starten."""
+    anfang, neu = dateizeiten(beobachtet), False
+    while time.time() - _LETZTE_ANFRAGE[0] < LEERLAUF_S:
+        time.sleep(2)
+        jetzt = dateizeiten(beobachtet)
+        if jetzt[0] is None:  # Skript umbenannt/gelöscht: beenden
+            break
+        if jetzt != anfang:
+            neu = True; break
+    bis = time.time() + 600
+    while _LAUFEND[0] > 0 and time.time() < bis:
+        time.sleep(0.2)
+    srv.shutdown()
+    return neu
+
+
 def server():
     """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
-    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage."""
-    import time
-    from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+    und die Review-Aktionen an. Beendet sich nach LEERLAUF_S ohne Anfrage, startet neu bei neuem Skript/neuer Einstellung."""
     schluessel()
-    zuletzt = [time.time()]
-    laufend, lauf_sperre = [0], threading.Lock()  # Anfragen in Arbeit: ein Neustart wartet auf sie
-    herkunft = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
-
-    class H(BaseHTTPRequestHandler):
-        def log_message(self, *a): pass
-        def do_GET(self):
-            self.mit_anlass(self.get, "GET " + self.path.split("?")[0])
-        def do_POST(self):
-            self.mit_anlass(self.post, "POST " + self.path)
-        def mit_anlass(self, f, name):
-            ANLASS.name = name[:32]
-            with lauf_sperre:
-                laufend[0] += 1
-            try:
-                f()
-            finally:
-                with lauf_sperre:
-                    laufend[0] -= 1
-                ANLASS.name = None
-        def senden(self, code, body, typ="text/html; charset=utf-8"):
-            if isinstance(body, str): body = body.encode()
-            self.send_response(code); self.send_header("Content-Type", typ)
-            self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
-            self.end_headers(); self.wfile.write(body)
-        def json_senden(self, code, d):
-            self.senden(code, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
-        def weiterleiten(self, ziel):
-            self.send_response(302); self.send_header("Location", ziel); self.end_headers()
-        def get(self):
-            zuletzt[0] = time.time()
-            pfad, _, abfrage = self.path.partition("?")
-            pfad = urllib.parse.unquote(pfad).lstrip("/")
-            q = {k: v[0] for k, v in urllib.parse.parse_qs(abfrage).items()}
-            ansicht = ansicht_lesen(f'commit:{q["commit"]}' if q.get("commit") else
-                                    f'seit:{q["seit"]}' if q.get("seit") else "")
-            if (q.get("commit") or q.get("seit")) and not ansicht:
-                return self.senden(400, "merge-train: ungültiger Commit", "text/plain; charset=utf-8")
-            try:
-                if pfad == "ping":
-                    return self.senden(200, "merge-train", "text/plain")
-                if pfad in ("favicon.ico", "favicon.svg"):
-                    return self.senden(200, FAVICON.strip(), "image/svg+xml")
-                if pfad in ("api/zeilen", "api/datei", "api/vergleich"):  # Kontext / große Datei nachladen, Dateivergleich
-                    if q.get("k") != schluessel():
-                        return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
-                    struktur = seiten_struktur(q.get("mr", ""), ansicht_lesen(q.get("ansicht")))
-                    if struktur is None:
-                        return self.json_senden(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
-                    if pfad == "api/vergleich":
-                        return self.json_senden(200, vergleich_daten(struktur, q.get("a", ""), q.get("b", "")))
-                    if pfad == "api/datei":
-                        try:
-                            return self.json_senden(200, datei_nachladen(struktur, int(q.get("i", -1))))
-                        except ValueError:
-                            return self.json_senden(400, {"ok": False, "text": "i ungültig"})
-                    try:
-                        von, bis = int(q.get("von", 1)), int(q.get("bis", 1))
-                    except ValueError:
-                        return self.json_senden(400, {"ok": False, "text": "von/bis ungültig"})
-                    return self.json_senden(200, zeilen_daten(struktur, q.get("pfad", ""), von, bis))
-                if pfad in ("api/review", "api/stand"):  # Gespräch und (je nach Quelle) Review des Waggons
-                    if q.get("k") != schluessel():
-                        return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
-                    waggon = schluessel_von(q.get("mr", ""))
-                    if pfad == "api/stand":
-                        seite_lebt(waggon)
-                        return self.json_senden(200, {"stand": stand(waggon, zustand_lesen(waggon)), "version": VERSION,
-                                                      "server": server_stand()})
-                    return self.json_senden(200, wagen_daten(waggon, ansicht_lesen(q.get("ansicht"))))
-                if pfad in ("zug.js", "api/zug"):  # der gemischte Zug aller eingeschalteten Quellen
-                    d = {"wagen": alle_wagen(q.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None}
-                    if pfad == "api/zug":
-                        return self.json_senden(200, d)
-                    return self.senden(200, "window.MR_ZUG=" + json.dumps(d, ensure_ascii=False) + ";",
-                                       "text/javascript; charset=utf-8")
-                if pfad == "":  # Start: erster offener lokaler Waggon, sonst Zug (mit MR-Feld)
-                    if LOKAL.an():
-                        offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
-                        if offen:
-                            return self.weiterleiten(offen[0]["datei"])
-                        if not GITLAB.an():
-                            return self.senden(200, ALLES_DURCH)
-                    return self.senden(200, startseite())
-                if pfad == "mrs" and GITLAB.an():
-                    return self.senden(200, startseite())
-                if pfad == "mr-oeffnen" and GITLAB.an():
-                    return self.weiterleiten(mr_vollstaendig(mr_ref(q.get("u", ""))).url)
-                if pfad.startswith("mr/") and GITLAB.an():
-                    try:
-                        datei, _, mr = mr_seite(Waggon.aus_id(pfad[3:]), ansicht=ansicht)
-                    except Fehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
-                        return self.senden(200, startseite(str(e), pfad[3:]))
-                    if mr.id != pfad[3:]:
-                        return self.weiterleiten("/mr/" + mr.id + (f"?{abfrage}" if abfrage else ""))
-                    return self.senden(200, open(datei, "rb").read())
-                if pfad.endswith(".html") and LOKAL.an():
-                    repos = {dateiname(projektname(r)): r for r in finde_repos()}
-                    if pfad in repos:
-                        datei, _ = projekt_seite(repos[pfad], ansicht=ansicht)
-                        self.senden(200, open(datei, "rb").read())
-                        if not ansicht:
-                            vorbauen(repos)
-                        return
-                self.senden(404, "nicht gefunden", "text/plain")
-            except Fehler as e:
-                self.senden(502, f"merge-train: {e}", "text/plain; charset=utf-8")
-            except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
-                self.senden(500, f"merge-train: {type(e).__name__}: {e}", "text/plain; charset=utf-8")
-        def post(self):
-            zuletzt[0] = time.time()
-            if self.headers.get("Origin", f"http://127.0.0.1:{PORT}") not in herkunft:
-                return self.senden(403, "verboten", "text/plain")
-            try:
-                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if d.get("aktion"):
-                    ANLASS.name = f"{self.path} {d['aktion']}"[:32]
-                if str(d.get("k", "")) != schluessel():
-                    return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
-                if self.path == "/api/gitlab" and GITLAB.an():  # Güterbahnhof: GitLab nur auf Knopfdruck
-                    if d.get("aktion") == "mrliste":
-                        items, _ = mr_liste_holen()
-                        return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
-                    if d.get("aktion") == "mrdaten":
-                        mr = Waggon.aus_id(d.get("mr", ""))
-                        vorher = zustand_lesen(mr).get("struktur")
-                        _, vorhanden = meta_und_entwuerfe(mr)
-                        if isinstance(vorhanden, Fehler):
-                            raise vorhanden
-                        with zustand(mr) as st:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
-                            pub, verw = entwuerfe_abgleichen(mr, st, vorhanden)
-                        try:  # Seite gleich bauen: neu laden muss der Browser nur, wenn sie sich geändert hat
-                            mr_seite(mr)
-                            neu_laden = zustand_lesen(mr).get("struktur") != vorher
-                        except Fehler:
-                            neu_laden = True
-                        text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
-                                                    "„Review abschließen“ sendet sie neu" if verw else "") + \
-                            (f" · {pub} in GitLab veröffentlicht" if pub else "")
-                        return self.json_senden(200, {"ok": True, "text": text, "neu_laden": neu_laden})
-                    return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
-                if self.path == "/fertig":
-                    waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
-                    if not waggon.kann["fertig"]:
-                        return self.senden(404, "nicht gefunden", "text/plain")
-                    ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
-                    return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
-                if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gespraech"):
-                    return self.senden(404, "nicht gefunden", "text/plain")
-                waggon = schluessel_von(d.get("mr", ""))
-                kann = waggon.kann
-                ansicht = ansicht_lesen(d.get("ansicht"))
-                antwort = {}
-                if self.path == "/api/gespraech" or self.path == "/api/kommentar" and (d.get("gespraech") or not kann["review"]):
-                    if self.path == "/api/kommentar":  # Fragen an den Agenten: Fäden, nie nach außen
-                        ok, text = gespraech_aktion(waggon, d)
-                    elif d.get("aktion") == "senden":
-                        ok, text, tid = feedback_senden(waggon)
-                        antwort["todo"] = tid
-                    elif d.get("aktion") == "starten":
-                        ok, text = session_starten(waggon)
-                    else:
-                        return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
-                elif not kann["review"]:
-                    return self.json_senden(400, {"ok": False, "text": "Dieser Waggon hat kein Review"})
-                elif self.path == "/api/abschliessen":
-                    if ansicht and ansicht[0] == "commit":
-                        return self.json_senden(200, {"ok": False, "text": NUR_LESEN})
-                    ok, text, web = abschliessen(waggon)
-                    antwort["web_url"] = web
-                    return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(waggon, ansicht)))
-                else:
-                    ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(waggon, d)
-                return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(waggon, ansicht) if ok else None))
-            except Fehler as e:
-                self.json_senden(502, {"ok": False, "text": str(e)})
-            except Exception as e:
-                self.json_senden(500, {"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"})
-
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    _LETZTE_ANFRAGE[0] = time.time()
+    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     syntax.SERVER_SOCKET = srv.socket
     beobachtet = [SKRIPT, KONFIG_DATEI]
-    def mtimes():
-        out = []
-        for p in beobachtet:
-            try: out.append(os.path.getmtime(p))
-            except OSError: out.append(None)
-        return out
-    anfang = mtimes()
-    neu = [False]
-    def waechter():
-        while time.time() - zuletzt[0] < LEERLAUF_S:
-            time.sleep(2)
-            jetzt = mtimes()
-            if jetzt[0] is None:  # Skript umbenannt/gelöscht: beenden
-                break
-            if jetzt != anfang:  # Skript oder Einstellung geändert: mit neuem Stand weitermachen
-                neu[0] = True; break
-        bis = time.time() + 600  # laufende Aktionen (z. B. „Review abschließen“) erst fertig werden lassen
-        while laufend[0] > 0 and time.time() < bis:
-            time.sleep(0.2)
-        srv.shutdown()
-    threading.Thread(target=waechter, daemon=True).start()
+    neu = []
+    threading.Thread(target=lambda: neu.append(beobachten(srv, beobachtet)), daemon=True).start()
     srv.serve_forever()
     srv.server_close()
-    if neu[0]:
+    if neu and neu[0]:
         os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
 
 

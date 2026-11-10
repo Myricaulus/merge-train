@@ -1,7 +1,7 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–4 sind
-erledigt, 5–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–5 sind
+erledigt, 6–8 stehen aus. Nach dem Umbau fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -49,7 +49,7 @@ python3 tests/test_gitlab.py                                             # Ende-
   Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
   nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
 
-## Stand nach den Schritten 1–4
+## Stand nach den Schritten 1–5
 
 | Commit | Inhalt |
 |---|---|
@@ -59,6 +59,7 @@ python3 tests/test_gitlab.py                                             # Ende-
 | `eaa1ce2` | Merge von `claude` (Kontext-Füllstand im HUD) |
 | `a6f6a12` | Schritt 3: Typ `Waggon` (waggon.py), `Fehler` als Basis von `GitLabFehler`, Quellen entschlackt, kein Import-Zyklus mehr |
 | Schritt 4 | Zustand kapseln: `with zustand(waggon) as st:`, `zustand_lesen`, `kommentar_finden`/`faden_finden`, `…_anhaengen`, `eintrag_entfernen`, `ist_staged`/`ist_sent`, Aufbau der Datei oben in `zustand.py` |
+| Schritt 5 | Server als Routen-Tabelle (`@route`, `bearbeiten`, `Antwort`/`Anfrage`, `beobachten`), Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
@@ -142,6 +143,12 @@ auseinandergehalten.
   (sonst hätte das automatische Speichern beim frühen `return` den Hinweis ohne Kommentar übernommen). Lokale
   Variablen `zustand` in `agent_main`/`_prozess` heißen jetzt `befund`/`prozess_zustand`.
 
+## Offen: aussagekräftigere Namen (Hinweis des Nutzers)
+
+„zustand“ ist sehr allgemein – Zustand wovon? Gemeint ist die Review-/Gesprächsdatei eines Waggons. Bei Gelegenheit
+(eigener Commit, rein mechanisch) Modul und Funktionen nach dem benennen, was sie halten, z. B. `waggon_datei` /
+`with waggon_daten(waggon) as daten:`; dasselbe Maß an andere allgemeine Namen anlegen (`st`, `d`, `r`, `rv`).
+
 ## Schritt 5: Server als Routen-Tabelle
 
 **Problem.** `server.py` besteht im Kern aus einer Funktion `server()` (~220 Zeilen) mit einer inneren Klasse `H`,
@@ -189,6 +196,13 @@ weiter, die `gespraech_aktion` wieder mit `if aktion == …` verteilt; dasselbe 
 die Tests grün sind. Die Tests sprechen den Server über HTTP an und decken die meisten Routen ab. Danach einmal mit
 eigenem Server im Browser durchklicken (Projekt-Seite, MR-Seite, Kommentar anlegen, Faden, fertig). Commit:
 „Server: Routen-Tabelle …“.
+
+**Erledigt.** `get()` 9, `post()` 13 Zeilen. Statt im Browser: alter (Schritt 4) und neuer Server auf demselben
+Testzustand, ~45 Anfragen (alle Routen, Fehler- und Randfälle) verglichen – Status, Typ, Weiterleitung, Rumpf gleich bis
+auf zwei bewusste Fälle: POST auf unbekannten Pfad mit falschem Schlüssel → 404 statt 403 (erst Route, dann Schlüssel);
+unbekannte Aktion an einem Kommentar meldet „unbekannte Aktion“ statt vorher „Kommentar nicht gefunden“. Fehlerformat
+bleibt je Methode: GET Text (502/500), POST JSON. `zug.js`/`api/zug` waren und sind ohne Schlüssel (in der Tabelle
+sichtbar: `mit_schluessel=False`).
 
 ## Schritt 6: Lange Abläufe in Planen und Ausführen zerlegen
 
