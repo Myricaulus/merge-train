@@ -4,7 +4,7 @@
 Aufruf:  python3 tests/test_gitlab.py [--behalten]
 Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, Port 8799), startet einen eigenen Server.
 """
-import json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import runpy, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 SKRIPT = os.path.join(HIER, "..", "merge-train")
@@ -368,6 +368,12 @@ def mr_gespraech_test(mr, k, basis, struktur):
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
     pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
+    if shutil.which("node"):  # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt
+        m = runpy.run_path(SKRIPT, run_name="pruefen")
+        js = os.path.join(T, "seite.js")
+        open(js, "w", encoding="utf-8").write("".join(m[n] for n in ("JS", "JS_ZUG", "JS_DIFF", "JS_REVIEW", "JS_BAHNHOF")))
+        r = subprocess.run(["node", "--check", js], capture_output=True, text=True)
+        pruefe(r.returncode == 0, "Seiten-Skript ohne Syntaxfehler" + (": " + r.stderr.strip().splitlines()[-1] if r.returncode else ""))
     repo_anlegen()
     os.makedirs(f"{T}/config/merge-train")
     open(ENV["MERGE_TRAIN_CONFIG"], "w").write(

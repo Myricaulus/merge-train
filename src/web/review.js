@@ -93,17 +93,25 @@ function unterDatei(x,box){ // Ansicht: Eintrag lässt sich keiner sichtbaren Ze
  const zur=x.b?el('a',{class:'ortlink',title:'Kontext aufklappen',onclick:()=>zeigen(x)},'aufklappen'):null;
  c.append(el('div',{class:'unter'},el('span',{class:'warn'},x.unter),zur?' · ':null,zur,wo?' · ':null,wo),box)}
 function zeichnen(){
- if(document.querySelector('.kbox textarea')){wartet=true;return}wartet=false;
- document.querySelectorAll('tr.kr,.kunter').forEach(r=>r.remove());
+ // Kästen mit offenem Eingabefeld bleiben stehen (der Text darin soll nicht verloren gehen), alles andere wird neu
+ // gezeichnet. Nach dem Schließen des Felds holt nachholen() den Kasten selbst nach.
+ const felder=[...document.querySelectorAll('.kbox textarea')].map(t=>t.closest('.kbox')).filter(Boolean);
+ const bleibt=new Set(felder.map(b=>b.dataset.id).filter(Boolean)),haelt=e=>felder.some(b=>e===b||e.contains(b));
+ wartet=felder.length>0;
+ document.querySelectorAll('tr.kr').forEach(r=>{if(!haelt(r))r.remove()});
+ document.querySelectorAll('.kunter').forEach(c=>{if(!haelt(c)){c.remove();return}
+  [...c.children].forEach(e=>{if(!haelt(e)&&!(e.classList.contains('unter')&&e.nextElementSibling&&haelt(e.nextElementSibling)))e.remove()})});
  const allg=[],zahl={};
- const platz=(x,mach)=>{if(x.datei==null||!ds[x.datei]||!(x.a||x.b))return false;let ok=false;
+ const platz=(x,mach)=>{if(x.datei==null||!ds[x.datei]||!(x.a||x.b))return false;
+  if(bleibt.has(x.id||x.key)){zahl[x.datei]=(zahl[x.datei]||0)+1;return true}let ok=false;
   ds[x.datei].querySelectorAll('table').forEach(tab=>{const r=zeileFinden(tab,x.a,x.b);if(r){einfuegen(r,mach(),tab);ok=true}});
   if(ok)zahl[x.datei]=(zahl[x.datei]||0)+1;return ok};
- const unter=(x,mach)=>{if(x.unter==null||x.datei==null||!ds[x.datei])return false;unterDatei(x,mach());zahl[x.datei]=(zahl[x.datei]||0)+1;return true};
- RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false))&&!unter(k,()=>kommentarBox(k,false)))allg.push(()=>kommentarBox(k,true))});
- FD().forEach(k=>{if(!platz(k,()=>fadenBox(k,false))&&!unter(k,()=>fadenBox(k,false)))allg.push(()=>fadenBox(k,true))});
+ const unter=(x,mach)=>{if(x.unter==null||x.datei==null||!ds[x.datei])return false;if(!bleibt.has(x.id||x.key))unterDatei(x,mach());zahl[x.datei]=(zahl[x.datei]||0)+1;return true};
+ const allgDazu=(x,mach)=>{if(!bleibt.has(x.id||x.key))allg.push(mach)};
+ RV.kommentare.forEach(k=>{if(!platz(k,()=>kommentarBox(k,false))&&!unter(k,()=>kommentarBox(k,false)))allgDazu(k,()=>kommentarBox(k,true))});
+ FD().forEach(k=>{if(!platz(k,()=>fadenBox(k,false))&&!unter(k,()=>fadenBox(k,false)))allgDazu(k,()=>fadenBox(k,true))});
  RV.hinweise.filter(h=>h.status==='offen'||(RV.zeigVerworfen&&h.status==='verworfen'))
-  .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false))&&!unter(h,()=>hinweisBox(h,false)))allg.push(()=>hinweisBox(h,true))});
+  .forEach(h=>{if(!platz(h,()=>hinweisBox(h,false))&&!unter(h,()=>hinweisBox(h,false)))allgDazu(h,()=>hinweisBox(h,true))});
  allgemein(allg);kliste();ls.forEach((a,i)=>{const z=a.querySelector('.kz');if(z)z.textContent=zahl[i]?'💬'+zahl[i]:''});
  const n=RV.kommentare.filter(k=>k.status!=='loeschen').length,offen=RV.hinweise.filter(h=>h.status==='offen').length;
  if(!RVW){gsStand();kh();return}
@@ -125,7 +133,7 @@ function anKnoepfe(d){ // weitere Speichern-Knöpfe „an <Agent>“ (mit Review
   :[['an Agent',null,'Kein Agent eingerichtet: [agenten] in der Einstellung oder „merge-train agent horchen“ in einer Session']]}
 function allgemein(allg){
  let s=document.getElementById('allgemein');if(!s){s=el('section',{id:'allgemein'});document.querySelector('main').prepend(s)}
- const verw=RV.hinweise.filter(h=>h.status==='verworfen').length;
+ const verw=RV.hinweise.filter(h=>h.status==='verworfen').length,offen=[...s.children].filter(e=>e.classList.contains('kbox')&&e.querySelector('textarea'));
  s.replaceChildren(el('div',{class:'kk'},el('b',{},RVW?'Review':'Gespräch mit '+AG()[0]),el('span',{class:'sub'},allg.length?'außerhalb des Diffs / allgemein:':'Kommentare stehen an den Zeilen'),
   el('span',{class:'knoepfe'},verw?el('button',{onclick:()=>{RV.zeigVerworfen=!RV.zeigVerworfen;zeichnen()}},RV.zeigVerworfen?'verworfene ausblenden':verw+' verworfene Hinweise zeigen'):null,
    LESEN?null:el('button',{onclick:()=>{const b=el('div',{class:'kbox km'});s.append(b);bearbeiten(b,'',neuSpeichern({}),()=>b.remove(),anKnoepfe({}),AG().length>0)}},RVW?'＋ allgemeiner Kommentar':'＋ allgemeine Frage'))),
@@ -134,7 +142,7 @@ function allgemein(allg){
   q.fehler?el('div',{class:'warn'},q.fehler):null,q.alt?el('div',{class:'warn'},'geprüft auf Stand '+q.reviewed_commit+', der MR steht auf '+MR.sha.slice(0,8)+' – Hinweise evtl. veraltet'):null,el('div',{},q.datei),q.notes?el('div',{class:'kt'},q.notes):null,
   q.failing_tests?el('div',{},el('b',{},'failing_tests: '),JSON.stringify(q.failing_tests,null,1)):null);
   if(q.fehler)d.open=true;s.append(d)});
- allg.forEach(f=>s.append(f()))}
+ allg.forEach(f=>s.append(f()));offen.forEach(b=>s.append(b))} // offene Eingabefelder bleiben
 document.addEventListener('click',e=>{const td=e.target.closest('main td.n,#popup:not(.vergleich) td.n');if(!td||!td.textContent.trim())return; // Seite und Popup (ausgeliehene Datei, nicht der Dateivergleich)
  if(LESEN){meld.textContent='Nur-Lese-Ansicht: kommentieren im ganzen MR oder in „seit diesem“';return}
  const tr=td.closest('tr');if(!tr||!(tr.dataset.a||tr.dataset.b))return;
