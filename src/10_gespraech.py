@@ -388,11 +388,11 @@ def g_nachbarn(k, rv):
             out.append((f'GitLab-Kommentar {x["id"]}', K_STATUS.get(x["status"], x["status"]), x["text"]))
     for h in rv["hinweise"]:
         if da(h) and h["status"] == "offen":
-            out.append((f'Agent-Hinweis h:{h["key"]}', f'noch nicht übernommen, {h["quelle"]} {h["finding"]}'.strip(), h["text"]))
+            out.append((f'Agent-Hinweis h:{h["key"]}', f'draft, {h["quelle"]} {h["finding"]}'.strip(), h["text"]))
     return out
 
-K_STATUS = {"neu": "Entwurf (lokal)", "uebertragen": "in GitLab (Entwurf)", "geaendert": "geändert, wird aktualisiert",
-            "weg": "in GitLab veröffentlicht oder gelöscht"}
+K_STATUS = {"neu": "staged", "geaendert": "staged, Änderung an einem gesendeten", "uebertragen": "sent",
+            "weg": "sent, in GitLab veröffentlicht oder gelöscht"}  # Stufen siehe AGENTS.md
 
 def g_ausgeben(k, wurzel, head, kontext=3, rv=None):
     """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""
@@ -460,9 +460,9 @@ def g_abholen(ziele, alle=False, markieren=True):
     return "\n".join(teile) or "(nichts offen)", gesamt
 
 def g_kommentar(ziel, text, ziele=None):
-    """GitLab-Kommentar für den Nutzer umformulieren. h:<key> eines noch nicht übernommenen Agent-Hinweises: dessen
-    text in der Review-JSON ändern. Sonst (Kommentar, übernommener Hinweis, Faden): neuer Entwurf an derselben Stelle –
-    bestehende Kommentare bleiben, der Nutzer löscht selbst einen. Rückgabe: Meldung."""
+    """GitLab-Kommentar für den Nutzer umformulieren. h:<key> eines drafts (noch nicht übernommener Agent-Hinweis): dessen
+    text in seiner JSON ändern. Sonst (staged/sent, übernommener/verworfener Hinweis, Faden): neuer draft an derselben
+    Stelle. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Rückgabe: Meldung."""
     text = (text or "").strip()
     if not text:
         raise GitLabFehler("Kommentartext fehlt")
@@ -491,21 +491,44 @@ def g_kommentar(ziel, text, ziele=None):
     g, art, x = treffer[0]
     if art == "h" and x["status"] == "offen":
         return hinweis_text_aendern(x, text)
+    # staged/sent oder ein Faden: neuer draft (Agent-Hinweis) an derselben Stelle. staged wird ein Kommentar nur,
+    # wenn der Nutzer auf „übernehmen“ klickt – der Agent legt nie selbst Review-Kommentare an.
     with SPERRE:
         st = review_laden(g)
-        struktur = struktur_laden(st)
-        k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "erstellt": jetzt(), "text": text,
-             "refs": x.get("refs") or (struktur or {}).get("refs"), "path": x.get("path") or None,
-             "a": x.get("a"), "b": x.get("b"), "old_path": x.get("old_path") or x.get("path") or None}
-        if art == "h":
-            i = x.get("datei")
-            k.update(finding=x.get("finding"), old_path=struktur["dateien"][i]["alt"] if struktur and i is not None else x["path"])
-        elif art == "k" and x.get("finding"):
-            k["finding"] = x["finding"]
-        st["kommentare"].append(k)
-        review_speichern(g, st)
-    ort = f'{k["path"]}:{k["b"] or k["a"]}' if k["path"] else "allgemein"
-    return f'neuer GitLab-Kommentar {k["id"]} (Entwurf) bei {ort} – der alte bleibt, der Nutzer löscht selbst einen'
+        struktur = struktur_laden(st) or {}
+    head = (struktur.get("refs") or {}).get("head_sha")
+    path, b = x.get("path") or None, x.get("b")
+    if path and b and art != "h" and head:  # Kommentar/Faden: Zeile auf den aktuellen MR-Stand umrechnen
+        von = (x.get("refs") or {}).get("head_sha") or head
+        b = zeile_vorwaerts(struktur.get("ordner"), von, head, path, b)
+    m = {"text": text}
+    fid = x.get("finding")
+    if fid:
+        m["finding"] = fid
+    m["title"] = "neu formuliert" + (f" (zu {fid})" if fid else "")
+    if path and b:
+        m.update(path=path, line=b)
+    elif path:  # nur alte Seite oder Zeile seitdem geändert: als allgemeiner Hinweis mit Ort im Titel
+        m["title"] += f" – {path}"
+    if art == "k":
+        m["ersetzt"] = f'Kommentar {x["id"]}'
+    elif art == "h":
+        m["ersetzt"] = f'Hinweis {x.get("finding") or x["key"]} ({x["status"]})'
+    datei = review_datei(g)[:-5] + ".agent.json"
+    with SPERRE:
+        try:
+            daten = json.load(open(datei, encoding="utf-8"))
+        except (OSError, ValueError):
+            daten = {"key": "Agent", "notes": "Umformulierungen aus Gesprächen (merge-train agent kommentar)", "markers": []}
+        daten["markers"].append(m)
+        ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
+        st = review_laden(g)
+        if datei not in st["hinweis_dateien"]:
+            st["hinweis_dateien"].append(datei)
+            review_speichern(g, st)
+    ort = f"{path}:{b}" if path and b else "allgemein"
+    return (f"neuer Agent-Hinweis (draft) bei {ort} – der Nutzer übernimmt ihn oder verwirft ihn; "
+            "der bisherige Kommentar bleibt unverändert")
 
 def hinweis_text_aendern(h, text):
     """text eines Markers in der Review-JSON ersetzen, Formatierung der Datei möglichst erhalten."""
@@ -527,7 +550,7 @@ def hinweis_text_aendern(h, text):
     except ValueError as e:
         raise GitLabFehler(f"{pfad}: geänderte JSON wäre ungültig ({e}) – nichts geschrieben")
     ersetzen(pfad, neu_roh)
-    return f'Agent-Hinweis {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})'
+    return f'Agent-Hinweis (draft) {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})'
 
 def g_ungelesen(k):
     """Gesendete Nachrichten des Nutzers, die der Agent noch nicht abgeholt hat (auch nach einer Antwort nachgeschoben)."""

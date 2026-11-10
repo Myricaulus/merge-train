@@ -80,8 +80,8 @@ Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
 - **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
-- **Kommentarliste** links über den Dateien: alle offenen Agent-Hinweise (🤖) und eigenen bzw. übernommenen Kommentare (💬)
-  in Datei-Reihenfolge. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
+- **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „GitLab-Kommentare“ (offene Agent-Hinweise 🤖,
+  eigene bzw. übernommene Kommentare 💬) und „KI-Threads“ (Gespräche mit Agenten, privat). Leere Listen sind ausgeblendet. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
 - **Commit-Ansichten** (auch im lokalen Projekt-Diff): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
   - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
     Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des MR, außerhalb
@@ -135,7 +135,8 @@ merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   #
 Bittet man im Faden, einen GitLab-Kommentar umzuformulieren, landet die Änderung im Kommentar selbst: `feedback` zeigt
 unter jedem Faden die Kommentare und Agent-Hinweise an dessen Zeile. `agent kommentar h:<key>` ändert einen noch nicht
 übernommenen Agent-Hinweis (dessen `text` in der Review-JSON). Bei einem bestehenden Kommentar oder einer Faden-id legt
-es einen neuen Entwurf an derselben Stelle an. Der alte bleibt, man löscht selbst einen von beiden.
+es einen neuen Agent-Hinweis an derselben Stelle an. Review-Kommentare entstehen nur durch „übernehmen“: Der Agent
+legt nie selbst welche an, und der alte Kommentar bleibt, bis man ihn selbst löscht.
 
 ## GitLab nur auf Knopfdruck
 

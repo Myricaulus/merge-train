@@ -313,7 +313,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     st = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
     pruefe(any(k.get("nachrichten") for k in st["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
-    # GitLab-Kommentar umformulieren: Hinweis (noch nicht übernommen) ändern, sonst neuer Entwurf daneben
+    # GitLab-Kommentar umformulieren: draft ändern, sonst neuer draft daneben; staged nur per „übernehmen“
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     an11 = [h for h in rv["hinweise"] if h["path"] == "App.cs" and h["b"] == 11 and h["status"] == "offen"]
     km11 = [x for x in rv["kommentare"] if x["path"] == "App.cs" and x["b"] == 11 and x["status"] != "loeschen"]
@@ -332,18 +332,35 @@ def mr_gespraech_test(mr, k, basis, struktur):
         pruefe(r.returncode == 0 and "geändert" in r.stdout and any(m.get("text") == "Null check missing." for m in neu["markers"]),
                "Kommentar umformulieren: offener Hinweis → text in der Review-JSON")
         open(hw, "w", encoding="utf-8").write(sicher)
-    n = len(json.loads(get(f"/api/review?mr={mr}&k={k}"))["kommentare"])
+    vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    n, nh = len(vorher["kommentare"]), len(vorher["hinweise"])
     r = sh(sys.executable, SKRIPT, "agent", "kommentar", f["id"], "Shorter: add a null check.", env=genv, check=False)
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
-    neu = [x for x in rv["kommentare"] if x["text"] == "Shorter: add a null check."]
-    pruefe(r.returncode == 0 and len(rv["kommentare"]) == n + 1 and neu and neu[0]["path"] == "App.cs" and neu[0]["b"] == 11
-           and neu[0]["status"] == "neu", "Kommentar umformulieren: Faden-id → neuer Entwurf an derselben Zeile")
-    r = sh(sys.executable, SKRIPT, "agent", "kommentar", neu[0]["id"], "Even shorter.", env=genv, check=False)
+    neu = [h for h in rv["hinweise"] if h["text"] == "Shorter: add a null check."]
+    pruefe(r.returncode == 0 and "draft" in r.stdout and len(rv["kommentare"]) == n and len(rv["hinweise"]) == nh + 1
+           and neu and neu[0]["path"] == "App.cs" and neu[0]["b"] == 11 and neu[0]["status"] == "offen",
+           "Kommentar umformulieren: Faden-id → neuer draft (Agent-Hinweis) an derselben Zeile, kein Review-Kommentar")
+    r = post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=None, b=11, text="Original comment."))  # vom Nutzer
+    km = next(x for x in r["review"]["kommentare"] if x["text"] == "Original comment.")
+    n += 1
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", km["id"], "Even shorter.", env=genv, check=False)
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
-    pruefe(r.returncode == 0 and len(rv["kommentare"]) == n + 2 and any(x["text"] == "Shorter: add a null check." for x in rv["kommentare"]),
-           "Kommentar umformulieren: bestehender Kommentar bleibt, neuer daneben")
-    for x in rv["kommentare"][n:]:
-        post("/api/kommentar", dict(basis, aktion="loeschen", id=x["id"]))
+    pruefe(r.returncode == 0 and len(rv["kommentare"]) == n and any(x["id"] == km["id"] and x["text"] == km["text"] for x in rv["kommentare"])
+           and any(h["text"] == "Even shorter." and h["extra"].get("ersetzt") == f"Kommentar {km['id']}" for h in rv["hinweise"]),
+           "Kommentar umformulieren: staged/sent bleibt unverändert, neuer draft daneben")
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", "h:" + neu[0]["key"], "Shortest.", env=genv, check=False)
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    pruefe(r.returncode == 0 and len(rv["hinweise"]) == nh + 2 and any(h["text"] == "Shortest." for h in rv["hinweise"]),
+           "Kommentar umformulieren: eigenen draft nochmal ändern")
+    h = next(h for h in rv["hinweise"] if h["text"] == "Shortest.")
+    r = post("/api/kommentar", dict(basis, aktion="neu", hinweis=h["key"]))
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    pruefe(r["ok"] and len(rv["kommentare"]) == n + 1, "Kommentar umformulieren: staged erst durch „übernehmen“")
+    for x in rv["kommentare"]:
+        if x["id"] == km["id"] or x["text"] == "Shortest.":
+            post("/api/kommentar", dict(basis, aktion="loeschen", id=x["id"]))
+    agent = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.agent.json'
+    os.remove(agent)
     pruefe(sh(sys.executable, SKRIPT, "agent", "kommentar", "gibtsnicht", "x", env=genv, check=False).returncode == 2,
            "Kommentar umformulieren: unbekanntes Ziel")
 

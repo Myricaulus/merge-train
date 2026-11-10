@@ -64,8 +64,17 @@ merge-train agent antworten <id> "Text" --als Copilot   # only if you were asked
 
 ## Writing or adjusting a GitLab comment
 
-Often the user asks in a thread to reword a GitLab review comment (a draft or an agent hint on the MR page), or a
-proposal ends in a new comment text. The thread answer itself is German and internal; the **comment text** inside it
+Often the user asks in a thread to reword a GitLab review comment, or a proposal ends in a new comment text.
+
+A comment goes through three stages (merge-train's own terms, see `AGENTS.md` in the merge-train repo; the page
+shows other labels, `feedback` uses these):
+
+- **draft**: agent hint from the review JSON, not taken over yet. May still be changed, also by you.
+- **staged**: taken over or written by the user (page: "Entwurf (lokal)"), goes out with "Review abschließen".
+  **Only the user creates staged comments** (button "übernehmen"). You never do.
+- **sent**: in GitLab as a draft note (GitLab's "draft" is *not* our draft).
+
+ The thread answer itself is German and internal; the **comment text** inside it
 is for the MR author and follows the user's GitLab comment conventions:
 
 - Before writing it, read the rules for `text` in `~/.claude/skills/jira-review/SKILL.md` (step 6, "`text` is the final
@@ -83,15 +92,16 @@ is for the MR author and follows the user's GitLab comment conventions:
 comments and agent hints on the same line ("an dieser Zeile: …", with id and full text). Then:
 
 ```sh
-merge-train agent kommentar h:<key> "New text"      # agent hint not taken over yet: changes its text in the review JSON
-merge-train agent kommentar <kommentar-id> "New text"  # existing comment (draft or already in GitLab): new draft next to it
-merge-train agent kommentar <faden-id> "New text"    # no comment there yet: new draft at the thread's line
+merge-train agent kommentar h:<key> "New text"        # draft: changes the hint's text in the review JSON
+merge-train agent kommentar <kommentar-id> "New text"  # staged or sent: new draft (agent hint) next to it
+merge-train agent kommentar <faden-id> "New text"      # no comment there yet: new draft at the thread's line
 merge-train agent kommentar <ziel> - <<'EOF'         # longer text from stdin
 …
 EOF
 ```
 
-- Existing comments are never edited: you add a new draft next to them, the user deletes one of the two.
+- You only ever write drafts: change an existing draft, otherwise add a new draft next to the staged/sent comment.
+  The user takes it over ("übernehmen") or discards it and deletes the old comment if needed.
   Don't delete anything.
 - Then answer the thread **very briefly**: "Done" for small things, otherwise one line on what changed (e.g. "Done:
   Finding-ID raus, auf 2 Sätze gekürzt"). Don't repeat the comment text in the thread.

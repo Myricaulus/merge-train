@@ -46,11 +46,13 @@ def agent_main(argv):
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: der gefragte Agent)")
-    p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (Hinweis ändern oder neuer Entwurf)",
-                       description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines noch nicht übernommenen "
-                                   "Agent-Hinweises ändert dessen text in der Review-JSON; eine Kommentar- oder Faden-id "
-                                   "legt einen neuen Entwurf an derselben Stelle an (der alte bleibt). IDs zeigt „agent feedback“.")
-    p.add_argument("ziel", help="h:<key> (Agent-Hinweis), Kommentar-id oder Faden-id (Anfang genügt)")
+    p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (draft ändern, sonst neuer draft)",
+                       description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines drafts (noch nicht übernommener "
+                                   "Agent-Hinweis) ändert dessen text in der JSON; eine Kommentar-id (staged/sent) oder Faden-id legt "
+                                   "einen neuen draft an derselben Stelle an (der alte bleibt). staged wird ein Kommentar nur, "
+                                   "wenn der Nutzer ihn übernimmt. "
+                                   "IDs zeigt „agent feedback“; Stufen siehe AGENTS.md.")
+    p.add_argument("ziel", help="h:<key> (draft), Kommentar-id oder Faden-id (Anfang genügt)")
     p.add_argument("text", help="neuer Kommentartext; - = von stdin")
     p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",

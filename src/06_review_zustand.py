@@ -57,6 +57,8 @@ def struktur_laden(st):
     return STRUKTUR[p]
 
 def k_status(k):
+    """Stufe eines Review-Kommentars (Begriffe siehe AGENTS.md): staged = neu | geaendert | loeschen,
+    sent = uebertragen | weg. Ein draft ist ein noch nicht übernommener Agent-Hinweis, kein Kommentar."""
     if k.get("geloescht"): return "loeschen"
     if k.get("gitlab_weg"): return "weg"
     if not k.get("gitlab_id"): return "neu"
