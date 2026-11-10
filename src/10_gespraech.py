@@ -182,14 +182,63 @@ def g_aktion(mr, d):
 def horcht_datei(g):
     return review_datei(g)[:-5] + ".horcht"
 
+# Was zwischen „agent horchen“ und der Agenten-Session (claude, copilot …) liegen darf. systemd/init: dorthin wandern
+# verwaiste Prozesse, wenn die Session weg ist – dann hört niemand mehr zu.
+_ZWISCHEN = {"sh", "bash", "zsh", "fish", "dash", "ksh", "python", "python3", "timeout", "env", "nohup", "setsid", "script"}
+_WAISENHAUS = {"systemd", "init", "launchd"}
+
+def _proc(pid):
+    """(name, ppid) aus /proc, None wenn es den Prozess nicht (mehr) gibt."""
+    try:
+        stat = open(f"/proc/{pid}/stat").read()
+    except OSError:
+        return None
+    zustand, ppid = stat[stat.rindex(")") + 2:].split()[:2]
+    return None if zustand == "Z" else (stat[stat.index("(") + 1:stat.rindex(")")], int(ppid))  # Zombie: schon beendet
+
+def agent_session(pid):
+    """Die Agenten-Session über pid: der nächste Vorfahr, der keine Shell/Python ist. None = verwaist (Session weg).
+    Ohne /proc (kein Linux/WSL) lässt sich das nicht prüfen: dann gilt pid selbst."""
+    if not os.path.isdir("/proc/self"):
+        return pid
+    p = pid
+    for _ in range(30):
+        info = _proc(p)
+        if info is None:
+            return None
+        name, ppid = info
+        if p != pid and name not in _ZWISCHEN:
+            return None if name in _WAISENHAUS or name.startswith(("Relay(", "SessionLeader")) else p
+        if ppid <= 1:
+            return None
+        p = ppid
+    return None
+
+SEITE_WEG_S = int(os.environ.get("MERGE_TRAIN_SEITE_WEG_S") or 30)
+
+def seite_datei(g):
+    return review_datei(g)[:-5] + ".seite"
+
+def seite_lebt(g):
+    """Lebenszeichen einer offenen Seite (fragt alle 4 s nach dem Stand) – horchen hört auf, wenn keins mehr kommt."""
+    p = seite_datei(g)
+    try:
+        os.utime(p)
+    except FileNotFoundError:
+        ersetzen(p, "")
+
 def horcht(g):
-    """Name der Session, die gerade mit „agent horchen“ zuhört (Standard „Claude“), sonst None."""
+    """Name der Session, die gerade mit „agent horchen“ zuhört (Standard „Claude“), sonst None. Zählt nur, solange über
+    dem horchen-Prozess noch eine Agenten-Session lebt (sonst ist es ein Überbleibsel einer beendeten Session)."""
     try:
         teile = open(horcht_datei(g)).read().split()
-        os.kill(int(teile[0]), 0)
-        return " ".join(teile[2:]) or "Claude"
+        pid = int(teile[0])
+        os.kill(pid, 0)
     except (OSError, ValueError, IndexError):
         return None
+    if agent_session(pid) is None:
+        return None
+    return " ".join(teile[2:]) or "Claude"
 
 def todo_offen(tid):
     if not tid:
@@ -438,7 +487,17 @@ def g_horchen(ziele, timeout=0, als=None):
     ende = time.time() + timeout if timeout else None
     pfade = [review_datei(g) for g in ziele]
     zuletzt = None
+    session = agent_session(os.getpid())  # endet die Agenten-Session, hört auch horchen auf
+    start, gesehen = time.time(), False
+    seiten = [seite_datei(g) for g in ziele]
     while not ende or time.time() < ende:
+        if session and _proc(session) is None:
+            return "merge-train: Agenten-Session beendet – horchen hört auf", 0
+        zuletzt_da = max([os.path.getmtime(p) for p in seiten if os.path.exists(p)] or [0])
+        gesehen = gesehen or zuletzt_da > start  # erst zählen, wenn die Seite nach dem Start offen war
+        if gesehen and time.time() - zuletzt_da > SEITE_WEG_S:
+            return (f"merge-train: Seite geschlossen (seit {SEITE_WEG_S} s kein Lebenszeichen) – horchen hört auf. "
+                    "Neu horchen, wenn der Nutzer weitermachen will.", 0)
         m = []
         for p in pfade:
             try:

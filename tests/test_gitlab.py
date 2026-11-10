@@ -124,6 +124,8 @@ def lokal_test():
         pruefe('id="ansicht"' in s2 and 'id="d1"' not in s2 and 'data-b="41"' in s2 and 'data-b="20"' not in s2,
                "lokal: Seit-Ansicht zeigt nur den zweiten Schritt")
         gespraech_test(proj, env, k, hol, g)
+        horchen_waise_test(proj, env, k, hol)
+        horchen_seite_zu_test(proj, env, k, hol)
     finally:
         srv.terminate(); srv.wait()
 
@@ -201,6 +203,36 @@ def gespraech_test(proj, env, k, hol, g):
     r = post_l("/fertig", {"projekt": "proj", "sha": g("rev-parse", "claude"), "k": k})
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
     pruefe(r["ok"] and not rv["faeden"], "Gespräch: fertig räumt erledigte Fäden weg")
+
+def horchen_waise_test(proj, env, k, hol):
+    """Endet die Agenten-Session, hört horchen auf, und die Seite zeigt niemanden mehr als Zuhörer."""
+    os.symlink("/bin/sh", f"{T}/bin/agentx")  # ein „Agent“ mit eigenem Prozessnamen
+    ag = subprocess.Popen([f"{T}/bin/agentx", "-c", f'"{sys.executable}" "{SKRIPT}" agent horchen --als Fake; true'], cwd=proj, env=env)
+    wer = None
+    for _ in range(50):
+        wer = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("horcht")
+        if wer == "Fake":
+            break
+        time.sleep(0.1)
+    pruefe(wer == "Fake", "horchen: Seite zeigt den Zuhörer")
+    datei = f"{T}/data/merge-train/lokal/proj.horcht"
+    ag.kill(); ag.wait()  # Session hart beendet: horchen ist jetzt verwaist
+    for _ in range(50):
+        if not os.path.exists(datei):
+            break
+        time.sleep(0.1)
+    pruefe(not os.path.exists(datei), "horchen: beendet sich, wenn die Agenten-Session weg ist")
+    pruefe(json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("horcht") is None, "horchen: Seite zeigt danach niemanden")
+
+def horchen_seite_zu_test(proj, env, k, hol):
+    """Wird die Seite geschlossen (kein Lebenszeichen mehr), hört horchen auf – aber erst, wenn sie nach dem Start da war."""
+    lau = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", "--timeout", "20"], cwd=proj, stdout=subprocess.PIPE,
+                           text=True, env=dict(env, MERGE_TRAIN_SEITE_WEG_S="2"))
+    time.sleep(3)
+    pruefe(lau.poll() is None, "horchen: ohne Seite seit dem Start läuft es weiter")
+    hol(f"/api/stand?mr=projekt:proj&k={k}")  # Seite meldet sich einmal, dann nicht mehr
+    aus, _ = lau.communicate(timeout=20)
+    pruefe("Seite geschlossen" in aus, "horchen: hört auf, wenn die Seite kein Lebenszeichen mehr schickt")
 
 def gemischt_test(mr):
     """Beide Quellen an: ein Zug mit lokalen Waggons und MRs, jede Seite mit den Knöpfen ihrer Quelle."""

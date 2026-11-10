@@ -102,6 +102,7 @@ def server():
                         return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
                     g = schluessel_von(q.get("mr", ""))
                     if pfad == "api/stand":
+                        seite_lebt(g)
                         return self.json_senden(200, {"stand": stand(g, review_laden(g))})
                     return self.json_senden(200, wagen_daten(g, ansicht_lesen(q.get("ansicht"))))
                 if pfad in ("zug.js", "api/zug"):  # der gemischte Zug aller eingeschalteten Quellen
