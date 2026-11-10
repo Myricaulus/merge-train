@@ -96,7 +96,7 @@ exec(ALLES_LADEN)
 ARBEIT_PRUEFEN = ALLES_LADEN + r"""
 import json, os, subprocess, sys
 def thread_pruefen(m, w):
-    g = {"lokal": m["projektname"](w)}
+    g = m["Waggon"](lokal=m["projektname"](w))
     fid, _ = m["faden_anlegen"]([g], "Unklar: a.py:1 und `neu.py` – fehlt.py nicht", "a.py:1",
                             [{"path": "neu.py", "line": 1, "label": "neu"}, {"path": "neu.py", "diff": "a.py"}])
     allg, _ = m["faden_anlegen"]([g], "Zusammenfassung", None)
@@ -104,7 +104,7 @@ def thread_pruefen(m, w):
     for args in (("x", "gibtsnicht.py:1"), ("x", "a.py:99"), ("x", None, ["gibtsnicht.py"])):
         try:
             m["faden_anlegen"]([g], *args); fehler.append(False)
-        except m["GitLabFehler"]:
+        except m["Fehler"]:
             fehler.append(True)
     d = m["gespraech_daten"](g)
     k = {x["id"]: x for x in d["kommentare"]}
@@ -121,7 +121,7 @@ st = m["statistik"](w)
 pfad, struktur = m["projekt_seite"](w)
 print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
                   "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
-                  "stat": st, "fertig": m["LOKAL"].kann["fertig"], "dateien": [d["neu"] for d in struktur["dateien"]],
+                  "stat": st, "fertig": m["fertig_moeglich"](), "dateien": [d["neu"] for d in struktur["dateien"]],
                   "seite": os.path.exists(pfad), "titel": open(pfad, encoding="utf-8").read().split("<h1>")[1].split("</h1>")[0],
                   **thread_pruefen(m, w)}))
 """

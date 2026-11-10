@@ -2,12 +2,12 @@
 import argparse, hashlib, json, os, re, subprocess, sys, time
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, SPERRE, ersetzen, jetzt, melden, projektname
+from .waggon import Fehler, Waggon
 from .git import git, inhalt, kurzpfad, projekt_ordner
 from .zeilen import zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .zustand import faeden_von, faden_status, review_datei, review_laden, review_speichern, review_kommentare, struktur_laden
-from .gitlab import (GitLabFehler, enc, geaenderte_dateien, glab, ist_mr_ref, mr_aus_id, mr_id, mr_meta_holen,
-    mr_ref, mr_vollstaendig, remote_info)
+from .zustand import faden_status, faeden_von, review_datei, review_kommentare, review_laden, review_speichern, struktur_laden
+from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
 from .quellen import quelle
@@ -22,30 +22,30 @@ def gespraech_ziele(name=None):
     if name:
         mr = None
         try:
-            mr = mr_aus_id(name)
-        except GitLabFehler:
+            mr = Waggon.aus_id(name)
+        except Fehler:
             if ist_mr_ref(name):
                 mr = mr_ref(name, os.getcwd())
-        if mr and not mr.get("lokal"):
-            treffer = [g for g in alle_gespraeche() if not g.get("lokal") and g["projekt"] == mr["projekt"]
-                       and g["iid"] == mr["iid"] and (not mr["host"] or g["host"] == mr["host"])]
+        if mr and not mr.lokal:
+            treffer = [waggon for waggon in alle_gespraeche() if not waggon.lokal and waggon.projekt == mr.projekt
+                       and waggon.iid == mr.iid and (not mr.host or waggon.host == mr.host)]
             return treffer[:1] or [mr]
     ordner = name or os.getcwd()
     if name and not os.path.isdir(ordner):
         ordner = projekt_ordner(name)
     wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() if os.path.isdir(ordner) else ""
     if not wurzel:
-        raise GitLabFehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
-    ziele = [{"lokal": projektname(wurzel)}] if KONF["lokal"] else []
+        raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
+    ziele = [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
     echt = os.path.realpath(wurzel)
-    for g in alle_gespraeche():
-        if not g.get("lokal"):
+    for waggon in alle_gespraeche():
+        if not waggon.lokal:
             with SPERRE:
-                struktur = struktur_laden(review_laden(g))
+                struktur = struktur_laden(review_laden(waggon))
             if struktur and os.path.realpath(struktur["ordner"]) == echt:
-                ziele.append(g)
+                ziele.append(waggon)
     if not ziele:
-        raise GitLabFehler(f"kein Gespräch zu {wurzel}")
+        raise Fehler(f"kein Gespräch zu {wurzel}")
     return ziele
 
 
@@ -105,10 +105,10 @@ def faden_ausgeben(k, wurzel, head, kontext=3, rv=None):
 def faeden_abholen(ziele, alle=False, markieren=True):
     """Text mit allen Fäden, die auf den Agenten warten (alle: auch beantwortete). Markiert Nachrichten als abgeholt."""
     teile, gesamt = [], 0
-    for g in ziele:
-        wurzel, head = quelle(g).ort(g)
+    for waggon in ziele:
+        wurzel, head = quelle(waggon).ort(waggon)
         with SPERRE:
-            st = review_laden(g)
+            st = review_laden(waggon)
             faeden = [k for k in faeden_von(st) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
             zeigen = [k for k in faeden if alle or faden_status(k) == "wartet" or faden_ungelesen(k)]
             if markieren:
@@ -117,9 +117,9 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                         if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt"):
                             m["abgeholt"] = jetzt()
                 if zeigen:
-                    review_speichern(g, st)
-        wo = f"{BIS} {head[:8]}" if g.get("lokal") else f"MR {mr_id(g)} · Stand {head[:8]} · Klon {wurzel}"
-        kopf = (f'merge-train · {quelle(g).name_von(g)} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
+                    review_speichern(waggon, st)
+        wo = f"{BIS} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
+        kopf = (f'merge-train · {waggon.name} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
             if len(ziele) == 1:
@@ -127,18 +127,18 @@ def faeden_abholen(ziele, alle=False, markieren=True):
             continue
         gesamt += len(zeigen)
         rv = None
-        if quelle(g).kann["review"]:
+        if waggon.kann["review"]:
             try:
-                rv = review_daten(g)
-            except GitLabFehler:
+                rv = review_daten(waggon)
+            except Fehler:
                 pass
         teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, rv=rv) + "\n" for k in zeigen]
         teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
-                     "nicht committen." if BIS == ARBEITSSTAND else f"den aktuellen Stand von {BIS}.") if quelle(g).kann["committen"]
+                     "nicht committen." if BIS == ARBEITSSTAND else f"den aktuellen Stand von {BIS}.") if waggon.kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
-        if any(quelle(g).kann["review"] for g in ziele):
+        if any(waggon.kann["review"] for waggon in ziele):
             teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"')
     return "\n".join(teile) or "(nichts offen)", gesamt
 
@@ -149,36 +149,36 @@ def kommentar_umformulieren(ziel, text, ziele=None):
     Stelle. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Rückgabe: Meldung."""
     text = (text or "").strip()
     if not text:
-        raise GitLabFehler("Kommentartext fehlt")
+        raise Fehler("Kommentartext fehlt")
     ziel = ziel.strip()
     hkey = ziel[2:] if ziel.startswith("h:") else None
     passt = lambda i, z: i == z or (len(z) >= 4 and i.startswith(z))
     treffer = []
-    for g in ziele or alle_gespraeche():
-        if not quelle(g).kann["review"]:
+    for waggon in ziele or alle_gespraeche():
+        if not waggon.kann["review"]:
             continue
         with SPERRE:
-            st = review_laden(g)
+            st = review_laden(waggon)
         if hkey:
             try:
-                rv = review_daten(g)
-            except GitLabFehler:
+                rv = review_daten(waggon)
+            except Fehler:
                 continue
-            treffer += [(g, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
+            treffer += [(waggon, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
         else:
-            treffer += [(g, "k", k) for k in review_kommentare(st) if passt(k["id"], ziel)]
-            treffer += [(g, "f", k) for k in faeden_von(st) if passt(k["id"], ziel)]
+            treffer += [(waggon, "k", k) for k in review_kommentare(st) if passt(k["id"], ziel)]
+            treffer += [(waggon, "f", k) for k in faeden_von(st) if passt(k["id"], ziel)]
     if not treffer:
-        raise GitLabFehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
+        raise Fehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
     if len(treffer) > 1:
-        raise GitLabFehler(f"{ziel} ist nicht eindeutig: " + ", ".join((x.get("key") or x["id"]) for _, _, x in treffer))
-    g, art, x = treffer[0]
+        raise Fehler(f"{ziel} ist nicht eindeutig: " + ", ".join((x.get("key") or x["id"]) for _, _, x in treffer))
+    waggon, art, x = treffer[0]
     if art == "h" and x["status"] == "offen":
         return hinweis_text_aendern(x, text)
     # staged/sent oder ein Faden: neuer draft (Agent-Hinweis) an derselben Stelle. staged wird ein Kommentar nur,
     # wenn der Nutzer auf „übernehmen“ klickt – der Agent legt nie selbst Review-Kommentare an.
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
         struktur = struktur_laden(st) or {}
     head = (struktur.get("refs") or {}).get("head_sha")
     path, b = x.get("path") or None, x.get("b")
@@ -201,12 +201,12 @@ def kommentar_umformulieren(ziel, text, ziele=None):
     # in die Review-JSON des MR: die des ersetzten Hinweises, sonst die erste
     datei = x.get("json") if art == "h" else None
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
     if not datei and art == "k" and x.get("hinweis"):
-        datei = next((h.get("json") for h in review_daten(g)["hinweise"] if h["key"] == x["hinweis"]), None)
-    datei = datei or next(iter(hinweis_dateien(g, st)), None)
+        datei = next((h.get("json") for h in review_daten(waggon)["hinweise"] if h["key"] == x["hinweis"]), None)
+    datei = datei or next(iter(hinweis_dateien(waggon, st)), None)
     if not datei:
-        raise GitLabFehler("Zu diesem MR gibt es keine Review-JSON (Agent-Hinweise) – den neuen Text im Faden vorschlagen")
+        raise Fehler("Zu diesem MR gibt es keine Review-JSON (Agent-Hinweise) – den neuen Text im Faden vorschlagen")
     daten = json.load(open(datei, encoding="utf-8-sig"))
     (daten if isinstance(daten, list) else daten.setdefault("markers", [])).append(m)
     ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
@@ -220,14 +220,14 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     Einträge wie in der Review-JSON ("pfad:zeile-bis", {"path", "line", "end", "label", "diff"}). Rückgabe: (id, Meldung)."""
     text = (text or "").strip()
     if not text:
-        raise GitLabFehler("Text fehlt")
+        raise Fehler("Text fehlt")
     if len(ziele) > 1:
-        lokal = [g for g in ziele if g.get("lokal")]
+        lokal = [waggon for waggon in ziele if waggon.lokal]
         if not lokal:
-            raise GitLabFehler("mehrere MRs zu diesem Repo – mit -p den MR angeben: " + ", ".join(mr_id(g) for g in ziele))
+            raise Fehler("mehrere MRs zu diesem Repo – mit -p den MR angeben: " + ", ".join(waggon.id for waggon in ziele))
         ziele = lokal[:1]
-    g = ziele[0]
-    wurzel, head = quelle(g).ort(g)
+    waggon = ziele[0]
+    wurzel, head = quelle(waggon).ort(waggon)
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": {"head_sha": head}, "erstellt": jetzt(),
          "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True}
     if als:
@@ -237,26 +237,26 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
         path = pfad_norm(m.group(1))
         t = inhalt(wurzel, head, path)
         if t is None:
-            raise GitLabFehler(f"{path} gibt es im Stand {head[:8]} nicht")
+            raise Fehler(f"{path} gibt es im Stand {head[:8]} nicht")
         b = int(m.group(2)) if m.group(2) else None
         zeilen = t.split("\n")
         if b and not 1 <= b <= zeilenzahl(t):
-            raise GitLabFehler(f"{path} hat keine Zeile {b} ({zeilenzahl(t)} Zeilen)")
+            raise Fehler(f"{path} hat keine Zeile {b} ({zeilenzahl(t)} Zeilen)")
         k.update(path=path, b=b, zeile_text=zeilen[b - 1] if b else None)
     sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"])
     kaputt = [f'{s["path"] or "?"}: {s["problem"]}' for s in sa if s["problem"]]
     if kaputt:
-        raise GitLabFehler("siehe auch: " + "; ".join(kaputt))
+        raise Fehler("siehe auch: " + "; ".join(kaputt))
     if siehe:
         k["see_also"] = list(siehe)
     k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=als))
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
         st["kommentare"].append(k)
-        review_speichern(g, st)
+        review_speichern(waggon, st)
     wo = f'{k["path"]}:{k["b"]}' if k["b"] else (k["path"] or "allgemein")
-    melden(f"{quelle(g).name_von(g)}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
-    return k["id"], f'[{k["id"]}] Thread bei {wo} in {quelle(g).name_von(g)} angelegt'
+    melden(f"{waggon.name}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
+    return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt'
 
 
 def hinweis_text_aendern(h, text):
@@ -277,7 +277,7 @@ def hinweis_text_aendern(h, text):
     try:
         json.loads(neu_roh)
     except ValueError as e:
-        raise GitLabFehler(f"{pfad}: geänderte JSON wäre ungültig ({e}) – nichts geschrieben")
+        raise Fehler(f"{pfad}: geänderte JSON wäre ungültig ({e}) – nichts geschrieben")
     ersetzen(pfad, neu_roh)
     return f'Agent-Hinweis (draft) {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})'
 
@@ -290,21 +290,21 @@ def faden_ungelesen(k):
 def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
     """Antwort auf Faden fid (Anfang genügt) – gesucht in ziele, sonst in allen Gesprächen."""
     treffer = []
-    for g in ziele or alle_gespraeche():
+    for waggon in ziele or alle_gespraeche():
         with SPERRE:
-            st = review_laden(g)
-        treffer += [(g, k["id"]) for k in faeden_von(st) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))]
+            st = review_laden(waggon)
+        treffer += [(waggon, k["id"]) for k in faeden_von(st) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))]
     if not treffer:
-        raise GitLabFehler(f"Gespräch {fid} gibt es nicht (merge-train agent feedback --alle)")
+        raise Fehler(f"Gespräch {fid} gibt es nicht (merge-train agent feedback --alle)")
     if len(treffer) > 1:
-        raise GitLabFehler(f"{fid} ist nicht eindeutig: " + ", ".join(t[1] for t in treffer))
-    g, kid = treffer[0]
+        raise Fehler(f"{fid} ist nicht eindeutig: " + ", ".join(t[1] for t in treffer))
+    waggon, kid = treffer[0]
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
         k = next(k for k in faeden_von(st) if k["id"] == kid)
         neu = faden_ungelesen(k)
         if neu:  # der Nutzer hat inzwischen nachgelegt: nicht blind abhaken
-            raise GitLabFehler(f'In [{k["id"]}] gibt es {len(neu)} neue Nachricht(en), die du noch nicht gelesen hast – '
+            raise Fehler(f'In [{k["id"]}] gibt es {len(neu)} neue Nachricht(en), die du noch nicht gelesen hast – '
                                f'erst „merge-train agent feedback“, dann antworten:\n' +
                                "\n".join(f'    Nutzer ({zeit_kurz(m["gesendet"])}): {m["text"]}' for m in neu))
         wer = als or k.get("an") or None
@@ -312,10 +312,10 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
             k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=wer))
         if erledigt:
             k["erledigt"] = {"von": "claude", "zeit": jetzt(), "wer": wer}
-        review_speichern(g, st)
+        review_speichern(waggon, st)
         rest = sum(1 for x in faeden_von(st) if faden_status(x) == "wartet")
         tid = st.get("todo_id")
-    melden(f"{quelle(g).name_von(g)}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
+    melden(f"{waggon.name}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
     if not rest and todo_offen(tid):
         subprocess.run(["todo", "erledigt", tid, "-n", "Alle Fragen/Feedback in merge-train beantwortet"], capture_output=True)
     return k["id"], rest
@@ -324,13 +324,13 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
 def faeden_horchen(ziele, timeout=0, als=None):
     """Warten, bis neue (noch nicht abgeholte) Nachrichten da sind, dann ausgeben. Rückgabe (text, anzahl)."""
     import atexit, signal, time
-    dateien = [horcht_datei(g) for g in ziele]
+    dateien = [horcht_datei(waggon) for waggon in ziele]
     for d in dateien:
         ersetzen(d, f"{os.getpid()} {jetzt()} {als or 'Claude'}\n")
     sid, sess = os.environ.get("CLAUDE_CODE_SESSION_ID"), agent_session(os.getpid())
     if sid and sess and re.fullmatch(r"[\w-]+", sid):
-        for g in ziele:
-            ersetzen(agent_datei(g), f"{sess} {sid} {als or 'Claude'}\n")
+        for waggon in ziele:
+            ersetzen(agent_datei(waggon), f"{sess} {sid} {als or 'Claude'}\n")
     def weg(*_):
         for d in dateien:
             try:
@@ -342,11 +342,11 @@ def faeden_horchen(ziele, timeout=0, als=None):
     for sig in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, lambda *_: sys.exit(0))
     ende = time.time() + timeout if timeout else None
-    pfade = [review_datei(g) for g in ziele]
+    pfade = [review_datei(waggon) for waggon in ziele]
     zuletzt = None
     session = agent_session(os.getpid())  # endet die Agenten-Session, hört auch horchen auf
     start, gesehen = time.time(), False
-    seiten = [seite_datei(g) for g in ziele]
+    seiten = [seite_datei(waggon) for waggon in ziele]
     while not ende or time.time() < ende:
         if session and _prozess(session) is None:
             return "merge-train: Agenten-Session beendet – horchen hört auf", 0
@@ -364,12 +364,12 @@ def faeden_horchen(ziele, timeout=0, als=None):
         if m != zuletzt:
             zuletzt = m
             neu = []
-            for g in ziele:
+            for waggon in ziele:
                 with SPERRE:
-                    st = review_laden(g)
+                    st = review_laden(waggon)
                 if any(n["von"] == "ich" and n.get("gesendet") and not n.get("abgeholt")
                        for k in faeden_von(st) for n in k["nachrichten"]):
-                    neu.append(g)
+                    neu.append(waggon)
             if neu:
                 return faeden_abholen(neu)
         time.sleep(1)
@@ -386,13 +386,13 @@ def mr_fuer_hinweise(pfad, daten, ref=None):
     else:
         branch = daten.get("branch")
         if not branch:
-            raise GitLabFehler("kein MR zuzuordnen: --mr angeben oder „branch“/„mr“ in die JSON schreiben")
+            raise Fehler("kein MR zuzuordnen: --mr angeben oder „branch“/„mr“ in die JSON schreiben")
         host, projekt = remote_info(ordner)
         lst = glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}")
         if not lst:
-            raise GitLabFehler(f"kein offener MR für Branch {branch} in {projekt} – --mr angeben")
+            raise Fehler(f"kein offener MR für Branch {branch} in {projekt} – --mr angeben")
         mr = mr_ref(lst[0]["web_url"])
-        mr["host"] = mr["host"] or host
+        mr = mr._replace(host=mr.host or host)
     return mr, ordner
 
 
@@ -486,7 +486,7 @@ def agent_main(argv):
             print(f"[{fid}] beantwortet" + (" und erledigt" if o.erledigt else "")
                   + (f" · {rest} weitere(r) wartet/warten noch" if rest else " · nichts mehr offen"))
             return 0
-        except GitLabFehler as e:
+        except Fehler as e:
             print(f"merge-train: {e}", file=sys.stderr); return 2
     pfad = os.path.abspath(o.datei)
     try:
@@ -498,16 +498,16 @@ def agent_main(argv):
         with SPERRE:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
             st = review_laden(mr)
             try:
-                if remote_info(ordner)[1].lower() == (mr["projekt"] or "").lower() and st.get("klon") != ordner:
+                if remote_info(ordner)[1].lower() == (mr.projekt or "").lower() and st.get("klon") != ordner:
                     st["klon"] = ordner; review_speichern(mr, st)
-            except GitLabFehler:
+            except Fehler:
                 pass
         mr, meta = mr_meta_holen(mr)  # die einzige GitLab-Anfrage: aktuelle MR-Daten für die Seite merken
-    except GitLabFehler as e:
+    except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2
     try:
         _, struktur, mr = mr_seite(mr)
-    except GitLabFehler as e:
+    except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 3
     with SPERRE:
         st = review_laden(mr)
@@ -522,10 +522,10 @@ def agent_main(argv):
             print("merge-train: --seit ohne Commit und kein reviewed_commit in der JSON", file=sys.stderr); return 2
         try:
             geaendert = geaenderte_dateien(mr, seit, head)
-        except GitLabFehler as e:
+        except Fehler as e:
             print(f"merge-train: {e}", file=sys.stderr); return 2
     hinweise, _ = hinweise_aufloesen(mr, st, struktur, nur=[pfad])
-    print(f'{mr["projekt"]}!{mr["iid"]} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
+    print(f'{mr.projekt}!{mr.iid} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
     print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
     gl_head = (meta.get("diff_refs") or {}).get("head_sha") or ""
     abweichend = gl_head and gl_head != head
@@ -563,7 +563,7 @@ def agent_main(argv):
             if s["problem"]:
                 print(f'{"":<5}   siehe auch {s["path"] or "-"}: FEHLT: {s["problem"]}'); schlecht += 1
     if o.befehl == "zeigen":
-        im_browser("/mr/" + mr_id(mr), nur_url=o.nicht_oeffnen)
+        im_browser("/mr/" + mr.id, nur_url=o.nicht_oeffnen)
     if schlecht:
         return 1
     return 3 if abweichend else 0

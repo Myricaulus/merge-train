@@ -3,10 +3,11 @@ import json, os, re, shlex, subprocess, time
 import urllib.parse
 from datetime import datetime
 from .einstellungen import KONF, ORDNER, SPERRE, ersetzen
+from .waggon import Fehler, Waggon
 from .git import aussen_log, git, kurzpfad, ref_sha
 from .zustand import review_laden, review_speichern
 
-class GitLabFehler(Exception):
+class GitLabFehler(Fehler):
     pass
 
 
@@ -69,7 +70,7 @@ def remote_info(ordner):
         m = re.match(rx, url)
         if m:
             return KONF["gitlab_host"] or m.group(1), m.group(2)
-    raise GitLabFehler(f"kein GitLab-Remote „origin“ in {ordner}")
+    raise Fehler(f"kein GitLab-Remote „origin“ in {ordner}")
 
 
 def ist_mr_ref(s):
@@ -77,67 +78,47 @@ def ist_mr_ref(s):
 
 
 def mr_ref(s, ordner=None):
-    """MR-URL, '!42' (Projekt aus git-Remote von ordner) oder 'gruppe/projekt!42' → {host, projekt, iid}."""
+    """MR-URL, '!42' (Projekt aus git-Remote von ordner) oder 'gruppe/projekt!42' → Waggon."""
     s = str(s).strip()
     m = URL_MR.search(s)
     if m:
-        return {"host": m.group(1), "projekt": m.group(2), "iid": int(m.group(3))}
+        return Waggon(host=m.group(1), projekt=m.group(2), iid=int(m.group(3)))
     m = re.fullmatch(r"([\w.\-/]+)!(\d+)", s)
     if m:
         host = KONF["gitlab_host"]
         if not host and ordner:
             try:
                 host = remote_info(ordner)[0]
-            except GitLabFehler:
+            except Fehler:
                 pass
-        return {"host": host, "projekt": m.group(1), "iid": int(m.group(2))}
+        return Waggon(host=host, projekt=m.group(1), iid=int(m.group(2)))
     m = re.fullmatch(r"!?(\d+)", s)
     if m:
         host, projekt = remote_info(ordner or os.getcwd())
-        return {"host": host, "projekt": projekt, "iid": int(m.group(1))}
-    raise GitLabFehler(f"kein Merge-Request erkannt: {s}")
+        return Waggon(host=host, projekt=projekt, iid=int(m.group(1)))
+    raise Fehler(f"kein Merge-Request erkannt: {s}")
 
 
 def mr_vollstaendig(mr):
     """Ohne Host (glab-Standardhost): Host und kanonischen Pfad aus der API holen."""
-    if mr["host"]:
+    if mr.host:
         return mr
     return mr_normalisieren(glab("", mr_pfad(mr)), mr)
 
 
-def mr_id(mr):
-    if mr.get("lokal"):
-        return "projekt:" + mr["lokal"]
-    return f'{mr["host"]}/{mr["projekt"]}/{mr["iid"]}'
-
-
-def mr_aus_id(s):
-    """Seiten-Kennung → Ref. „projekt:name“ = lokales Projekt ({"lokal": name}), sonst GitLab-MR."""
-    if str(s).startswith("projekt:"):
-        name = str(s)[8:]
-        if not name or any(t in ("", ".", "..") for t in name.split("/")):
-            raise GitLabFehler(f"ungültige Projekt-Kennung: {s}")
-        return {"lokal": name}
-    teile = str(s).split("/")
-    if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
-       or any(t in ("", ".", "..") for t in teile[1:-1]):
-        raise GitLabFehler(f"ungültige MR-Kennung: {s}")
-    return {"host": teile[0], "projekt": "/".join(teile[1:-1]), "iid": int(teile[-1])}
-
-
 def mr_pfad(mr):
-    return f'projects/{enc(mr["projekt"])}/merge_requests/{mr["iid"]}'
+    return f'projects/{enc(mr.projekt)}/merge_requests/{mr.iid}'
 
 
 def mr_normalisieren(meta, mr):
     """Kanonischen Projektpfad aus web_url übernehmen (Umbenennungen, Groß/klein)."""
     m = URL_MR.search(meta.get("web_url") or "")
-    return {"host": mr["host"] or m.group(1), "projekt": m.group(2), "iid": int(m.group(3))} if m else mr
+    return Waggon(host=mr.host or m.group(1), projekt=m.group(2), iid=int(m.group(3))) if m else mr
 
 
 def lokale_klone(mr):
     out = []
-    for schl in (mr["projekt"], f'{mr["host"]}/{mr["projekt"]}'):
+    for schl in (mr.projekt, f'{mr.host}/{mr.projekt}'):
         if schl in KONF["repos"]:
             out.append(os.path.expanduser(KONF["repos"][schl]))
     k = review_laden(mr).get("klon")
@@ -158,7 +139,7 @@ class MetaFehlt(GitLabFehler):
 
 def mr_meta_holen(mr):
     """MR-Daten aus GitLab holen und merken. Rückgabe (mr kanonisch, meta)."""
-    roh = glab(mr["host"], mr_pfad(mr))
+    roh = glab(mr.host, mr_pfad(mr))
     mr = mr_normalisieren(roh, mr)
     meta = {k: roh.get(k) for k in META_FELDER}
     meta["author"] = {"name": (roh.get("author") or {}).get("name", "")}
@@ -166,7 +147,7 @@ def mr_meta_holen(mr):
     with SPERRE:
         st = review_laden(mr)
         st["meta"] = meta
-        st["mr"] = dict(mr, web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
+        st["mr"] = dict(mr.als_dict(), web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
                         source_branch=meta.get("source_branch") or "", target_branch=meta.get("target_branch") or "")
         review_speichern(mr, st)
     return mr, meta
@@ -189,7 +170,7 @@ def mr_lokal(mr, meta):
         if not base:
             gruende.append(f"{kurzpfad(o)}: kein gemeinsamer Vorgänger von {ziel} und {quelle}"); continue
         return o, {"base_sha": base, "start_sha": tgt, "head_sha": head}
-    raise GitLabFehler("kein lokaler Klon für " + f'{mr["projekt"]}!{mr["iid"]}: '
+    raise Fehler("kein lokaler Klon für " + f'{mr.projekt}!{mr.iid}: '
                        + ("; ".join(gruende) or "unter [repos] eintragen oder „merge-train agent zeigen“ im Repo aufrufen"))
 
 
@@ -228,4 +209,4 @@ def geaenderte_dateien(mr, von, bis):
         out = git(o, "-c", "core.quotepath=false", "diff", "--name-status", "-M", von, bis, check=False)
         if out is not None:
             return {p for z in out.splitlines() for p in z.split("\t")[1:]}
-    raise GitLabFehler(f"Commit {von} ist im lokalen Klon nicht bekannt (git fetch)")
+    raise Fehler(f"Commit {von} ist im lokalen Klon nicht bekannt (git fetch)")

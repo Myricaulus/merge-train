@@ -1,11 +1,12 @@
 """Agent-Hinweise (drafts) aus den review-markers.json lesen und auf Zeilen der Seite auflösen."""
 import glob, hashlib, json, os, re
 from .einstellungen import KONF
+from .waggon import Fehler
 from .git import inhalt
 from .zeilen import alt_zeile, im_diff
 from .diff_html import zeilenzahl
 from .zustand import datei_index
-from .gitlab import GitLabFehler, mr_ref
+from .gitlab import mr_ref
 
 HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
 
@@ -88,9 +89,9 @@ def hinweis_passt(pfad, info):
     if h.get("mr"):
         try:
             ref = mr_ref(h["mr"], os.path.dirname(pfad))
-        except GitLabFehler:
+        except Fehler:
             return False
-        return ref["iid"] == info.get("iid") and (ref["projekt"] or "").lower() == (info.get("projekt") or "").lower()
+        return ref.iid == info.get("iid") and (ref.projekt or "").lower() == (info.get("projekt") or "").lower()
     return bool(h.get("branch")) and h["branch"] == info.get("source_branch")
 
 

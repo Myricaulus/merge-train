@@ -2,14 +2,14 @@
 import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
 from .einstellungen import KONF, SPERRE, ersetzen, jetzt
+from .waggon import Fehler
 from .zustand import faeden_von, review_datei, review_laden, review_speichern
-from .gitlab import GitLabFehler, mr_id
 from .quellen import quelle
 
 # ---- Wer bekommt das Feedback?
 
-def horcht_datei(g):
-    return review_datei(g)[:-5] + ".horcht"
+def horcht_datei(waggon):
+    return review_datei(waggon)[:-5] + ".horcht"
 
 
 # Was zwischen „agent horchen“ und der Agenten-Session (claude, copilot …) liegen darf. systemd/init: dorthin wandern
@@ -52,24 +52,24 @@ def agent_session(pid):
 SEITE_WEG_S = int(os.environ.get("MERGE_TRAIN_SEITE_WEG_S") or 30)
 
 
-def seite_datei(g):
-    return review_datei(g)[:-5] + ".seite"
+def seite_datei(waggon):
+    return review_datei(waggon)[:-5] + ".seite"
 
 
-def seite_lebt(g):
+def seite_lebt(waggon):
     """Lebenszeichen einer offenen Seite (fragt alle 4 s nach dem Stand) – horchen hört auf, wenn keins mehr kommt."""
-    p = seite_datei(g)
+    p = seite_datei(waggon)
     try:
         os.utime(p)
     except FileNotFoundError:
         ersetzen(p, "")
 
 
-def horcht(g):
+def horcht(waggon):
     """Name der Session, die gerade mit „agent horchen“ zuhört (Standard „Claude“), sonst None. Zählt nur, solange über
     dem horchen-Prozess noch eine Agenten-Session lebt (sonst ist es ein Überbleibsel einer beendeten Session)."""
     try:
-        teile = open(horcht_datei(g)).read().split()
+        teile = open(horcht_datei(waggon)).read().split()
         pid = int(teile[0])
         os.kill(pid, 0)
     except (OSError, ValueError, IndexError):
@@ -85,8 +85,8 @@ def horcht(g):
 # (input + cache_creation + cache_read) bzw. nach /compact postTokens. Solange die Session lebt, auch während sie
 # arbeitet (dann hört sie gerade nicht zu).
 
-def agent_datei(g):
-    return review_datei(g)[:-5] + ".agent"
+def agent_datei(waggon):
+    return review_datei(waggon)[:-5] + ".agent"
 
 _KONTEXT = {}
 
@@ -139,10 +139,10 @@ def _kontext_fenster(tokens):
         modell = ""
     return 1_000_000 if "[1m]" in modell or tokens > 200_000 else 200_000
 
-def kontext(g):
+def kontext(waggon):
     """{tokens, fenster, prozent, name} der zuletzt horchenden Agenten-Session, solange sie lebt, sonst None."""
     try:
-        pid, sid, *name = open(agent_datei(g)).read().split()
+        pid, sid, *name = open(agent_datei(waggon)).read().split()
         pid = int(pid)
     except (OSError, ValueError):
         return None
@@ -175,14 +175,14 @@ def todo_offen(tid):
     return os.path.exists(os.path.join(basis, "offen", tid + ".md"))
 
 
-def benachrichtigen(g, wurzel, n, namen=("Claude",)):
+def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
     """Nach „Feedback senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
     todo-Eintrag. Rückgabe (text für die Seite, todo_id oder None)."""
-    wer = horcht(g)
+    wer = horcht(waggon)
     if wer:
         return f"an die Session übergeben, die zuhört ({wer})", None
-    projekt = quelle(g).name_von(g)
-    prompt = quelle(g).prompt(g, wurzel)
+    projekt = waggon.name
+    prompt = quelle(waggon).prompt(waggon, wurzel)
     agenten = KONF.get("agenten") or {}
     befehle = [(nm, agenten[nm]) for nm in namen if nm in agenten]
     if not befehle and KONF.get("feedback_befehl"):
@@ -199,9 +199,9 @@ def benachrichtigen(g, wurzel, n, namen=("Claude",)):
                 return f"{nm} startet nicht: {e}", None
         return " und ".join(gestartet) + " gestartet", None
     if not shutil.which("todo"):
-        return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {mr_id(g)}“ sagen", None
+        return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {waggon.id}“ sagen", None
     with SPERRE:
-        tid = review_laden(g).get("todo_id")
+        tid = review_laden(waggon).get("todo_id")
     zeile = f"{n} neue Nachricht(en) um {datetime.now().strftime('%H:%M')}"
     if todo_offen(tid):
         subprocess.run(["todo", "notiz", tid, zeile, "--von", "merge-train"], capture_output=True)
@@ -213,19 +213,19 @@ def benachrichtigen(g, wurzel, n, namen=("Claude",)):
         if not tid:
             return f"todo-Eintrag ließ sich nicht anlegen: {(r.stderr or r.stdout).strip()[:200]}", None
         with SPERRE:
-            st = review_laden(g); st["todo_id"] = tid; review_speichern(g, st)
+            st = review_laden(waggon); st["todo_id"] = tid; review_speichern(waggon, st)
     subprocess.run(["todo", "heute", tid, "-t", f"Fragen/Feedback aus merge-train ({zeile})"], capture_output=True)
     return "Keine Session hört zu – als todo eingetragen (Panel), „▶ Session starten“ öffnet sie", tid
 
 
-def feedback_senden(g):
+def feedback_senden(waggon):
     """Alle Entwürfe abschicken. Rückgabe (ok, text, todo_id)."""
     try:
-        wurzel, _ = quelle(g).ort(g)
-    except GitLabFehler as e:
+        wurzel, _ = quelle(waggon).ort(waggon)
+    except Fehler as e:
         return False, str(e), None
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
         n, namen = 0, []
         for k in faeden_von(st):
             for m in k["nachrichten"]:
@@ -235,14 +235,14 @@ def feedback_senden(g):
                         namen.append(k.get("an") or "Claude")
         if not n:
             return False, "Keine Entwürfe zum Senden", None
-        review_speichern(g, st)
-    text, tid = benachrichtigen(g, wurzel, n, namen)
+        review_speichern(waggon, st)
+    text, tid = benachrichtigen(waggon, wurzel, n, namen)
     return True, f"{n} Nachricht(en) gesendet · {text}", tid
 
 
-def session_starten(g):
+def session_starten(waggon):
     with SPERRE:
-        tid = review_laden(g).get("todo_id")
+        tid = review_laden(waggon).get("todo_id")
     if not todo_offen(tid):
         return False, "Kein offener todo-Eintrag"
     r = subprocess.run(["todo", "los", tid], capture_output=True, text=True)

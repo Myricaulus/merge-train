@@ -1,10 +1,10 @@
 """Gespräch mit dem Agenten: Fäden an Zeilen, Nachrichten, Daten für die Seite."""
 import glob, hashlib, json, os, re
 from .einstellungen import DATEN, KONF, SPERRE, jetzt
+from .waggon import Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, im_diff, zeile_vorwaerts
-from .zustand import datei_index, faeden_von, faden_status, review_laden, review_speichern, struktur_laden
-from .gitlab import GitLabFehler
+from .zustand import datei_index, faden_status, faeden_von, review_laden, review_speichern, struktur_laden
 from .hinweise import see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
@@ -12,26 +12,35 @@ from .quellen import quelle
 from .zuhoerer import horcht, kontext, todo_offen
 from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_klick
 
-def wagen_daten(g, ansicht=None):
+# Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
+# schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
+# Bei MRs genauso, für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen als Fäden (mit „nachrichten“) in der
+# Review-Datei des MR und gehen nie nach GitLab.
+# Zustand: gleiche Form wie bei MRs (kommentare mit path/a/b, refs des Stands beim Schreiben), je Faden
+# „nachrichten“: [{id, von: ich|claude, wer, text, zeit, gesendet, abgeholt}], „erledigt“: {von, zeit} oder None, „an“.
+# Wer zuhört: „agent horchen“ legt <zustand>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
+# Agenten aus [agenten] bzw. feedback_befehl – oder legt einen todo-Eintrag an („Session starten“ öffnet ihn).
+
+
+def wagen_daten(waggon, ansicht=None):
     """Alles, was die Seite über ihren Waggon braucht: Gespräch immer, Review (Kommentare, Hinweise) je nach Quelle."""
-    q = quelle(g)
-    gs = gespraech_daten(g, ansicht)
+    gs = gespraech_daten(waggon, ansicht)
     if not gs.get("ok"):
         return gs
-    rv = review_daten(g, ansicht) if q.kann["review"] else \
+    rv = review_daten(waggon, ansicht) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     with SPERRE:
-        st = review_laden(g)
+        st = review_laden(waggon)
     return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], kontext=gs["kontext"], todo=gs["todo"],
-                agenten=gs["agenten"], kann=q.kann, stand=stand(g, st), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
+                agenten=gs["agenten"], kann=waggon.kann, stand=stand(waggon, st), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
 
 
-def gespraech_agenten(g):
+def gespraech_agenten(waggon):
     """Namen, an die man im GitLab-Modus fragen kann: eingerichtete [agenten] und wer gerade zuhört."""
     namen = list(KONF.get("agenten") or {})
-    if quelle(g).kann["committen"] and "Claude" not in namen:  # lokal ist Claude immer da (todo / feedback_befehl)
+    if waggon.kann["committen"] and "Claude" not in namen:  # lokal ist Claude immer da (todo / feedback_befehl)
         namen.insert(0, "Claude")
-    wer = horcht(g)
+    wer = horcht(waggon)
     return namen + ([wer] if wer and wer not in namen else [])
 
 
@@ -43,7 +52,7 @@ def gespraech_daten(mr, ansicht=None):
     if struktur is None:
         try:
             _, struktur = quelle(mr).seite(mr)
-        except GitLabFehler as e:
+        except Fehler as e:
             return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
     kom = []
@@ -111,7 +120,7 @@ def gespraech_aktion(mr, d):
             if d.get("datei") is not None:
                 fehler, ort = zeile_aus_klick(struktur, d, ansicht)
                 if fehler:
-                    return False, fehler if quelle(mr).kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
+                    return False, fehler if mr.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
                 k.update(ort)
                 if ort["b"]:
                     t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
@@ -162,10 +171,8 @@ def alle_gespraeche():
             except (OSError, ValueError):
                 continue
             m = st.get("mr") or {}
-            if m.get("lokal"):
-                out.append({"lokal": m["lokal"]})
-            elif m.get("iid") and any(k.get("nachrichten") is not None for k in st.get("kommentare") or []):
-                out.append({"host": m["host"], "projekt": m["projekt"], "iid": m["iid"]})
+            if m.get("lokal") or m.get("iid") and any(k.get("nachrichten") is not None for k in st.get("kommentare") or []):
+                out.append(Waggon.aus_dict(m))
     return out
 
 

@@ -2,12 +2,13 @@
 import hashlib, os, re
 from datetime import datetime
 from .einstellungen import SPERRE
+from .waggon import Fehler, Waggon
 from .git import ANLASS, anlass, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zurueck_diffs
 from .diff_html import datei_tabelle
-from .zustand import ausstehend, datei_index, kommentar_status, review_datei, review_laden, review_speichern, review_kommentare, struktur_laden
-from .gitlab import GitLabFehler, alle, glab, mr_aus_id, mr_meta_holen, mr_pfad
+from .zustand import (ausstehend, datei_index, kommentar_status, review_datei, review_kommentare, review_laden, review_speichern, struktur_laden)
+from .gitlab import alle, glab, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
@@ -18,7 +19,7 @@ def stand(mr, st):
     teile.append(horcht(mr) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
     k = kontext(mr)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
-    for p in [review_datei(mr)] + ([] if mr.get("lokal") else hinweis_dateien(mr, st)):
+    for p in [review_datei(mr)] + ([] if mr.lokal else hinweis_dateien(mr, st)):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -71,15 +72,16 @@ def review_daten(mr, ansicht=None):
 
 def seiten_struktur(sid, ansicht=None):
     """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
-    if str(sid).startswith("projekt:"):
+    waggon = Waggon.aus_id(sid)
+    if waggon.lokal:
         try:
-            p = open(projekt_zeiger(sid[8:]), encoding="utf-8").read().strip()
+            p = open(projekt_zeiger(waggon.lokal), encoding="utf-8").read().strip()
         except OSError:
             return None
         struktur = struktur_laden({"struktur": p})
     else:
         with SPERRE:
-            st = review_laden(mr_aus_id(sid))
+            st = review_laden(waggon)
         struktur = struktur_laden(st)
     if ansicht and struktur:
         struktur = ansicht_struktur(struktur, ansicht)
@@ -258,7 +260,7 @@ def hinweis_aktion(mr, d):
 
 def entwurf_anlegen(mr, k, head, proj_url):
     """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
-    host, P = mr["host"], mr_pfad(mr)
+    host, P = mr.host, mr_pfad(mr)
     refs = k.get("refs") or {}
     if k.get("path") and (k.get("a") or k.get("b")) and refs.get("head_sha"):
         pos = {"position_type": "text", "base_sha": refs.get("base_sha"), "start_sha": refs.get("start_sha"),
@@ -267,7 +269,7 @@ def entwurf_anlegen(mr, k, head, proj_url):
         if k.get("b"): pos["new_line"] = k["b"]
         try:
             return glab(host, f"{P}/draft_notes", "POST", {"note": k["text"], "position": pos}), "position"
-        except GitLabFehler as e:
+        except Fehler as e:
             fehler = str(e)
             if re.search(r"\b(401|403|404)\b", fehler):
                 raise
@@ -288,7 +290,7 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
     """Gesendete Kommentare, deren Draft-Note in GitLab fehlt: als Kommentar veröffentlicht → bleibt sent („weg“);
     sonst in GitLab verworfen (z. B. ganzes Review verworfen) → wieder staged, „Review abschließen“ sendet ihn neu.
     Rückgabe (veröffentlicht, verworfen). Ändert st, speichert nicht."""
-    host, P = mr["host"], mr_pfad(mr)
+    host, P = mr.host, mr_pfad(mr)
     if vorhanden is None:
         vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
     # auch schon als „weg“ markierte prüfen: früher galt jeder fehlende Entwurf als veröffentlicht
@@ -321,17 +323,17 @@ def meta_und_entwuerfe(mr):
         return f(*a)
     with ThreadPoolExecutor(2) as ex:
         f_meta = ex.submit(mit, mr_meta_holen, mr)
-        f_ent = ex.submit(mit, alle, mr["host"], f"{mr_pfad(mr)}/draft_notes")
+        f_ent = ex.submit(mit, alle, mr.host, f"{mr_pfad(mr)}/draft_notes")
         try:
             ent = {d.get("id"): d for d in f_ent.result()}
-        except GitLabFehler as e:
+        except Fehler as e:
             ent = e
         return f_meta.result()[1], ent
 
 
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
-    host, P = mr["host"], mr_pfad(mr)
+    host, P = mr.host, mr_pfad(mr)
     head = ((struktur_laden(review_laden(mr)) or {}).get("refs") or {}).get("head_sha")
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
@@ -340,19 +342,19 @@ def abschliessen(mr):
                        "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or "")
     try:
         pos = {i: n for n, i in enumerate(review_daten(mr)["reihenfolge"])}  # wie in der Box „GitLab-Kommentare“
-    except GitLabFehler:
+    except Fehler:
         pos = {}
     with SPERRE:
         st = review_laden(mr)
         web = st["mr"].get("web_url", "")
         proj_url = web.split("/-/merge_requests/")[0]
-        if isinstance(vorhanden, GitLabFehler):
+        if isinstance(vorhanden, Fehler):
             return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
         z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "wieder": 0}
         vergeben = {k.get("gitlab_id") for k in review_kommentare(st) if k.get("gitlab_id")}
         try:
             z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(mr, st, vorhanden)
-        except GitLabFehler as e:
+        except Fehler as e:
             return False, f"Kommentare des MR nicht abrufbar: {e}", web
         fehler = []
         for k in sorted(review_kommentare(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
@@ -379,7 +381,7 @@ def abschliessen(mr):
                         r, art = entwurf_anlegen(mr, k, head, proj_url)
                         k.update(gitlab_id=(r or {}).get("id"), gitlab_text=k["text"], gitlab_art=art)
                         vergeben.add(k["gitlab_id"]); z["neu"] += 1; z["allg"] += art == "allgemein"
-            except GitLabFehler as e:
+            except Fehler as e:
                 fehler.append(f'{k.get("path") or "allgemein"}{":" + str(k.get("b") or k.get("a")) if k.get("b") or k.get("a") else ""}: {e}')
             review_speichern(mr, st)
         if not fehler:

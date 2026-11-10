@@ -3,18 +3,19 @@ import json, os, subprocess, sys, threading, time
 import urllib.parse
 from datetime import datetime
 from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, SPERRE, VON, dateiname, oeffnen, projektname, schluessel
-from . import syntax
+from .waggon import Fehler, Waggon
 from .git import ANLASS, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
 from .zustand import review_laden, review_speichern
-from .gitlab import GitLabFehler, mr_aus_id, mr_id, mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
+from .gitlab import mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
-from .quellen import GITLAB, LOKAL, alle_wagen, fertig, quelle, schluessel_von
+from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe, seiten_struktur,
     stand, vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
+from . import syntax
 
 PORT = int(KONF["port"])
 
@@ -142,12 +143,12 @@ def server():
                 if pfad in ("api/review", "api/stand"):  # Gespräch und (je nach Quelle) Review des Waggons
                     if q.get("k") != schluessel():
                         return self.json_senden(403, {"ok": False, "text": "falscher Schlüssel – Seite neu laden"})
-                    g = schluessel_von(q.get("mr", ""))
+                    waggon = schluessel_von(q.get("mr", ""))
                     if pfad == "api/stand":
-                        seite_lebt(g)
-                        return self.json_senden(200, {"stand": stand(g, review_laden(g)), "version": VERSION,
+                        seite_lebt(waggon)
+                        return self.json_senden(200, {"stand": stand(waggon, review_laden(waggon)), "version": VERSION,
                                                       "server": server_stand()})
-                    return self.json_senden(200, wagen_daten(g, ansicht_lesen(q.get("ansicht"))))
+                    return self.json_senden(200, wagen_daten(waggon, ansicht_lesen(q.get("ansicht"))))
                 if pfad in ("zug.js", "api/zug"):  # der gemischte Zug aller eingeschalteten Quellen
                     d = {"wagen": alle_wagen(q.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None}
                     if pfad == "api/zug":
@@ -165,14 +166,14 @@ def server():
                 if pfad == "mrs" and GITLAB.an():
                     return self.senden(200, startseite())
                 if pfad == "mr-oeffnen" and GITLAB.an():
-                    return self.weiterleiten("/mr/" + mr_id(mr_vollstaendig(mr_ref(q.get("u", "")))))
+                    return self.weiterleiten(mr_vollstaendig(mr_ref(q.get("u", ""))).url)
                 if pfad.startswith("mr/") and GITLAB.an():
                     try:
-                        datei, _, mr = mr_seite(mr_aus_id(pfad[3:]), ansicht=ansicht)
-                    except GitLabFehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
+                        datei, _, mr = mr_seite(Waggon.aus_id(pfad[3:]), ansicht=ansicht)
+                    except Fehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
                         return self.senden(200, startseite(str(e), pfad[3:]))
-                    if mr_id(mr) != pfad[3:]:
-                        return self.weiterleiten("/mr/" + mr_id(mr) + (f"?{abfrage}" if abfrage else ""))
+                    if mr.id != pfad[3:]:
+                        return self.weiterleiten("/mr/" + mr.id + (f"?{abfrage}" if abfrage else ""))
                     return self.senden(200, open(datei, "rb").read())
                 if pfad.endswith(".html") and LOKAL.an():
                     repos = {dateiname(projektname(r)): r for r in finde_repos()}
@@ -183,7 +184,7 @@ def server():
                             vorbauen(repos)
                         return
                 self.senden(404, "nicht gefunden", "text/plain")
-            except GitLabFehler as e:
+            except Fehler as e:
                 self.senden(502, f"merge-train: {e}", "text/plain; charset=utf-8")
             except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
                 self.senden(500, f"merge-train: {type(e).__name__}: {e}", "text/plain; charset=utf-8")
@@ -202,10 +203,10 @@ def server():
                         items, _ = mr_liste_holen()
                         return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
                     if d.get("aktion") == "mrdaten":
-                        mr = mr_aus_id(d.get("mr", ""))
+                        mr = Waggon.aus_id(d.get("mr", ""))
                         vorher = review_laden(mr).get("struktur")
                         _, vorhanden = meta_und_entwuerfe(mr)
-                        if isinstance(vorhanden, GitLabFehler):
+                        if isinstance(vorhanden, Fehler):
                             raise vorhanden
                         with SPERRE:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
                             st = review_laden(mr)
@@ -215,7 +216,7 @@ def server():
                         try:  # Seite gleich bauen: neu laden muss der Browser nur, wenn sie sich geändert hat
                             mr_seite(mr)
                             neu_laden = review_laden(mr).get("struktur") != vorher
-                        except GitLabFehler:
+                        except Fehler:
                             neu_laden = True
                         text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
                                                     "„Review abschließen“ sendet sie neu" if verw else "") + \
@@ -223,25 +224,25 @@ def server():
                         return self.json_senden(200, {"ok": True, "text": text, "neu_laden": neu_laden})
                     return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                 if self.path == "/fertig":
-                    g = schluessel_von(d.get("mr") or "projekt:" + str(d.get("projekt", "")))
-                    if not quelle(g).kann["fertig"]:
+                    waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
+                    if not waggon.kann["fertig"]:
                         return self.senden(404, "nicht gefunden", "text/plain")
-                    ok, text = fertig(g["lokal"], str(d.get("sha", "")))
-                    return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(mr_id(g))})
+                    ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
+                    return self.json_senden(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
                 if self.path not in ("/api/kommentar", "/api/hinweis", "/api/abschliessen", "/api/gespraech"):
                     return self.senden(404, "nicht gefunden", "text/plain")
-                g = schluessel_von(d.get("mr", ""))
-                kann = quelle(g).kann
+                waggon = schluessel_von(d.get("mr", ""))
+                kann = waggon.kann
                 ansicht = ansicht_lesen(d.get("ansicht"))
                 antwort = {}
                 if self.path == "/api/gespraech" or self.path == "/api/kommentar" and (d.get("gespraech") or not kann["review"]):
                     if self.path == "/api/kommentar":  # Fragen an den Agenten: Fäden, nie nach außen
-                        ok, text = gespraech_aktion(g, d)
+                        ok, text = gespraech_aktion(waggon, d)
                     elif d.get("aktion") == "senden":
-                        ok, text, tid = feedback_senden(g)
+                        ok, text, tid = feedback_senden(waggon)
                         antwort["todo"] = tid
                     elif d.get("aktion") == "starten":
-                        ok, text = session_starten(g)
+                        ok, text = session_starten(waggon)
                     else:
                         return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                 elif not kann["review"]:
@@ -249,13 +250,13 @@ def server():
                 elif self.path == "/api/abschliessen":
                     if ansicht and ansicht[0] == "commit":
                         return self.json_senden(200, {"ok": False, "text": NUR_LESEN})
-                    ok, text, web = abschliessen(g)
+                    ok, text, web = abschliessen(waggon)
                     antwort["web_url"] = web
-                    return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(g, ansicht)))
+                    return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(waggon, ansicht)))
                 else:
-                    ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(g, d)
-                return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(g, ansicht) if ok else None))
-            except GitLabFehler as e:
+                    ok, text = (kommentar_aktion if self.path == "/api/kommentar" else hinweis_aktion)(waggon, d)
+                return self.json_senden(200, dict(antwort, ok=ok, text=text, review=wagen_daten(waggon, ansicht) if ok else None))
+            except Fehler as e:
                 self.json_senden(502, {"ok": False, "text": str(e)})
             except Exception as e:
                 self.json_senden(500, {"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"})

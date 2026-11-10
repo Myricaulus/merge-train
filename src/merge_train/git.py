@@ -2,6 +2,7 @@
 import glob, hashlib, os, re, shutil, subprocess, threading, time
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, PROJEKTE, PROJEKTE_LISTE, VON, dateiname, projektname
+from .waggon import Fehler
 
 ANLASS = threading.local()  # wofür die Anfrage ist (Server: Pfad/Aktion, CLI: Befehl) – nur fürs Log
 
@@ -224,3 +225,11 @@ def git_commits(ordner, von, bis):
     roh = git(ordner, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1f%H%x1e",
               "--date=format:%d.%m. %H:%M", f"{von}..{bis}", check=False) or ""
     return [tuple(c.strip("\n").split("\x1f")) for c in roh.split("\x1e") if c.strip()]
+
+
+def projekt_wurzel(projekt):
+    """Klon des lokalen Projekts mit diesem Namen."""
+    wurzel = next((r for r in finde_repos() if projektname(r) == projekt), None)
+    if not wurzel:
+        raise Fehler(f"Projekt {projekt} nicht gefunden")
+    return wurzel

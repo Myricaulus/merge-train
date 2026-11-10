@@ -1,8 +1,9 @@
 """Aufruf von der Kommandozeile."""
 import argparse, os, sys
 from .einstellungen import ARBEITSSTAND, BIS, KONF, KONFIG_DATEI, VON, dateiname, projektname
+from .waggon import Fehler
 from .git import ANLASS, finde_repos, git, projekt_ordner, statistik
-from .gitlab import GitLabFehler, ist_mr_ref, mr_id, mr_meta_holen, mr_ref, mr_vollstaendig
+from .gitlab import ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig
 from .quellen import LOKAL
 from .server import im_browser, server
 from .agent_cli import agent_main
@@ -37,9 +38,9 @@ def main():
             sys.exit("merge-train: GitLab ist abgeschaltet (gitlab = false in der Einstellung)")
         try:  # Aufruf von Hand: MR-Daten einmal holen, die Seite selbst fragt GitLab nicht
             mr, _ = mr_meta_holen(mr_vollstaendig(mr_ref(o.ordner, os.getcwd())))
-        except GitLabFehler as e:
+        except Fehler as e:
             sys.exit(f"merge-train: {e}")
-        return im_browser("/mr/" + mr_id(mr), o.nur_datei)
+        return im_browser("/mr/" + mr.id, o.nur_datei)
     if o.mrs or (not o.ordner and not KONF["lokal"]):
         if not KONF["gitlab"]:
             sys.exit("merge-train: lokal und gitlab sind beide abgeschaltet – siehe " + KONFIG_DATEI)

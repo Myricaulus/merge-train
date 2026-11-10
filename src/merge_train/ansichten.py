@@ -1,7 +1,7 @@
 """Ansichten eines Waggons: alles, ein einzelner Commit (commit:<sha>) oder alles seit einem Commit (seit:<sha>)."""
 import html, re
+from .waggon import Fehler
 from .git import git
-from .gitlab import GitLabFehler
 
 # Kommentare und Hinweise gehören immer zum ganzen MR (Zeilen im MR-Stand). Eine Ansicht zeigt sie nur an:
 # „seit“ hat rechts den MR-Stand, dort lässt sich alles direkt zuordnen und auch kommentieren.
@@ -20,10 +20,10 @@ def ansicht_aufloesen(ordner, refs, art, sha):
     """Commit prüfen (muss zum MR gehören) → {art, sha, von, bis, titel, kurz, anzahl, merge}."""
     voll = (git(ordner, "rev-parse", "--verify", "-q", sha + "^{commit}", check=False) or "").strip()
     if not voll:
-        raise GitLabFehler(f"Commit {sha[:12]} gibt es im lokalen Klon nicht")
+        raise Fehler(f"Commit {sha[:12]} gibt es im lokalen Klon nicht")
     im_mr = (git(ordner, "rev-list", f'{refs["base_sha"]}..{refs["head_sha"]}', check=False) or "").split()
     if voll not in im_mr:
-        raise GitLabFehler(f"Commit {sha[:12]} gehört nicht zu diesem MR")
+        raise Fehler(f"Commit {sha[:12]} gehört nicht zu diesem MR")
     titel = (git(ordner, "log", "-1", "--format=%s", voll, check=False) or "").strip()
     eltern = (git(ordner, "rev-list", "--parents", "-n1", voll, check=False) or "").split()[1:]
     if art == "commit":

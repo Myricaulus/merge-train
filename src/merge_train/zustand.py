@@ -1,18 +1,12 @@
 """Zustand je Waggon: eine JSON-Datei mit Review-Kommentaren und Gesprächsfäden, dazu die Struktur der gebauten Seite."""
-import json, os, re
-from .einstellungen import DATEN, SPERRE, dateiname, ersetzen, jetzt
-
-def mr_datei(mr):
-    return re.sub(r"[^\w.-]", "_", f'{mr["host"] or "gitlab"}_{mr["projekt"]}_{mr["iid"]}')
-
+import json, os
+from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 
 # Eine Datei je Waggon. „kommentare“ enthält Review-Kommentare (gehen nach GitLab) und Gesprächsfäden (mit
 # „nachrichten“, bleiben privat) – review_kommentare() und faeden_von() trennen sie.
 
-def review_datei(mr):
-    if mr.get("lokal"):  # lokales Projekt: nur Gespräch
-        return os.path.join(DATEN, "lokal", dateiname(mr["lokal"])[:-5] + ".json")
-    return os.path.join(DATEN, "reviews", mr_datei(mr) + ".json")
+def review_datei(waggon):
+    return os.path.join(DATEN, "lokal" if waggon.lokal else "reviews", waggon.dateiname + ".json")
 
 
 def review_laden(mr):
@@ -20,7 +14,7 @@ def review_laden(mr):
         st = json.load(open(review_datei(mr), encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         st = {}
-    st.setdefault("mr", {k: v for k, v in mr.items() if k in ("lokal", "host", "projekt", "iid")})
+    st.setdefault("mr", mr.als_dict())
     st.setdefault("kommentare", []); st.setdefault("hinweise", {}); st.setdefault("hinweis_dateien", [])
     return st
 
@@ -100,10 +94,10 @@ def faeden_archivieren(mr):
             review_speichern(mr, st)
 
 
-def faeden_zaehlen(g):
+def faeden_zaehlen(waggon):
     """Für den Zug: (offene Fäden, Fäden mit neuer Antwort)."""
     try:
-        st = review_laden(g)
+        st = review_laden(waggon)
     except Exception:
         return 0, 0
     f = faeden_von(st)
