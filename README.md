@@ -61,6 +61,8 @@ erledigte Fäden weg. Offene bleiben für den nächsten Stand.
 
 - **Eine Claude-Session hört zu**: Läuft in einer Session `merge-train agent horchen` (im Hintergrund), geht das
   Feedback direkt dorthin. Oben steht dann „🎧 Claude hört zu“. Dazu genügt es, der Session zu sagen: „hör auf merge-train“.
+  In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
+  (`skill/merge-train/SKILL.md`, von `install.sh` nach `~/.claude/skills` verlinkt).
 - **Keine hört zu**: „Feedback senden“ legt einen `todo`-Eintrag im Projekt an (mit Startprompt), und das Panel pulsiert.
   „▶ Session starten“ auf der Seite öffnet ihn mit `todo los` (Konsole im Projekt, Enter startet Claude).
   Weitere Nachrichten hängen sich als Notiz an denselben Eintrag. Sind alle Fäden beantwortet, hakt merge-train ihn ab.

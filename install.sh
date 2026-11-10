@@ -28,6 +28,10 @@ ln -sf "$HIER/merge-train" "$HOME/.local/bin/merge-train"
 echo "✓ ~/.local/bin/merge-train → $HIER/merge-train"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "  Hinweis: ~/.local/bin ist nicht im PATH";; esac
 
+mkdir -p "$HOME/.claude/skills"
+ln -sfn "$HIER/skill/merge-train" "$HOME/.claude/skills/merge-train"
+echo "✓ Claude-Skill: ~/.claude/skills/merge-train → $HIER/skill/merge-train"
+
 if [ -d "$HOME/.config/fish" ]; then
   mkdir -p "$HOME/.config/fish/completions"
   ln -sf "$HIER/completions/merge-train.fish" "$HOME/.config/fish/completions/merge-train.fish"
