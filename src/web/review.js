@@ -140,6 +140,7 @@ if(abk)abk.addEventListener('click',()=>{abk.disabled=true;meld.textContent='üb
   meld.replaceChildren(d.text||'',d.web_url?el('a',{href:d.web_url,target:'_blank',rel:'noopener'},' → in GitLab prüfen ↗'):'');
   if(d.review){Object.assign(RV,d.review);zeichnen()}
   zugHolen()})});
-setInterval(()=>{fetch('/api/stand?'+qs()) // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt).then(r=>r.json()).then(d=>{if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
+// auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt)
+setInterval(()=>{fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
  .catch(()=>{meld.textContent=WEG})},4000);
 laden();
