@@ -18,7 +18,7 @@ c Commits ein-/ausklappen, Enter fertig.
 
 Einstellungen: ~/.config/merge-train/config.toml (Vorlage: config.example.toml).
 """
-import argparse, difflib, glob, hashlib, html, json, os, re, shlex, shutil, subprocess, sys, threading
+import argparse, difflib, glob, hashlib, html, json, os, re, shlex, shutil, subprocess, sys, threading, time
 import urllib.parse
 from datetime import datetime
 

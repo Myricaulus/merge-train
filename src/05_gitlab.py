@@ -18,13 +18,17 @@ def glab(host, pfad, methode="GET", daten=None, roh=False):
         argv += ["--header", "Content-Type: application/json", "--input", "-"]
         eingabe = json.dumps(daten)
     argv.append(pfad)
+    t0 = time.time()
     try:
         r = subprocess.run(argv, input=eingabe, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=90)
     except FileNotFoundError:
         raise GitLabFehler(f"glab nicht gefunden ({KONF['glab']}) – installieren und „glab auth login“ ausführen")
     except subprocess.TimeoutExpired:
+        aussen_log("gitlab", host or "-", f"{methode} {pfad}", time.time() - t0, "Zeitüberschreitung")
         raise GitLabFehler(f"glab api {pfad}: Zeitüberschreitung")
+    aussen_log("gitlab", host or "-", f"{methode} {pfad}", time.time() - t0,
+               f"Fehler: {(r.stderr or r.stdout).strip()[:120]}" if r.returncode else f"ok {len(r.stdout)} B")
     if r.returncode:
         raise GitLabFehler(f"glab api {methode} {pfad.split('?')[0]}: {(r.stderr or r.stdout).strip()[:500]}")
     if roh:
@@ -134,8 +138,11 @@ def blobs(ordner, specs):
     specs = [s for s in dict.fromkeys(specs) if "\n" not in s]
     if not specs:
         return {}
+    t0 = time.time()
     r = subprocess.run(["git", "-C", ordner, "cat-file", "--batch"], input=("\n".join(specs) + "\n").encode(),
                        capture_output=True)
+    aussen_log("git", os.path.basename(str(ordner).rstrip("/")), f"git cat-file --batch ({len(specs)} Dateien)",
+               time.time() - t0, f"ok {len(r.stdout)} B")
     out, pos, daten = {}, 0, r.stdout
     for s in specs:
         nl = daten.find(b"\n", pos)

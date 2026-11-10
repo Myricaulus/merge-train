@@ -172,6 +172,7 @@ def geaenderte_dateien(mr, von, bis):
     raise GitLabFehler(f"Commit {von} ist im lokalen Klon nicht bekannt (git fetch)")
 
 def main():
+    ANLASS.name = ("cli " + " ".join(sys.argv[1:3]))[:32]
     if len(sys.argv) > 1 and sys.argv[1] == "agent":
         sys.exit(agent_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(description=f"merge-train: Merge-Requests {BIS} → {VON} aller Projekte, GitLab-MRs reviewen "

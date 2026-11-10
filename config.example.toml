@@ -23,6 +23,10 @@
 
 # port = 8771
 
+# Log der Anfragen an die Quellen (lokales git, GitLab): ~/.cache/merge-train/aussen-<datum>.log, eine Datei je Tag.
+# Wie viele Tage aufbewahren; 0 = kein Log.
+# log_tage = 7
+
 # Lokaler Modus, „Feedback senden“, wenn keine Claude-Session zuhört: leer = todo-Eintrag (falls „todo“ da ist).
 # Sonst ein Befehl mit {ordner}, {projekt}, {prompt}, z. B. "konsole --workdir {ordner} -e claude {prompt}"
 # feedback_befehl = ""

@@ -4,7 +4,7 @@
 Aufruf:  python3 tests/test_gitlab.py [--behalten]
 Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, Port 8799), startet einen eigenen Server.
 """
-import runpy, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import runpy, glob, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 SKRIPT = os.path.join(HIER, "..", "merge-train")
@@ -541,6 +541,31 @@ def main():
         json.dump([x for x in drafts() if x["note"] != "Insgesamt sehr gut."], open(f"{T}/glab/drafts.json", "w"))
         r = post("/api/abschliessen", basis)
         pruefe(len(drafts()) == 2 and "schon veröffentlicht" in r["text"], "veröffentlichte Entwürfe werden nicht doppelt angelegt")
+        # Abbruch zwischen Anlegen in GitLab und Speichern: beim nächsten Abschließen übernehmen, nicht doppelt anlegen
+        rpd = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        zst = json.load(open(rpd))
+        kd = next(x for x in zst["kommentare"] if x.get("gitlab_id") and not x.get("gitlab_weg") and x.get("nachrichten") is None)
+        gid = kd["gitlab_id"]
+        for f in ("gitlab_id", "gitlab_text", "gitlab_art"):
+            kd.pop(f, None)
+        json.dump(zst, open(rpd, "w"))
+        n_vor = len(drafts())
+        r = post("/api/abschliessen", basis)
+        pruefe(r["ok"] and len(drafts()) == n_vor and "nicht doppelt" in r["text"]
+               and next(x for x in json.load(open(rpd))["kommentare"] if x["id"] == kd["id"])["gitlab_id"] == gid,
+               "Entwurf schon in GitLab, aber nicht gemerkt: übernommen statt doppelt angelegt")
+        # Log der Anfragen an die Quellen
+        logs = glob.glob(f"{T}/cache/merge-train/aussen-*.log")
+        log = open(logs[0], encoding="utf-8").read() if logs else ""
+        pruefe(len(logs) == 1 and " gitlab " in log and "POST /api/abschliessen" in log and "draft_notes" in log
+               and " git " in log and "git cat-file --batch" in log, "Log: GitLab- und git-Anfragen mit Anlass")
+        alt = f"{T}/cache/merge-train/aussen-2000-01-01.log"
+        open(alt, "w").write("alt\n")
+        open(f"{T}/cache/merge-train/aussen-2999-01-01.log", "w").write("")  # Zukunft bleibt
+        sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=ENV, check=False)  # neuer Prozess: räumt beim ersten Eintrag auf
+        heute = open(logs[0], encoding="utf-8").read()
+        pruefe(not os.path.exists(alt) and os.path.exists(f"{T}/cache/merge-train/aussen-2999-01-01.log")
+               and "cli agent feedback" in heute, "Log: ältere Dateien als log_tage weg, CLI mit Anlass")
         # in GitLab verworfen (Draft weg, kein Kommentar) → „↻ MR-Daten“ macht sie wieder lokal, Abschließen sendet neu
         weg = drafts()[0]["note"]
         json.dump(drafts()[1:], open(f"{T}/glab/drafts.json", "w"))

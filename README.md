@@ -165,6 +165,7 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
+| `log_tage` | `7` | Log der Anfragen an die Quellen (lokales git, GitLab) mit Dauer und Anlass, eine Datei je Tag in `~/.cache/merge-train/aussen-<datum>.log`; so viele Tage aufbewahrt, `0` = aus |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.
 

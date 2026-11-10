@@ -436,13 +436,18 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
     return pub, verw
 
 def meta_und_entwuerfe(mr):
-    """MR-Daten und Draft-Notes gleichzeitig holen (zwei unabhängige GitLab-Anfragen). Rückgabe (meta, entwürfe | Fehler)."""
+    """MR-Daten und Draft-Notes gleichzeitig holen (zwei unabhängige GitLab-Anfragen).
+    Rückgabe (meta, {id: draft} | Fehler)."""
     from concurrent.futures import ThreadPoolExecutor
+    name = anlass()
+    def mit(f, *a):  # Anlass fürs Log in den Thread mitnehmen
+        ANLASS.name = name
+        return f(*a)
     with ThreadPoolExecutor(2) as ex:
-        f_meta = ex.submit(mr_meta_holen, mr)
-        f_ent = ex.submit(alle, mr["host"], f"{mr_pfad(mr)}/draft_notes")
+        f_meta = ex.submit(mit, mr_meta_holen, mr)
+        f_ent = ex.submit(mit, alle, mr["host"], f"{mr_pfad(mr)}/draft_notes")
         try:
-            ent = {d.get("id") for d in f_ent.result()}
+            ent = {d.get("id"): d for d in f_ent.result()}
         except GitLabFehler as e:
             ent = e
         return f_meta.result()[1], ent
@@ -466,7 +471,8 @@ def abschliessen(mr):
         proj_url = web.split("/-/merge_requests/")[0]
         if isinstance(vorhanden, GitLabFehler):
             return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
-        z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0}
+        z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "wieder": 0}
+        vergeben = {k.get("gitlab_id") for k in rk(st) if k.get("gitlab_id")}
         try:
             z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(mr, st, vorhanden)
         except GitLabFehler as e:
@@ -485,9 +491,17 @@ def abschliessen(mr):
                         glab(host, f'{P}/draft_notes/{k["gitlab_id"]}', "PUT", {"note": k["text"]})
                         k["gitlab_text"] = k["text"]; z["akt"] += 1
                 else:
-                    r, art = entwurf_anlegen(mr, k, head, proj_url)
-                    k.update(gitlab_id=(r or {}).get("id"), gitlab_text=k["text"], gitlab_art=art)
-                    z["neu"] += 1; z["allg"] += art == "allgemein"
+                    # schon in GitLab, nur nicht gemerkt (z. B. Abbruch zwischen Anlegen und Speichern): übernehmen statt doppelt
+                    da = next((d for i, d in vorhanden.items() if i not in vergeben and
+                               ((d.get("note") or "") == k["text"] or (d.get("note") or "").endswith("\n\n" + k["text"]))), None)
+                    if da:
+                        art = "position" if da.get("position") else ("allgemein" if k.get("path") else "mr")
+                        k.update(gitlab_id=da["id"], gitlab_text=k["text"], gitlab_art=art)
+                        vergeben.add(da["id"]); z["wieder"] += 1
+                    else:
+                        r, art = entwurf_anlegen(mr, k, head, proj_url)
+                        k.update(gitlab_id=(r or {}).get("id"), gitlab_text=k["text"], gitlab_art=art)
+                        vergeben.add(k["gitlab_id"]); z["neu"] += 1; z["allg"] += art == "allgemein"
             except GitLabFehler as e:
                 fehler.append(f'{k.get("path") or "allgemein"}{":" + str(k.get("b") or k.get("a")) if k.get("b") or k.get("a") else ""}: {e}')
             review_speichern(mr, st)
@@ -497,6 +511,7 @@ def abschliessen(mr):
     teile = []
     if z["neu"]: teile.append(f'{z["neu"]} neu' + (f' ({z["allg"]} als allgemeiner Kommentar mit Link)' if z["allg"] else ""))
     if z["akt"]: teile.append(f'{z["akt"]} aktualisiert')
+    if z["wieder"]: teile.append(f'{z["wieder"]} waren schon da (nicht doppelt angelegt)')
     if z["weg"]: teile.append(f'{z["weg"]} gelöscht')
     text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
             if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")

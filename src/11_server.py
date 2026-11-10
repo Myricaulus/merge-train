@@ -54,10 +54,25 @@ def server():
     from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
     schluessel()
     zuletzt = [time.time()]
+    laufend, lauf_sperre = [0], threading.Lock()  # Anfragen in Arbeit: ein Neustart wartet auf sie
     herkunft = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
+        def do_GET(self):
+            self.mit_anlass(self.get, "GET " + self.path.split("?")[0])
+        def do_POST(self):
+            self.mit_anlass(self.post, "POST " + self.path)
+        def mit_anlass(self, f, name):
+            ANLASS.name = name[:32]
+            with lauf_sperre:
+                laufend[0] += 1
+            try:
+                f()
+            finally:
+                with lauf_sperre:
+                    laufend[0] -= 1
+                ANLASS.name = None
         def senden(self, code, body, typ="text/html; charset=utf-8"):
             if isinstance(body, str): body = body.encode()
             self.send_response(code); self.send_header("Content-Type", typ)
@@ -67,7 +82,7 @@ def server():
             self.senden(code, json.dumps(d, ensure_ascii=False), "application/json; charset=utf-8")
         def weiterleiten(self, ziel):
             self.send_response(302); self.send_header("Location", ziel); self.end_headers()
-        def do_GET(self):
+        def get(self):
             zuletzt[0] = time.time()
             pfad, _, abfrage = self.path.partition("?")
             pfad = urllib.parse.unquote(pfad).lstrip("/")
@@ -146,12 +161,14 @@ def server():
                 self.senden(502, f"merge-train: {e}", "text/plain; charset=utf-8")
             except Exception as e:  # Fehler zeigen statt Verbindung abbrechen
                 self.senden(500, f"merge-train: {type(e).__name__}: {e}", "text/plain; charset=utf-8")
-        def do_POST(self):
+        def post(self):
             zuletzt[0] = time.time()
             if self.headers.get("Origin", f"http://127.0.0.1:{PORT}") not in herkunft:
                 return self.senden(403, "verboten", "text/plain")
             try:
                 d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if d.get("aktion"):
+                    ANLASS.name = f"{self.path} {d['aktion']}"[:32]
                 if str(d.get("k", "")) != schluessel():
                     return self.json_senden(403, {"ok": False, "text": "Abgelehnt: falscher Schlüssel – Seite neu laden."})
                 if self.path == "/api/gitlab" and GITLAB.an():  # Güterbahnhof: GitLab nur auf Knopfdruck
@@ -237,6 +254,9 @@ def server():
                 break
             if jetzt != anfang:  # Skript oder Einstellung geändert: mit neuem Stand weitermachen
                 neu[0] = True; break
+        bis = time.time() + 600  # laufende Aktionen (z. B. „Review abschließen“) erst fertig werden lassen
+        while laufend[0] > 0 and time.time() < bis:
+            time.sleep(0.2)
         srv.shutdown()
     threading.Thread(target=waechter, daemon=True).start()
     srv.serve_forever()

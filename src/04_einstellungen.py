@@ -19,6 +19,7 @@ STANDARD = {
     "port": 8771,
     "feedback_befehl": "",    # lokaler Modus: Befehl, wenn keine Session zuhört (sonst todo-Eintrag)
     "agenten": {},            # Gespräch auch im GitLab-Modus: Name = Startbefehl, z. B. copilot = "… copilot -i {prompt}"
+    "log_tage": 7,            # Log der Anfragen an die Quellen (git, GitLab): ~/.cache/merge-train/aussen-<datum>.log; 0 = aus
 }
 
 def _toml_einfach(text):
