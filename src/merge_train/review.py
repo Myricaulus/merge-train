@@ -1,158 +1,17 @@
-# ---------------------------------------------------------------- Agent-Hinweise (review-markers.json)
-
-HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
-
-def pfad_norm(p):
-    p = str(p or "").strip().replace("\\", "/")
-    return p[2:] if p.startswith("./") else p
-
-def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None):
-    """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label", "diff"}
-    → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars.
-    "diff": true vergleicht die eigene Datei des Hinweises mit dieser (Popup nebeneinander), "diff": "pfad" eine andere."""
-    if isinstance(eintraege, (str, dict)):
-        eintraege = [eintraege]
-    out = []
-    for e in eintraege if isinstance(eintraege, list) else []:
-        if isinstance(e, str):
-            m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", e.strip())
-            e = {"path": m.group(1), "line": int(m.group(2)) if m.group(2) else None,
-                 "end": int(m.group(3)) if m.group(3) else None} if m else {}
-        if not isinstance(e, dict):
-            continue
-        path, zeile, problem = pfad_norm(e.get("path")), None, None
-        if isinstance(e.get("line"), int) and e["line"] > 0:
-            zeile = e["line"]
-        if not path:
-            problem = "kein Pfad"
-        elif head:
-            t = inhalt(ordner, head, path)
-            if t is None:
-                problem = "Datei nicht im MR-Stand"
-            elif zeile and zeile > zeilenzahl(t):
-                problem = f"Zeile {zeile} gibt es nicht ({zeilenzahl(t)} Zeilen)"
-            elif not zeile and e.get("needle"):
-                z = needle_zeilen(t, str(e["needle"]), tag)
-                zeile = z[0] if z else None
-                problem = None if z else "needle nicht gefunden"
-        bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
-        gegen = None
-        if e.get("diff"):
-            gegen = pfad_norm(e["diff"]) if isinstance(e["diff"], str) else eigene
-            if not gegen:
-                problem = problem or "diff: Hinweis hat keine eigene Datei – Pfad angeben"
-            elif head and not problem and inhalt(ordner, head, gegen) is None:
-                problem = f"diff: {gegen} nicht im MR-Stand"
-        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem, "vergleich": gegen})
-    return out
-_HW_CACHE = {}
-
-def hinweise_lesen(pfad):
-    """Hinweis-Datei lesen und vereinheitlichen (auch Altformat: nur das markers-Array)."""
-    st = os.stat(pfad)
-    k = (pfad, st.st_mtime_ns, st.st_size)
-    if k in _HW_CACHE:
-        return _HW_CACHE[k]
-    daten = json.load(open(pfad, encoding="utf-8-sig"))
-    if isinstance(daten, list):
-        daten = {"markers": daten}
-    if not isinstance(daten, dict) or not isinstance(daten.get("markers", []), list):
-        raise ValueError("erwartet ein Objekt mit „markers“-Liste (oder nur die Liste)")
-    for i, m in enumerate(daten.get("markers") or []):
-        if not isinstance(m, dict):
-            raise ValueError(f"markers[{i}] ist kein Objekt")
-        if not str(m.get("text") or "").strip():
-            raise ValueError(f"markers[{i}]: „text“ fehlt")
-    daten.setdefault("markers", [])
-    _HW_CACHE[k] = daten
-    return daten
-
-def hinweis_passt(pfad, info):
-    try:
-        h = hinweise_lesen(pfad)
-    except (OSError, ValueError):
-        return False
-    if h.get("mr"):
-        try:
-            ref = mr_ref(h["mr"], os.path.dirname(pfad))
-        except GitLabFehler:
-            return False
-        return ref["iid"] == info.get("iid") and (ref["projekt"] or "").lower() == (info.get("projekt") or "").lower()
-    return bool(h.get("branch")) and h["branch"] == info.get("source_branch")
-
-def hinweis_dateien(mr, st):
-    dateien = [p for p in st["hinweis_dateien"] if os.path.exists(p)]
-    for muster in KONF["hinweise"]:
-        for p in sorted(glob.glob(os.path.expanduser(muster))):
-            p = os.path.abspath(p)
-            if p not in dateien and hinweis_passt(p, st["mr"]):
-                dateien.append(p)
-    return dateien
-
-def needle_zeilen(text, needle, tag):
-    rx = re.compile(r"\s*(//|<!--) " + re.escape(tag) + r"(?![0-9A-Za-z]).*$") if tag else None
-    out = []
-    for nr, z in enumerate(text.split("\n"), 1):
-        if rx:
-            z = rx.sub("", z)
-        if (z.strip() == needle[1:].strip()) if needle.startswith("=") else (needle in z):
-            out.append(nr)
-    return out
-
-def hinweise_aufloesen(mr, st, struktur, nur=None):
-    """Hinweise aller Dateien auf Zeilen des MR-Stands abbilden. Rückgabe (hinweise, quellen)."""
-    hinweise, quellen = [], []
-    head = (struktur or {}).get("refs", {}).get("head_sha")
-    ordner = (struktur or {}).get("ordner")
-    for pfad in (nur if nur is not None else hinweis_dateien(mr, st)):
-        try:
-            h = hinweise_lesen(pfad)
-        except (OSError, ValueError) as e:
-            quellen.append({"datei": pfad, "fehler": f"nicht lesbar: {e}", "anzahl": 0}); continue
-        tag = str(h.get("tag") or "")
-        name = h.get("key") or os.path.basename(pfad)
-        quellen.append({"datei": pfad, "key": h.get("key"), "notes": h.get("notes"), "anzahl": len(h["markers"]),
-                        "reviewed_commit": h.get("reviewed_commit"), "reviewed_at": h.get("reviewed_at"),
-                        "failing_tests": h.get("failing_tests"),
-                        "alt": bool(head and h.get("reviewed_commit") and not head.startswith(str(h["reviewed_commit"])))})
-        for nr, m in enumerate(h["markers"]):
-            text = str(m.get("text") or "").strip()
-            fid = str(m.get("finding") or (re.match(r"(#\d+|K\d+)\b", text) or [""])[0])  # ID nur noch lokal, nicht mehr im Text nötig
-            path = pfad_norm(m.get("path"))
-            needle = str(m.get("needle") or "")
-            basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
-                     "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
-                     "json": pfad, "nr": nr,  # Herkunft: für „merge-train agent kommentar h:<key>“
-                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path),
-                     "title": str(m.get("title") or "").strip() or None}
-            zeilen, problem = [], None
-            if not path:
-                pass  # allgemeiner Hinweis zum MR
-            elif isinstance(m.get("line"), int) and m["line"] > 0:
-                zeilen = [m["line"]]
-            elif not head:
-                problem = "MR-Stand unbekannt"
-            else:
-                t = inhalt(ordner, head, path)
-                if t is None:
-                    problem = "Datei nicht im MR-Stand"
-                elif not needle:
-                    problem = "kein needle"
-                else:
-                    zeilen = needle_zeilen(t, needle, tag)
-                    if not zeilen:
-                        problem = "needle nicht gefunden"
-            i = datei_index(struktur, path)
-            f = struktur["dateien"][i] if i is not None else None
-            for j, z in enumerate(zeilen or [None]):
-                key = hashlib.sha1(f"{name}|{fid}|{path}|{needle}|{text}|{j}".encode()).hexdigest()[:12]
-                a = alt_zeile(f, z) if f and z else None
-                imd = bool(f and z and im_diff(f, a, z))
-                pr = problem or (None if imd else ("Zeile außerhalb des Diffs" if f else "Datei nicht im Diff") if z else None)
-                hinweise.append(dict(basis, key=key, zeile=z, datei=i, a=a, b=z, im_diff=imd, problem=pr,
-                                     mehrfach=len(zeilen) if len(zeilen) > 1 else None,
-                                     status=st["hinweise"].get(key, "offen")))
-    return hinweise, quellen
+"""Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
+import hashlib, os, re
+from datetime import datetime
+from .einstellungen import SPERRE
+from .git import ANLASS, anlass, git, inhalt, zerlegen
+from .syntax import darstellen, zeilen_tokens
+from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zurueck_diffs
+from .diff_html import datei_tabelle
+from .zustand import ausstehend, datei_index, kommentar_status, review_datei, review_laden, review_speichern, review_kommentare, struktur_laden
+from .gitlab import GitLabFehler, alle, glab, mr_aus_id, mr_meta_holen, mr_pfad
+from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
+from .ansichten import ansicht_lesen
+from .seite import ansicht_struktur, mr_seite, projekt_zeiger
+from .zuhoerer import horcht
 
 def stand(mr, st):
     teile = [st.get("struktur") or ""]
@@ -163,6 +22,7 @@ def stand(mr, st):
         except OSError:
             teile.append(p + ":-")
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
+
 
 def gitlab_reihenfolge(st, kom, hinweise):
     """Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge bei „Review abschließen“: ids der Kommentare und keys
@@ -178,6 +38,7 @@ def gitlab_reihenfolge(st, kom, hinweise):
             out.insert(next((j for j, o in enumerate(out) if nat(da[o]) > nat(x)), len(out)), i)
     return out
 
+
 def review_daten(mr, ansicht=None):
     with SPERRE:
         st = review_laden(mr)
@@ -187,12 +48,12 @@ def review_daten(mr, ansicht=None):
         st = review_laden(mr)
     hinweise, quellen = hinweise_aufloesen(mr, st, struktur)
     kom = []
-    for k in rk(st):
+    for k in review_kommentare(st):
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         kom.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
-                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": k_status(k)})
+                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k)})
     reihenfolge = gitlab_reihenfolge(st, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
@@ -204,6 +65,7 @@ def review_daten(mr, ansicht=None):
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
             "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb,
             "reihenfolge": reihenfolge}
+
 
 def seiten_struktur(sid, ansicht=None):
     """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
@@ -220,6 +82,7 @@ def seiten_struktur(sid, ansicht=None):
     if ansicht and struktur:
         struktur = ansicht_struktur(struktur, ansicht)
     return struktur
+
 
 def datei_nachladen(struktur, i):
     """Diff einer zunächst ausgelassenen (großen/generierten) Datei."""
@@ -239,7 +102,9 @@ def datei_nachladen(struktur, i):
     neu = inhalt(struktur["ordner"], bis, d["neu"]) or "" if d["status"] != "gelöscht" else ""
     return {"ok": True, "html": datei_tabelle(d, alt, neu, luecken=True)}
 
+
 _TOKENS = {}
+
 
 def zeilen_daten(struktur, pfad, von, bis):
     """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht) als HTML – zum Nachladen von Kontext und fürs Popup."""
@@ -264,6 +129,7 @@ def zeilen_daten(struktur, pfad, von, bis):
             "zeilen": [darstellen(toks[i - 1] if toks and i <= len(toks) else None, zeilen[i - 1], [], "")
                        for i in range(von, bis + 1)]}
 
+
 def vergleich_daten(struktur, a, b):
     """Zwei Dateien des MR-Stands gegeneinander (see_also mit "diff"): ganze Dateien nebeneinander als Tabelle."""
     head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
@@ -279,6 +145,7 @@ def vergleich_daten(struktur, a, b):
     d = dateien[0] if dateien else {"hunks": [], "binaer": False, "plus": 0, "minus": 0, "leer": "beide Dateien sind gleich"}
     d.update(alt=a, neu=b)
     return {"ok": True, "sha": head, "plus": d["plus"], "minus": d["minus"], "html": datei_tabelle(d, ta, tb)}
+
 
 def zeile_aus_klick(struktur, d, ansicht):
     """Klick auf eine Zeilennummer (datei, a, b, sha der Seite) → (fehler, {path, old_path, a, b}) im MR-Stand."""
@@ -303,7 +170,9 @@ def zeile_aus_klick(struktur, d, ansicht):
             return "Zeile lässt sich im MR nicht zuordnen", None
     return None, {"path": f["neu"], "old_path": f["alt"], "a": a, "b": b}
 
+
 NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in „seit diesem“ bearbeiten."
+
 
 def kommentar_aktion(mr, d):
     """neu | aendern | loeschen | wiederherstellen. Rückgabe (ok, text)."""
@@ -345,7 +214,7 @@ def kommentar_aktion(mr, d):
                 return False, "Reihenfolge ungültig"
             st["reihenfolge"] = ids
         else:
-            k = next((k for k in rk(st) if k["id"] == d.get("id")), None)
+            k = next((k for k in review_kommentare(st) if k["id"] == d.get("id")), None)
             if not k:
                 return False, "Kommentar nicht gefunden"
             if aktion == "aendern":
@@ -367,6 +236,7 @@ def kommentar_aktion(mr, d):
         review_speichern(mr, st)
     return True, ""
 
+
 def hinweis_aktion(mr, d):
     ansicht = ansicht_lesen(d.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
@@ -382,6 +252,7 @@ def hinweis_aktion(mr, d):
             return False, "unbekannte Aktion"
         review_speichern(mr, st)
     return True, ""
+
 
 def entwurf_anlegen(mr, k, head, proj_url):
     """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
@@ -407,7 +278,9 @@ def entwurf_anlegen(mr, k, head, proj_url):
         text = f"**[`{ort}`]({link})**\n\n{text}"
     return glab(host, f"{P}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
 
+
 _ICH = {}  # GitLab-Benutzer-id je Host
+
 
 def entwuerfe_abgleichen(mr, st, vorhanden=None):
     """Gesendete Kommentare, deren Draft-Note in GitLab fehlt: als Kommentar veröffentlicht → bleibt sent („weg“);
@@ -417,7 +290,7 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
     if vorhanden is None:
         vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
     # auch schon als „weg“ markierte prüfen: früher galt jeder fehlende Entwurf als veröffentlicht
-    fehlen = [k for k in rk(st) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
+    fehlen = [k for k in review_kommentare(st) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
     if not fehlen:
         return 0, 0
     if host not in _ICH:  # ändert sich nicht, kostet aber eine eigene Anfrage
@@ -435,6 +308,7 @@ def entwuerfe_abgleichen(mr, st, vorhanden=None):
             verw += 1
     return pub, verw
 
+
 def meta_und_entwuerfe(mr):
     """MR-Daten und Draft-Notes gleichzeitig holen (zwei unabhängige GitLab-Anfragen).
     Rückgabe (meta, {id: draft} | Fehler)."""
@@ -451,6 +325,7 @@ def meta_und_entwuerfe(mr):
         except GitLabFehler as e:
             ent = e
         return f_meta.result()[1], ent
+
 
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
@@ -472,13 +347,13 @@ def abschliessen(mr):
         if isinstance(vorhanden, GitLabFehler):
             return False, f"Entwürfe nicht abrufbar: {vorhanden}", web
         z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "wieder": 0}
-        vergeben = {k.get("gitlab_id") for k in rk(st) if k.get("gitlab_id")}
+        vergeben = {k.get("gitlab_id") for k in review_kommentare(st) if k.get("gitlab_id")}
         try:
             z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(mr, st, vorhanden)
         except GitLabFehler as e:
             return False, f"Kommentare des MR nicht abrufbar: {e}", web
         fehler = []
-        for k in sorted(rk(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
+        for k in sorted(review_kommentare(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
             try:
                 if k.get("geloescht"):
                     if k.get("gitlab_id") in vorhanden:
@@ -523,3 +398,44 @@ def abschliessen(mr):
         text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
     return not fehler, text, web
 
+
+def ansicht_zuordnen(haupt, ans_st, eintraege):
+    """Kommentare/Hinweise (Zeilen im MR-Stand) in die Ansicht übertragen. Ändert die Einträge:
+    datei/a/b/im_diff in Ansichts-Zeilen, „unter“ = Hinweistext, wenn sie unter dem Dateinamen stehen,
+    „lesen“ = nicht änderbar, „mr_b“/„mr_a“ = Zeile im MR-Stand. Rückgabe: Einträge in Dateien der Ansicht."""
+    ans = ans_st["ansicht"]
+    commit = ans["art"] == "commit"
+    zurueck = zurueck_diffs(ans_st["ordner"], ans["bis"], haupt["refs"]["head_sha"],
+                            {x["path"] for x in eintraege if x.get("path")}) if commit else {}
+    out = []
+    for x in eintraege:
+        x["mr_a"], x["mr_b"] = x.get("a"), x.get("b")
+        x["lesen"] = commit
+        if not x.get("path"):  # allgemein
+            out.append(x); continue
+        z = zurueck.get(x["path"])
+        if z and z["status"] == "neu":
+            continue  # Datei gab es nach dem Commit an diesem Pfad noch nicht
+        i = datei_index(ans_st, z["alt"] if z else x["path"])
+        if i is None:
+            continue  # Datei ist in dieser Ansicht nicht geändert
+        f = ans_st["dateien"][i]
+        b, unter = x.get("b"), None
+        if b and z:
+            b = alt_zeile(z, b)  # Zeile im MR-Stand → Zeile nach dem Commit (None = später geändert)
+            if b is None:
+                unter = f'Zeile {x["mr_b"]} wurde nach diesem Commit noch geändert'
+        elif not b:
+            unter = ("Kommentar zur alten Seite des MR – hier nicht zuzuordnen" if x.get("a")
+                     else x.get("problem") or "ohne Zeile")
+            if not commit:
+                x["lesen"] = True
+        a = alt_zeile(f, b) if b else None
+        imd = bool(b and im_diff(f, a, b))
+        if b and not imd:
+            unter = f"Zeile {b} liegt außerhalb der Änderungen" + (" dieses Commits" if commit else "")
+        x.update(datei=i, a=a, b=b, im_diff=imd, unter=unter)
+        if b and "problem" in x:
+            x["problem"] = None
+        out.append(x)
+    return out

@@ -4,7 +4,7 @@
 Aufruf:  python3 tests/test_gitlab.py [--behalten]
 Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, Port 8799), startet einen eigenen Server.
 """
-import runpy, glob, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import glob, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 SKRIPT = os.path.join(HIER, "..", "merge-train")
@@ -79,24 +79,37 @@ case "$1" in
 esac
 """
 
-ARBEIT_PRUEFEN = r"""
-import json, os, runpy, subprocess, sys
+# Alle Namen aller Module in einem Wörterbuch (die Tests rufen einzelne Funktionen direkt auf)
+ALLES_LADEN = r"""
+def alles_laden(skript):
+    import importlib, pkgutil, sys
+    sys.path.insert(0, skript)
+    import merge_train
+    m = {}
+    for info in pkgutil.iter_modules(merge_train.__path__):
+        m.update(vars(importlib.import_module("merge_train." + info.name)))
+    return m
+"""
+exec(ALLES_LADEN)
+
+ARBEIT_PRUEFEN = ALLES_LADEN + r"""
+import json, os, subprocess, sys
 def thread_pruefen(m, w):
     g = {"lokal": m["projektname"](w)}
-    fid, _ = m["g_anlegen"]([g], "Unklar: a.py:1 und `neu.py` – fehlt.py nicht", "a.py:1",
+    fid, _ = m["faden_anlegen"]([g], "Unklar: a.py:1 und `neu.py` – fehlt.py nicht", "a.py:1",
                             [{"path": "neu.py", "line": 1, "label": "neu"}, {"path": "neu.py", "diff": "a.py"}])
-    allg, _ = m["g_anlegen"]([g], "Zusammenfassung", None)
+    allg, _ = m["faden_anlegen"]([g], "Zusammenfassung", None)
     fehler = []
     for args in (("x", "gibtsnicht.py:1"), ("x", "a.py:99"), ("x", None, ["gibtsnicht.py"])):
         try:
-            m["g_anlegen"]([g], *args); fehler.append(False)
+            m["faden_anlegen"]([g], *args); fehler.append(False)
         except m["GitLabFehler"]:
             fehler.append(True)
-    d = m["g_daten"](g)
+    d = m["gespraech_daten"](g)
     k = {x["id"]: x for x in d["kommentare"]}
-    text, n = m["g_abholen"]([g], markieren=False)
+    text, n = m["faeden_abholen"]([g], markieren=False)
     return {"faden": k.get(fid), "allg": k.get(allg), "fehler": fehler, "abholen": n}
-m = runpy.run_path(sys.argv[1], run_name="pruefen")
+m = alles_laden(sys.argv[1])
 w = sys.argv[2]
 g = lambda *a: subprocess.run(["git", "-C", w, *a], capture_output=True, text=True).stdout
 vorher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("rev-parse", "HEAD"))
@@ -150,7 +163,7 @@ def arbeitsstand_test():
            "agent thread: siehe auch und Vergleich")
     pruefe(d["fehler"] == [True, True, True] and d["abholen"] == 0, "agent thread: falsche Orte abgelehnt, nichts für den Agenten offen")
     g("add", "-A"); g("commit", "-qm", "alles")
-    r = subprocess.run([sys.executable, "-c", "import runpy,sys; m=runpy.run_path(sys.argv[1],run_name='p'); "
+    r = subprocess.run([sys.executable, "-c", ALLES_LADEN + "import sys; m=alles_laden(sys.argv[1]); "
                         "print(open(m['projekt_seite'](sys.argv[2])[0],encoding='utf-8').read().split('<h1>')[1].split('</h1>')[0])",
                         SKRIPT, w], capture_output=True, text=True, env=env)
     pruefe(r.stdout.strip() == "klon: HEAD feature/x → main", "Arbeitsstand: ohne offene Änderungen „HEAD <branch>“ – " + r.stdout.strip() + r.stderr[-300:])
@@ -445,7 +458,7 @@ def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
     pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
     if shutil.which("node"):  # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt
-        m = runpy.run_path(SKRIPT, run_name="pruefen")
+        m = alles_laden(SKRIPT)
         js = os.path.join(T, "seite.js")
         open(js, "w", encoding="utf-8").write("".join(m[n] for n in ("JS", "JS_ZUG", "JS_DIFF", "JS_REVIEW", "JS_BAHNHOF")))
         r = subprocess.run(["node", "--check", js], capture_output=True, text=True)

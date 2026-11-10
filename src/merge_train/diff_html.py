@@ -1,4 +1,6 @@
-# ---------------------------------------------------------------- HTML
+"""HTML eines Datei-Diffs: Tabelle mit Hunks, Lücken zum Aufklappen, große Dateien erst auf Wunsch."""
+import html, re
+from .syntax import darstellen, intraline, zeilen_tokens
 
 def hunk_zeilen(h, ta_tok, tb_tok):
     """Zeilen paaren: (typ, nr_a, html_a, nr_b, html_b)."""
@@ -26,10 +28,12 @@ def hunk_zeilen(h, ta_tok, tb_tok):
             if tb is not None: b += 1
     return rows
 
+
 def zeilenzahl(text):
     if not text:
         return 0
     return text.count("\n") + (0 if text.endswith("\n") else 1)
+
 
 def luecken_von(d, bn):
     """Ausgeblendete Bereiche der neuen Seite: {hunk-index: (von, bis, delta)}, -1 = nach dem letzten Hunk.
@@ -46,12 +50,17 @@ def luecken_von(d, bn):
         out[-1] = (eb, bn, ea - eb)
     return out
 
+
 def luecke_tr(von, bis, delta, sbs):
     return (f'<tr class="lu" data-von="{von}" data-bis="{bis}" data-d="{delta}"><td class="n"></td>'
             f'<td colspan="{3 if sbs else 2}" class="lu-k">⋯ {bis - von + 1} Zeile(n)</td></tr>')
 
+
 GENERIERT = re.compile(r"(\.Designer\.cs|ModelSnapshot\.cs|\.min\.(js|css)|\.snap|(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock))$")
+
+
 SPAETER_ZEILEN, SPAETER_BYTES = 3000, 300_000
+
 
 def spaeter_grund(d):
     """Große oder generierte Datei: Diff erst auf Klick laden (wie „collapsed“ in GitLab). None = sofort zeigen."""
@@ -64,6 +73,7 @@ def spaeter_grund(d):
     if zeilen > SPAETER_ZEILEN or groesse > SPAETER_BYTES:
         return f"großer Diff ({zeilen} Zeilen, {groesse // 1024} KB)"
     return None
+
 
 def datei_tabelle(d, alt_text, neu_text, luecken=False):
     """Diff einer Datei als Tabelle (nebeneinander). Die Inline-Ansicht baut der Browser daraus (JS inlBauen)."""
@@ -93,6 +103,7 @@ def datei_tabelle(d, alt_text, neu_text, luecken=False):
     cs = '<colgroup><col class="cn"><col><col class="cn"><col></colgroup>'
     return f'<table class="sbs">{cs}{"".join(sbs)}</table>'
 
+
 def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
     name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
     kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
@@ -106,10 +117,3 @@ def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
         return (f'{auf}<div class="leer spaet">{html.escape(spaeter)} – '
                 f'<button class="laden">Diff laden</button></div></details>')
     return f'{auf}{datei_tabelle(d, alt_text, neu_text, luecken)}</details>'
-
-CSS = r"""@einbetten web/basis.css@"""
-
-JS = r"""@einbetten web/basis.js@"""
-
-JS_ZUG = r"""@einbetten web/zug.js@"""
-

@@ -1,32 +1,123 @@
-# ---------------------------------------------------------------- Seite (Diff aus dem lokalen Git – GitLab-MR und lokales Projekt)
+"""Die Seiten bauen: Diff-Seite eines Projekts bzw. MRs, Güterbahnhof mit Zug, Startseite."""
+import hashlib, html, json, os, re
+import urllib.parse
+from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, SKRIPT, SPERRE, VON, dateiname, ersetzen, projektname, schluessel
+from .git import INHALT, bis_sha, blobs, finde_repos, git, git_commits, inhalt, kurzpfad, zerlegen
+from .syntax import vorab_lexen
+from .zeilen import paare_und_hunks
+from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_BAHNHOF, JS_DIFF, JS_REVIEW, JS_ZUG
+from .diff_html import datei_html, spaeter_grund, zeilenzahl
+from .zustand import STRUKTUR, mr_datei, review_laden, review_speichern
+from .gitlab import GitLabFehler, MetaFehlt, mr_aus_id, mr_id, mr_lokal
+from .ansichten import ansicht_aufloesen, ansicht_html
+
+def commits_html(commits, knoepfe=None):
+    """commits: Liste (kurz-sha, zeit, betreff, rumpf[, sha]). knoepfe(i, commit) → HTML hinter dem Betreff."""
+    def nachricht(b):
+        b = re.sub(r"\n*Co-Authored-By:.*", "", b, flags=re.I).strip()
+        return f'<div class="nachricht">{html.escape(b)}</div>' if b else ""
+    return "".join(f'<div class="commit"><code>{html.escape(c[0])}</code> <b>{html.escape(c[2])}</b> '
+                   f'<span class="sub">{html.escape(c[1])}</span>{knoepfe(i, c) if knoepfe else ""}{nachricht(c[3])}</div>'
+                   for i, c in enumerate(commits)) or '<div class="sub">keine Commits</div>'
+
+
+def dateiliste_html(dateien):
+    fl, letzter = [], None
+    for n, d in enumerate(dateien):
+        ordner, name = os.path.split(d["neu"])
+        if ordner != letzter:
+            fl.append(f'<div class="sub" style="padding:6px 10px 0">{html.escape(ordner or "/")}</div>'); letzter = ordner
+        fl.append(f'<a href="#d{n}" title="{html.escape(d["neu"])}"><span class="zahl"><span class="kz"></span><span class="p">+{d["plus"]}</span> '
+                  f'<span class="m">−{d["minus"]}</span></span>{html.escape(name)}'
+                  f'{" <span class=sub>(" + d["status"] + ")</span>" if d["status"] != "geändert" else ""}</a>')
+    return fl
+
+
+def mr_seite(mr, ansicht=None):
+    """MR-Seite aus dem lokalen Klon (im Cache je Stand). Rückgabe (html-pfad, struktur, mr). Keine GitLab-Anfrage."""
+    st = review_laden(mr)
+    meta = st.get("meta")
+    if not meta:
+        raise MetaFehlt(f'Für {mr["projekt"]}!{mr["iid"]} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
+                        "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
+    ordner, refs = mr_lokal(mr, meta)
+    # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
+    # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    mh = hashlib.sha1(json.dumps({k: v for k, v in meta.items() if k != "_zeit" or (gl_head and gl_head != refs["head_sha"])},
+                                 sort_keys=True).encode()).hexdigest()[:6]
+    praefix = os.path.join(MR_ORDNER, f'{mr_datei(mr)}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
+    pfad, struktur = seite_bauen(mr_id(mr), ordner, refs, praefix,
+                                 lambda *a: mr_html(mr, meta, *a), ansicht)
+    if not ansicht:
+        with SPERRE:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
+            s = review_laden(mr)
+            if s.get("struktur") != praefix_json(praefix):
+                s["struktur"] = praefix_json(praefix)
+                review_speichern(mr, s)
+    return pfad, struktur, mr
+
+
+def mr_html(mr, meta, dateien, commits, texte, struktur):
+    slug = mr_id(mr)
+    head = struktur["refs"]["head_sha"]
+    ans = struktur.get("ansicht")
+    web = meta.get("web_url") or ""
+    autor = (meta.get("author") or {}).get("name", "")
+    beschr = (meta.get("description") or "").strip()
+    cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
+        + commits_html(commits, commit_knoepfe(f"/mr/{slug}", commits, ans))
+    leer = '<div class="leer">Keine Änderungen in diesem Merge-Request.</div>' if not dateien else ""
+    lesen = bool(ans and ans["art"] == "commit")
+    daten = seiten_daten(slug, head, len(dateien), ans, projekt=slug, web_url=web)
+    klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
+             else "Klick auf Zeilennummer: Kommentar")
+    hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
+             '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
+    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    abw = (f'<div class="warn">GitLab stand beim letzten Holen ({html.escape(meta.get("_zeit") or "?")}) auf '
+           f'{html.escape(gl_head[:8])}, lokal ist {html.escape(head[:8])} – Branch aktualisieren oder MR-Daten holen.</div>'
+           if gl_head and gl_head != head else "")
+    titel = f'{mr["projekt"]}!{mr["iid"]}'
+    entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
+    return diff_seite(titel=f'!{mr["iid"]} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,
+                      head=head, dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',
+                      commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
+                      nach_h1=f'\n<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>',
+                      sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
+                      nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>',
+                      hilfe=hilfe, leer=leer)
+
+
+def gleise_html():
+    """Kopf: der Güterbahnhof über die ganze Breite. Kulisse (bahnhof.webp), davor Verladegebäude und Förderband
+    (zeichnet zug.js in #anlage, weil das Band bis zur Bildschirmmitte reicht) und der Zug. Im Leitstand die Knöpfe
+    der eingeschalteten Quellen: lokal nach neuen Änderungen schauen, GitLab nur auf Knopfdruck fragen."""
+    titel = "Güterbahnhof" + (": GitLab wird nur hier (und beim Abschließen) gefragt" if quellen.GITLAB.an() else "")
+    return (f'<div class="gleise szene" style="--bild:url(data:image/webp;base64,{BAHNHOF_BILD})">'
+            '<svg id="anlage" aria-hidden="true"></svg>'
+            f'<div id="bahnhof" title="{titel}"><div class="bh-knoepfe">{quellen.leitstand_html()}</div><span id="bhzeit"></span></div>'
+            '<div id="zug"></div></div>')
+
+
 # Beide Modi bauen ihre Seite gleich: Diff, Commits und Inhalte aus dem Klon, Kontext und große Dateien nachladbar,
 # Commit-Ansichten. Sie unterscheiden sich nur im Kopf (MR-Daten/Kommentare bzw. „fertig“).
 
 MR_ORDNER = os.path.join(ORDNER, "mr")
+
+
 LOKAL_ORDNER = os.path.join(ORDNER, "lokal")
+
+
 # Stand des Skripts und der Einstellung (Leitstand-Knöpfe, Agenten): ändert sich eins, werden Seiten neu gebaut
-VERSION = str(int(os.path.getmtime(os.path.realpath(__file__)))) + "-" + \
+VERSION = str(int(os.path.getmtime(SKRIPT))) + "-" + \
     hashlib.sha1(json.dumps(KONF, sort_keys=True, default=str).encode()).hexdigest()[:6]
 
-INHALT = {}
-
-def inhalt(ordner, sha, pfad):
-    """Dateiinhalt an einem Stand aus dem lokalen Klon. None = gibt es nicht."""
-    k = (ordner, sha, pfad)
-    if k not in INHALT:
-        if len(INHALT) > 3000:
-            INHALT.clear()
-        INHALT[k] = git(ordner, "show", f"{sha}:{pfad}", check=False)
-    return INHALT[k]
-
-def git_commits(ordner, von, bis):
-    """Commits von..bis, älteste zuerst: (kurz-sha, zeit, betreff, rumpf, sha)."""
-    roh = git(ordner, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1f%H%x1e",
-              "--date=format:%d.%m. %H:%M", f"{von}..{bis}", check=False) or ""
-    return [tuple(c.strip("\n").split("\x1f")) for c in roh.split("\x1e") if c.strip()]
 
 def praefix_json(praefix, ans=None):
     return praefix + (f'-{ans["art"]}{ans["sha"][:12]}' if ans else "") + f"-{VERSION}.json"
+
 
 def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
     """Seite für base..head (bzw. eine Commit-Ansicht) bauen, im Cache je Stand. html_fn(dateien, commits, texte, struktur).
@@ -67,11 +158,13 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
     STRUKTUR[stamm + ".json"] = struktur
     return stamm + ".html", struktur
 
+
 def seiten_daten(sid, head, n, ans, **mehr):
     """const MR = … für die Seite (kann: was der Waggon kann, siehe Quellen)."""
-    return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n, kann=quelle(sid).kann, version=VERSION,
+    return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n, kann=quellen.quelle(sid).kann, version=VERSION,
                            ansicht=f'{ans["art"]}:{ans["sha"]}' if ans else "",
                            lesen=bool(ans and ans["art"] == "commit")), ensure_ascii=False)
+
 
 def commit_knoepfe(url, commits, ans):
     """Je Commit „nur dieser“ / „seit diesem“ (beim letzten Commit nur „nur dieser“)."""
@@ -88,13 +181,16 @@ def commit_knoepfe(url, commits, ans):
         return f'<span class="cks">{out}</span>'
     return knoepfe
 
+
 def dateien_html(dateien, texte):
     return "".join(datei_html(n, d, *texte[n], luecken=True, spaeter=spaeter_grund(d)) for n, d in enumerate(dateien))
+
 
 # ---- lokales Projekt (VON … BIS, z. B. reviewed … claude)
 
 def projekt_zeiger(projekt):
     return os.path.join(LOKAL_ORDNER, dateiname(projekt) + ".zeiger")
+
 
 def projekt_seite(wurzel, ansicht=None):
     """Seite eines lokalen Projekts (BIS gegen VON ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
@@ -116,6 +212,7 @@ def projekt_seite(wurzel, ansicht=None):
                 review_speichern({"lokal": projekt}, st)
     return pfad, struktur
 
+
 def stand_name(wurzel, bis, head):
     """Titel für bis: beim Arbeitsstand „Arbeitsstand <branch>“ (nicht Committetes dabei) bzw. „HEAD <branch>“ (sauber)."""
     if bis != ARBEITSSTAND:
@@ -123,6 +220,7 @@ def stand_name(wurzel, bis, head):
     branch = (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(detached)"
     sauber = head == (git(wurzel, "rev-parse", "HEAD", check=False) or "").strip()
     return f"{'HEAD' if sauber else 'Arbeitsstand'} {branch}"
+
 
 def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     head = struktur["refs"]["head_sha"]
@@ -137,7 +235,7 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     lesen = bool(ans and ans["art"] == "commit")
     daten = seiten_daten("projekt:" + projekt, head, len(dateien), ans, projekt=projekt)
     klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
-    fertig_kbd = "<kbd>Enter</kbd> fertig · " if LOKAL.kann["fertig"] else ""
+    fertig_kbd = "<kbd>Enter</kbd> fertig · " if quellen.LOKAL.kann["fertig"] else ""
     hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
@@ -147,11 +245,12 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
                       fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
                       commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer)
 
+
 def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, commits_titel, commits_liste, fertig_titel="",
                nach_h1="", sub_vor="", nach_sub="", unter_commits="", nach_commits="", hilfe="", leer=""):
     """Die eine Diff-Seite für alle Quellen: Güterbahnhof im Kopf, Titelzeile, Commits, Seitenleiste mit Kommentaren und
     Dateiliste, Diff. Die Knöpfe richten sich danach, was der Waggon kann (Quelle), die Titelzeile liefert die Quelle."""
-    kann = quelle(sid).kann
+    kann = quellen.quelle(sid).kann
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     knoepfe = ('<button id="feedback" hidden disabled title="Entwürfe (Fragen/Wünsche) an den Agenten schicken – bleiben privat">'
                'Feedback senden</button>\n'
@@ -173,3 +272,41 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
 <main>{leer}{dateien_html(dateien, texte)}</main></div>
 <script>const MR={daten};{JS}{JS_ZUG}{JS_DIFF}{JS_REVIEW}{JS_BAHNHOF}</script></body></html>"""
+
+
+def ansicht_struktur(haupt, ansicht):
+    """Struktur der Ansichts-Seite zur Hauptseite (erzeugt sie bei Bedarf)."""
+    p = praefix_json(haupt["praefix"], {"art": ansicht[0], "sha": ansicht[1]})
+    if p not in STRUKTUR:
+        if not os.path.exists(p):
+            sid = haupt["id"]
+            if sid.startswith("projekt:"):
+                wurzel = next((r for r in finde_repos() if projektname(r) == sid[8:]), None)
+                if not wurzel:
+                    raise GitLabFehler(f"Projekt {sid[8:]} nicht gefunden")
+                return projekt_seite(wurzel, ansicht=ansicht)[1]
+            return mr_seite(mr_aus_id(sid), ansicht=ansicht)[1]
+        STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
+    return STRUKTUR[p]
+
+
+def startseite(text="", sid=""):
+    """Start: Güterbahnhof und der gemischte Zug, mit GitLab dazu ein Feld zum Öffnen eines MR."""
+    daten = json.dumps({"id": sid, "projekt": sid, "sha": "", "k": schluessel(), "dateien": 0,
+                        "kann": {"review": False, "fertig": False, "committen": False}})
+    mr_feld = ('<p class="sub">Waggon im Zug wählen. Neue MRs holt „↻ MRs“ im Güterbahnhof.</p>'
+               '<form action="/mr-oeffnen"><p><label>MR öffnen (URL oder gruppe/projekt!42):<br>'
+               '<input name="u" autofocus placeholder="https://gitlab…/-/merge_requests/42"></label></p></form>'
+               if quellen.GITLAB.an() else '<p class="sub">Waggon im Zug wählen.</p>')
+    return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}<title>merge-train</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>{CSS}{CSS_REVIEW}.uebersicht{{max-width:900px;margin:30px auto;padding:0 16px}}
+.uebersicht input{{width:100%;font:14px ui-monospace,monospace;padding:6px 8px;border:1px solid var(--rand);border-radius:6px;background:var(--bg);color:var(--fg)}}</style>
+<script src="/zug.js?akt={urllib.parse.quote(sid)}"></script></head>
+<body class="start"><header id="kopf">{gleise_html()}<div class="zeile"><span id="meldung"></span></div></header>
+<main class="uebersicht">{f'<p class="warn">{html.escape(text)}</p>' if text else ""}{mr_feld}
+</main><script>const MR={daten};const ds=[],ls=[];function kh(){{}}{JS_ZUG}{JS_BAHNHOF}</script></body></html>"""
+
+
+# Am Ende, weil quellen seinerseits die Seiten von hier braucht: die Seiten fragen erst beim Aufruf, was eine Quelle kann.
+from . import quellen  # noqa: E402

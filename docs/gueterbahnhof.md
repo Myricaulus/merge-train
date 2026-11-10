@@ -8,11 +8,11 @@ Abhaken der Dateien mit Schüttgut beladen.
 
 Commits `321af08` … `eba8275` auf `claude`:
 
-- **Kulisse:** `src/web/bahnhof.webp` ist das myr-Panorama (7014×775). `./bauen` bettet es als Base64 ein, und
+- **Kulisse:** `src/merge_train/web/bahnhof.webp` ist das myr-Panorama (7014×775). Die Seite bekommt es als Base64 (`web.py`), und
   `gleise_html` setzt es als `--bild` auf `.szene`. Es füllt die volle Breite, ist aber mindestens 2480 px breit
   (sonst seitlich abgeschnitten). Der Horizont liegt immer auf y=176 (`review.css`, `.szene`).
 - **Nacht:** blaues Overlay über der Kulisse, die Fenster leuchten (`prefers-color-scheme: dark`).
-- **Anlage:** `anlage()` in `src/web/zug.js` zeichnet sie in `#anlage`. Links steht das Verladegebäude: Bandturm
+- **Anlage:** `anlage()` in `src/merge_train/web/zug.js` zeichnet sie in `#anlage`. Links steht das Verladegebäude: Bandturm
   mit dem Schild „MERGE-TRAIN“, verglaster Leitstand und ein Tor fürs Gleis bei x=28…156. Daraus läuft das
   Förderband als Fachwerkbrücke bis zur Bandmitte `cx` (Bildschirmmitte, mindestens 330), mit Bandkopf, Schurre
   und Strahl über dem Wagen. Dazu kommen Gleis, Schotter und Schwellen. Die Knöpfe sind HTML (`#bahnhof`) im

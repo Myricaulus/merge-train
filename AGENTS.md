@@ -18,8 +18,8 @@ Nur für die Entwicklung (Doku, Code-Kommentare, Skill, Ausgaben von `merge-trai
 | Stufe | Bedeutung | Seite | Code |
 |---|---|---|---|
 | **draft** | Agent-Hinweis aus der Review-JSON, noch nicht übernommen. Darf noch geändert werden (auch vom Agenten). | lila Hinweis, „übernehmen“ | Hinweis-Status `offen` |
-| **staged** | übernommen bzw. selbst geschrieben, wird mit „Review abschließen“ gesendet | „Entwurf (lokal)“, „geändert – wird aktualisiert“, „wird in GitLab gelöscht“ | `k_status`: `neu`, `geaendert`, `loeschen` |
-| **sent** | als Draft-Note in GitLab bzw. dort veröffentlicht (in GitLab verworfene werden wieder staged) | „in GitLab (Entwurf)“, „in GitLab veröffentlicht“ | `k_status`: `uebertragen`, `weg` |
+| **staged** | übernommen bzw. selbst geschrieben, wird mit „Review abschließen“ gesendet | „Entwurf (lokal)“, „geändert – wird aktualisiert“, „wird in GitLab gelöscht“ | `kommentar_status`: `neu`, `geaendert`, `loeschen` |
+| **sent** | als Draft-Note in GitLab bzw. dort veröffentlicht (in GitLab verworfene werden wieder staged) | „in GitLab (Entwurf)“, „in GitLab veröffentlicht“ | `kommentar_status`: `uebertragen`, `weg` |
 
 **staged entsteht nur durch den Nutzer**: Klick auf „übernehmen“ (oder ein selbst geschriebener Kommentar). Der Agent legt
 nie Review-Kommentare an. Er ändert nur drafts und legt sonst einen neuen draft daneben an (`merge-train agent kommentar`,
@@ -28,7 +28,7 @@ Achtung: GitLab nennt auch sent-Kommentare „draft notes“; „draft“ meint 
 
 ## Code
 
-Änderungen nur in `src/` (Python-Teile, `src/web/*.css|js`), danach `./bauen`. `merge-train` ist das gebaute
+Änderungen nur in `src/` (Python-Module in `src/merge_train/`, `src/merge_train/web/*.css|js`), danach `./bauen`. `merge-train` ist das gebaute
 Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 
 ## Tests

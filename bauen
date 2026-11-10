@@ -1,45 +1,39 @@
 #!/usr/bin/env python3
 """Baut merge-train aus src/ zusammen.
 
-  ./bauen            src/*.py der Reihe nach aneinanderhängen, web/*.css|js einbetten → ./merge-train
+  ./bauen            src/ (__main__.py, Paket merge_train/ samt web/) zu einer ausführbaren Datei bündeln → ./merge-train
   ./bauen --pruefen  nur vergleichen: Exit 1, wenn ./merge-train nicht zum Stand in src/ passt
 
-In den Python-Teilen bettet `NAME = r\"\"\"@einbetten web/datei.js@\"\"\"` die Datei als String ein (Bilder .webp/.png als Base64).
+Das Ergebnis ist ein Python-Zip (zipapp): eine Datei, die python3 direkt startet. Ohne Bauen läuft auch `python3 src`.
 Die gebaute Datei ist nicht eingecheckt (.gitignore). ~/.local/bin/merge-train zeigt darauf; die Git-Hooks
 aus install.sh bauen nach pull/checkout/rebase neu. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
 """
-import base64, os, re, sys
+import io, os, sys, zipfile
 
 HIER = os.path.dirname(os.path.realpath(__file__))
 SRC = os.path.join(HIER, "src")
 ZIEL = os.path.join(HIER, "merge-train")
 
 
-def einbetten(m):
-    pfad = m.group(1)
-    if pfad.endswith((".webp", ".png")):  # Bilder als Base64 (für data:-URLs)
-        return 'r"""' + base64.b64encode(open(os.path.join(SRC, pfad), "rb").read()).decode() + '"""'
-    text = open(os.path.join(SRC, pfad), encoding="utf-8").read()
-    if '"""' in text:
-        sys.exit(f"{pfad}: enthält \"\"\" und lässt sich nicht einbetten")
-    if text.endswith("\\"):
-        sys.exit(f"{pfad}: endet mit \\ und lässt sich nicht einbetten")
-    return 'r"""\n' + text + '"""'   # der String beginnt mit einem Zeilenumbruch
-
-
 def bauen():
-    teile = sorted(f for f in os.listdir(SRC) if f.endswith(".py"))
-    text = "".join(open(os.path.join(SRC, f), encoding="utf-8").read() for f in teile)
-    text = re.sub(r'r"""@einbetten ([\w./-]+)@"""', einbetten, text)
-    if "@einbetten" in text:
-        sys.exit("@einbetten nur als r\"\"\"@einbetten web/datei@\"\"\" (roher String)")
-    return text
+    pfade = []
+    for ordner, unterordner, dateien in os.walk(SRC):
+        unterordner[:] = sorted(u for u in unterordner if u != "__pycache__")
+        pfade += [os.path.join(ordner, d) for d in sorted(dateien)]
+    puffer = io.BytesIO()
+    with zipfile.ZipFile(puffer, "w", zipfile.ZIP_DEFLATED) as z:
+        for pfad in pfade:  # feste Zeit und Reihenfolge: gleicher Stand in src/ ergibt dieselbe Datei
+            eintrag = zipfile.ZipInfo(os.path.relpath(pfad, SRC).replace(os.sep, "/"), (1980, 1, 1, 0, 0, 0))
+            eintrag.compress_type = zipfile.ZIP_DEFLATED
+            eintrag.external_attr = 0o644 << 16
+            z.writestr(eintrag, open(pfad, "rb").read())
+    return b"#!/usr/bin/env python3\n" + puffer.getvalue()
 
 
 def main():
     neu = bauen()
     try:
-        alt = open(ZIEL, encoding="utf-8").read()
+        alt = open(ZIEL, "rb").read()
     except FileNotFoundError:
         alt = None
     if "--pruefen" in sys.argv:
@@ -50,11 +44,11 @@ def main():
         print("merge-train ist aktuell")
         return
     tmp = ZIEL + ".neu"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "wb") as f:
         f.write(neu)
     os.chmod(tmp, 0o755)
     os.replace(tmp, ZIEL)
-    print(f"merge-train gebaut ({neu.count(chr(10))} Zeilen)")
+    print(f"merge-train gebaut ({len(neu) // 1024} kB)")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,34 @@
-# ---------------------------------------------------------------- Server (nur bei Bedarf)
+"""Der kleine HTTP-Server auf 127.0.0.1: liefert Seiten und nimmt die Aktionen der Seite entgegen."""
+import json, os, subprocess, sys, threading, time
+import urllib.parse
+from datetime import datetime
+from .einstellungen import BIS, KONF, KONFIG_DATEI, ORDNER, SKRIPT, SPERRE, VON, dateiname, oeffnen, projektname, schluessel
+from . import syntax
+from .git import ANLASS, finde_repos, git, statistik
+from .web import CSS, FAVICON, ICON
+from .zustand import review_laden, review_speichern
+from .gitlab import GitLabFehler, mr_aus_id, mr_id, mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
+from .ansichten import ansicht_lesen
+from .seite import VERSION, mr_seite, projekt_seite, startseite
+from .quellen import GITLAB, LOKAL, alle_wagen, fertig, quelle, schluessel_von
+from .zuhoerer import feedback_senden, seite_lebt, session_starten
+from .review import (NUR_LESEN, abschliessen, datei_nachladen, entwuerfe_abgleichen, hinweis_aktion, kommentar_aktion, meta_und_entwuerfe, seiten_struktur,
+    stand, vergleich_daten, zeilen_daten)
+from .gespraech import gespraech_aktion, wagen_daten
 
 PORT = int(KONF["port"])
+
+
 ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}<title>merge-train: alles durch</title>
 <style>{CSS}
 .durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1.25;margin-bottom:2vmin}}
 .durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
 <body><main class="durch"><section><div>👍</div><p>Alles durch – überall {VON} = {BIS}</p>
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
+
+
 LEERLAUF_S = 3600
+
 
 def server_laeuft():
     import urllib.request
@@ -17,12 +38,13 @@ def server_laeuft():
     except OSError:
         return False
 
+
 def server_sicherstellen():
     import time
     if server_laeuft():
         return True
     log = open(os.path.join(ORDNER, "server.log"), "a")
-    subprocess.Popen([sys.executable, os.path.realpath(__file__), "--server"], start_new_session=True,
+    subprocess.Popen([sys.executable, SKRIPT, "--server"], start_new_session=True,
                      stdin=subprocess.DEVNULL, stdout=log, stderr=log)
     for _ in range(40):
         time.sleep(0.1)
@@ -30,7 +52,9 @@ def server_sicherstellen():
             return True
     return False
 
+
 _VORBAU = threading.Lock()
+
 
 def vorbauen(repos):
     """Nach dem Abruf einer Projektseite die übrigen offenen im Hintergrund bauen (für „n“/Klick im Zug)."""
@@ -46,6 +70,7 @@ def vorbauen(repos):
         finally:
             _VORBAU.release()
     threading.Thread(target=los, daemon=True).start()
+
 
 def server():
     """Liefert ~/.cache/merge-train auf 127.0.0.1 aus, erzeugt Seiten beim Abruf frisch, nimmt „fertig“
@@ -211,7 +236,7 @@ def server():
                 antwort = {}
                 if self.path == "/api/gespraech" or self.path == "/api/kommentar" and (d.get("gespraech") or not kann["review"]):
                     if self.path == "/api/kommentar":  # Fragen an den Agenten: Fäden, nie nach außen
-                        ok, text = g_aktion(g, d)
+                        ok, text = gespraech_aktion(g, d)
                     elif d.get("aktion") == "senden":
                         ok, text, tid = feedback_senden(g)
                         antwort["todo"] = tid
@@ -236,9 +261,8 @@ def server():
                 self.json_senden(500, {"ok": False, "text": f"merge-train: {type(e).__name__}: {e}"})
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
-    global SERVER_SOCKET
-    SERVER_SOCKET = srv.socket
-    beobachtet = [os.path.realpath(__file__), KONFIG_DATEI]
+    syntax.SERVER_SOCKET = srv.socket
+    beobachtet = [SKRIPT, KONFIG_DATEI]
     def mtimes():
         out = []
         for p in beobachtet:
@@ -265,22 +289,25 @@ def server():
     if neu[0]:
         os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
 
+
 _SERVER_STAND = [0, None]
+
 
 def server_stand():
     """Stand von merge-train selbst fürs HUD: letzter Commit des Repos, Zeit, noch nicht committete Änderungen in src/.
     Höchstens alle 30 s neu ermittelt (die Seiten fragen alle 4 s)."""
     if time.time() - _SERVER_STAND[0] > 30:
-        repo = os.path.dirname(os.path.realpath(__file__))
+        repo = os.path.dirname(SKRIPT)
         roh = (git(repo, "log", "-1", "--format=%h%x1f%cd", "--date=format:%d.%m. %H:%M", check=False) or "").strip()
         if roh:
             commit, zeit = roh.split("\x1f")
             st = {"commit": commit, "zeit": zeit, "geaendert": bool((git(repo, "status", "--porcelain", "--", "src", check=False) or "").strip())}
         else:  # kein Git-Repo (z. B. kopierte Datei): Zeit der Datei
-            st = {"commit": "", "zeit": datetime.fromtimestamp(os.path.getmtime(os.path.realpath(__file__))).strftime("%d.%m. %H:%M"),
+            st = {"commit": "", "zeit": datetime.fromtimestamp(os.path.getmtime(SKRIPT)).strftime("%d.%m. %H:%M"),
                   "geaendert": False}
         _SERVER_STAND[:] = [time.time(), st]
     return _SERVER_STAND[1]
+
 
 def im_browser(pfad, nur_url=False):
     if not server_sicherstellen():
@@ -289,4 +316,3 @@ def im_browser(pfad, nur_url=False):
     print(url)
     if not nur_url:
         oeffnen(url)
-

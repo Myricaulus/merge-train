@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """merge-train – Merge-Requests claude → reviewed aller Projekte, sofort im Browser.
 Dazu: Review von GitLab-Merge-Requests (über glab) mit Kommentaren und Agent-Hinweisen.
 
@@ -16,16 +15,10 @@ Tasten: j/k nächste/vorige Datei, i nebeneinander/inline, z alle zu/auf,
 c Commits ein-/ausklappen, Enter fertig.
 
 Einstellungen: ~/.config/merge-train/config.toml (Vorlage: config.example.toml).
+
+Der Code liegt im Paket merge_train/ – ein Modul je Thema, die Reihenfolge der Abhängigkeiten steht in merge_train/__init__.py.
 """
-import argparse, difflib, glob, hashlib, html, json, os, re, shlex, shutil, subprocess, sys, threading, time
-import urllib.parse
-from datetime import datetime
+from merge_train.cli import main
 
-try:
-    from pygments.lexers import get_lexer_for_filename, get_lexer_by_name
-    from pygments.util import ClassNotFound
-    from pygments import token as T
-    PYGMENTS = True
-except ImportError:
-    PYGMENTS = False
-
+if __name__ == "__main__":
+    main()

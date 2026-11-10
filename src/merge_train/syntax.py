@@ -1,13 +1,25 @@
-# ---------------------------------------------------------------- Syntax
+"""Syntaxhervorhebung (pygments, wenn vorhanden) und Hervorhebung geänderter Wörter in einer Zeile."""
+import difflib, html, os, re, threading
+
+try:
+    from pygments.lexers import get_lexer_for_filename, get_lexer_by_name
+    from pygments.util import ClassNotFound
+    from pygments import token as T
+    PYGMENTS = True
+except ImportError:
+    PYGMENTS = False
 
 SONDER = {".razor": "html", ".cshtml": "html", ".vue": "html", ".svelte": "html",
           ".conf": "ini", ".service": "ini", ".desktop": "ini", ".webmanifest": "json"}
+
 
 SHEBANG = {"python": "python", "bash": "bash", "sh": "bash", "zsh": "bash", "dash": "bash",
            "fish": "fish", "node": "javascript", "perl": "perl", "ruby": "ruby", "lua": "lua",
            "php": "php", "awk": "awk", "gawk": "awk", "pwsh": "powershell"}
 
+
 _LEXER = {}
+
 
 def lexer_fuer(pfad, text=None):
     """Lexer nach Dateiname, ohne passende Endung nach der Shebang-Zeile.
@@ -39,13 +51,16 @@ def lexer_fuer(pfad, text=None):
                 pass
     return None
 
+
 _KLASSE = {}
+
 
 def klasse(tt):
     k = _KLASSE.get(tt)
     if k is None:
         k = _KLASSE[tt] = _klasse(tt)
     return k
+
 
 def _klasse(tt):
     if not PYGMENTS: return ""
@@ -62,7 +77,9 @@ def _klasse(tt):
     if tt in T.Generic.Heading or tt in T.Generic.Subheading: return "tk"
     return ""
 
+
 _VORAB = {}
+
 
 def zeilen_tokens(text, pfad):
     """Ganze Datei lexen (damit mehrzeilige Kommentare/Strings stimmen),
@@ -84,6 +101,7 @@ def zeilen_tokens(text, pfad):
     zeilen.append(akt)
     return zeilen
 
+
 def darstellen(toks, roh, bereiche, tag):
     """Zeile als HTML: Syntaxklassen + markierte Änderungsbereiche (tag = del/ins)."""
     if toks is None or "".join(t for _, t in toks) != roh:
@@ -104,6 +122,7 @@ def darstellen(toks, roh, bereiche, tag):
         pos = ende
     return "".join(out)
 
+
 def intraline(a, b):
     """Geänderte Bereiche in a und b, nur wenn sich die Zeilen ähneln."""
     if len(a) + len(b) > 4000:
@@ -120,7 +139,10 @@ def intraline(a, b):
 
 
 _AUFTRAEGE, _LEX_SPERRE = [], threading.Lock()
+
+
 SERVER_SOCKET = None  # setzt server(): Lexer-Kinder schließen ihre geerbte Kopie
+
 
 def _kind_start():
     """Im geforkten Lexer-Prozess: Port nicht festhalten und mit dem Elternprozess sterben (sonst bleibt der Port
@@ -136,8 +158,10 @@ def _kind_start():
     except Exception:
         pass
 
+
 def _lexen(nummern):
     return [zeilen_tokens(*_AUFTRAEGE[i]) for i in nummern]  # Texte erbt das Kind beim fork, nur Nummern reisen
+
 
 def vorab_lexen(auftraege):
     """Viele Dateien parallel lexen (Pygments ist reines Python, ein Kern schafft ~1 MB/s). Danach liefert
@@ -161,6 +185,7 @@ def vorab_lexen(auftraege):
             _VORAB.clear()  # dann eben nacheinander
         finally:
             _AUFTRAEGE = []
+
 
 def _vorab_lexen(pakete, auftraege):
     import multiprocessing, warnings

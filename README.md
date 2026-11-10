@@ -15,7 +15,7 @@ Es gibt nur eine Seite: Kopf mit Güterbahnhof (Leitstand-Knöpfe aller eingesch
 lokalen Git (Kontext nachladen, große Dateien auf Klick, Commit-Ansichten), Gespräch an den Zeilen. Was ein Waggon
 zusätzlich kann (Review, „fertig“), bestimmt seine Quelle. GitLab wird nur auf Anforderung gefragt
 (siehe [GitLab nur auf Knopfdruck](#gitlab-nur-auf-knopfdruck)). Eine weitere Quelle (z. B. GitHub-PRs) wäre eine
-weitere Klasse in `src/09_quellen.py`.
+weitere Klasse in `src/merge_train/quellen.py`.
 
 Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit `pygments`, GitLab mit `glab`).
 Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
@@ -203,8 +203,9 @@ Er versteht nur `schlüssel = wert`, `[abschnitt]` und einzeilige Listen.
 
 ## Entwicklung
 
-Der Code liegt in `src/`: die Python-Abschnitte als `src/NN_name.py` (in dieser Reihenfolge aneinandergehängt),
-CSS und JS in `src/web/`. Dort eingebettet über `NAME = r"""@einbetten web/datei.js@"""`.
+Der Code liegt in `src/`: das Python-Paket `src/merge_train/` (ein Modul je Thema; die Reihenfolge der Abhängigkeiten
+steht in `__init__.py`), CSS und JS in `src/merge_train/web/`. `./bauen` bündelt alles zu einer ausführbaren Datei
+(Python-Zip). Zum Ausprobieren ohne Bauen: `python3 src`.
 
 ```sh
 ./bauen            # src/ → merge-train (schreibt nur bei Änderung; der laufende Server startet dann neu)
