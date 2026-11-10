@@ -120,7 +120,8 @@ def server():
                     g = schluessel_von(q.get("mr", ""))
                     if pfad == "api/stand":
                         seite_lebt(g)
-                        return self.json_senden(200, {"stand": stand(g, review_laden(g)), "version": VERSION})
+                        return self.json_senden(200, {"stand": stand(g, review_laden(g)), "version": VERSION,
+                                                      "server": server_stand()})
                     return self.json_senden(200, wagen_daten(g, ansicht_lesen(q.get("ansicht"))))
                 if pfad in ("zug.js", "api/zug"):  # der gemischte Zug aller eingeschalteten Quellen
                     d = {"wagen": alle_wagen(q.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None}
@@ -263,6 +264,23 @@ def server():
     srv.server_close()
     if neu[0]:
         os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
+
+_SERVER_STAND = [0, None]
+
+def server_stand():
+    """Stand von merge-train selbst fürs HUD: letzter Commit des Repos, Zeit, noch nicht committete Änderungen in src/.
+    Höchstens alle 30 s neu ermittelt (die Seiten fragen alle 4 s)."""
+    if time.time() - _SERVER_STAND[0] > 30:
+        repo = os.path.dirname(os.path.realpath(__file__))
+        roh = (git(repo, "log", "-1", "--format=%h%x1f%cd", "--date=format:%d.%m. %H:%M", check=False) or "").strip()
+        if roh:
+            commit, zeit = roh.split("\x1f")
+            st = {"commit": commit, "zeit": zeit, "geaendert": bool((git(repo, "status", "--porcelain", "--", "src", check=False) or "").strip())}
+        else:  # kein Git-Repo (z. B. kopierte Datei): Zeit der Datei
+            st = {"commit": "", "zeit": datetime.fromtimestamp(os.path.getmtime(os.path.realpath(__file__))).strftime("%d.%m. %H:%M"),
+                  "geaendert": False}
+        _SERVER_STAND[:] = [time.time(), st]
+    return _SERVER_STAND[1]
 
 def im_browser(pfad, nur_url=False):
     if not server_sicherstellen():

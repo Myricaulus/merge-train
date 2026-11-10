@@ -117,7 +117,7 @@ function zeichnen(){
  if(!RVW){gsStand();kh();return}
  gsStand(n+' Kommentar(e)'+(RV.ausstehend?' · '+RV.ausstehend+' noch nicht in GitLab':'')+(offen?' · '+offen+' Agent-Hinweis(e) offen':''));kh()}
 const TITEL=document.title,fb=document.getElementById('feedback'),sst=document.getElementById('starten');
-function gsStand(vorn){const f=FD(),z=s=>f.filter(k=>k.status===s).length,neu=z('antwort'),w=z('wartet'),e=GA();
+function gsStand(vorn){const f=FD(),z=s=>f.filter(k=>k.status===s).length,neu=z('antwort'),w=z('wartet'),e=GA();hud();
  document.getElementById('rvstand').textContent=[vorn,f.length?f.length+' Gespräch(e)':null,e?e+(RVW?' Fragen-Entw':' Entw')+(e>1?'ürfe':'urf'):null,w?w+' wartet auf Antwort':null,
   neu?neu+' neue Antwort(en)':null,RV.horcht?'🎧 '+RV.horcht+' hört zu':null].filter(Boolean).join(' · ');
  if(!fb)return;fb.hidden=RVW&&!f.length;fb.disabled=!e;const fw=RVW?'Fragen senden':'Feedback senden';fb.textContent=e?fw+' ('+e+')':fw;sst.hidden=!RV.todo||!!RV.horcht;
@@ -159,8 +159,60 @@ if(abk)abk.addEventListener('click',()=>{abk.disabled=true;meld.textContent='üb
   zugHolen()})});
 // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut oder
 // Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist
-setInterval(()=>{fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{
- if(d.version&&MR.version&&d.version!==MR.version&&!document.querySelector('textarea')){try{sessionStorage.meldung='merge-train wurde aktualisiert – Seite neu geladen'}catch(_){}location.reload();return}
- if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
- .catch(()=>{meld.textContent=WEG})},4000);
+function pruefen(){fetch('/api/stand?'+qs()).then(r=>r.json()).then(d=>{if(d.server&&JSON.stringify(d.server)!==JSON.stringify(SERVER)){SERVER=d.server;hud()}
+ if(d.version&&MR.version&&d.version!==MR.version){led('neu');if(!document.querySelector('textarea')){try{sessionStorage.meldung='merge-train wurde aktualisiert – Seite neu geladen'}catch(_){}location.reload()}return}
+ led('an');if(d.stand&&(d.stand!==RV.stand||meld.textContent===WEG))laden()})
+ .catch(()=>{meld.textContent=WEG;led('weg')})}
+setInterval(pruefen,4000);setTimeout(pruefen,300);
 laden();
+// ---------------------------------------------------------------- HUD, Toasts, Nachrichten
+// HUD: Stellwerk auf Stelzen rechts neben der Schurre (Zug fährt drunter durch): Server-LED, Stand, Zähler, wer zuhört.
+let LED='an',SERVER=null; // SERVER: Stand von merge-train (Commit, Zeit, ungespeicherte Änderungen) aus /api/stand
+function led(z){if(LED===z)return;LED=z;hud()}
+const HUDX=(()=>{const sz=document.querySelector('.szene');if(!sz)return null;
+ const bau=document.createElementNS('http://www.w3.org/2000/svg','svg');bau.id='hud-bau';
+ const h=el('div',{id:'hud'});sz.append(bau,h);addEventListener('resize',()=>hudLage());return {sz,bau,h}})();
+function hudLage(){if(!HUDX)return;const B=HUDX.sz.clientWidth,H=HUDX.sz.clientHeight,cx=Math.round(Math.max(B/2,330)),gl=H-4;
+ const W=Math.min(372,B-cx-58),x=B-W-10,y=98,h=42; /* ganz rechts, aber nie über der Schurre */HUDX.h.hidden=HUDX.bau.hidden=W<230;document.body.classList.toggle('mit-hud',W>=230);if(W<230)return;
+ Object.assign(HUDX.h.style,{left:x+'px',top:y+'px',width:W+'px',height:h+'px'});
+ const turm=xl=>{let s=`<path d="M${xl},${y+h+3} V${gl-4} M${xl+9},${y+h+3} V${gl-4}" class="hud-stelze"/>`; // schlanke Gittertürme, Zug fährt dazwischen
+  for(let yy=y+h+3;yy<gl-12;yy+=13)s+=`<path d="M${xl},${yy} L${xl+9},${yy+13} M${xl+9},${yy} L${xl},${yy+13}" class="hud-strebe"/>`;return s};
+ HUDX.bau.setAttribute('viewBox',`0 0 ${B} ${H}`);
+ HUDX.bau.innerHTML=turm(Math.max(x+14,cx+96))+turm(x+W-23)+ // links erst hinter dem Wagen unter dem Band
+  
+  `<rect x="${x-4}" y="${y+h}" width="${W+8}" height="4" class="hud-boden"/>`+
+  `<rect x="${x}" y="${y}" width="${W}" height="${h}" rx="2" class="hud-kabine"/>`+
+  `<rect x="${x-6}" y="${y-5}" width="${W+12}" height="6" rx="1" class="hud-dach"/>`+
+  `<path d="M${x+W-30},${y-5} V${y-18} M${x+W-36},${y-14} H${x+W-24}" class="hud-antenne"/><circle cx="${x+W-30}" cy="${y-19}" r="1.8" class="hud-funk"/>`}
+function hud(){if(!HUDX)return;hudLage();
+ const f=FD(),neu=f.filter(k=>k.status!=='erledigt').length,km=RV.kommentare.filter(k=>k.status!=='loeschen'),
+  lokal=RV.ausstehend||0,hw=RV.hinweise.filter(h=>h.status==='offen').length,
+  ledT={an:'Server läuft',weg:'Server nicht erreichbar',neu:'neuer Server – Seite lädt neu, sobald kein Eingabefeld offen ist'}[LED];
+ const stand=el('span',{class:'hud-stand',title:SERVER?'merge-train: letzter Commit '+SERVER.commit+' vom '+SERVER.zeit+(SERVER.geaendert?' – dazu Änderungen in src/, die noch nicht committet sind':''):'Stand von merge-train'},
+  SERVER?'merge-train '+SERVER.commit+(SERVER.geaendert?'*':'')+' · '+SERVER.zeit:'merge-train');
+ const zl=[RVW?el('span',{title:km.length+' GitLab-Kommentar(e), davon '+lokal+' noch nicht in GitLab'},'💬 '+km.length+(lokal?' ('+lokal+' lokal)':'')):null,
+  RVW&&hw?el('span',{title:hw+' Agent-Hinweis(e) offen'},'🤖 '+hw):null,
+  f.length?el('span',{title:f.length+' KI-Thread(s)'+(neu?', davon '+neu+' noch offen (nicht erledigt)':', alle erledigt')},'🧵 '+f.length+(neu?' ('+neu+' offen)':'')):null].filter(Boolean);
+ HUDX.h.replaceChildren(
+  el('div',{class:'hud-z'},el('span',{class:'hud-led '+LED,title:ledT}),stand,
+   el('span',{class:'hud-hoert'+(RV.horcht?' an':''),title:RV.horcht?RV.horcht+' hört zu – Fragen gehen direkt an die Session':'keine Agenten-Session hört zu'},RV.horcht?'🎧 '+RV.horcht+' hört zu':'🎧 –')),
+  el('div',{class:'hud-z'},...(zl.length?zl.flatMap((e,i)=>i?[el('span',{class:'hud-trenn'},'·'),e]:[e]):[el('span',{},'keine Kommentare')])))}
+// Toasts: Meldungen des Servers (alles, was in #meldung landet, außer Fortschritt „… “ und „Server weg“) 10 s gut sichtbar,
+// wegklickbar; die letzten 50 merkt sich der Browser für den Knopf „Nachrichten“.
+const TOASTS=el('div',{id:'toasts'}),NK=el('button',{id:'nachrichten',title:'letzte Meldungen von merge-train'},'🔔');document.body.append(TOASTS,NK);
+function verlauf(neu){let v=[];try{v=JSON.parse(localStorage.meldungen||'[]')}catch(_){}if(neu){v.unshift(neu);v=v.slice(0,50);try{localStorage.meldungen=JSON.stringify(v)}catch(_){}}return v}
+let UNGELESEN=0;function nkZahl(){NK.dataset.n=UNGELESEN||'';NK.classList.toggle('neu',UNGELESEN>0)}
+function toast(text){const t=el('div',{class:'toast'+(/fehler|abgelehnt|ungültig|nicht (erreichbar|abrufbar|gefunden|möglich)|startet nicht|gibt es nicht/i.test(text)?' warn':'')},el('span',{},text),el('button',{title:'schließen',onclick:()=>t.remove()},'✕'));
+ TOASTS.prepend(t);setTimeout(()=>{t.classList.add('weg');setTimeout(()=>t.remove(),400)},10000);
+ verlauf({zeit:new Date().toISOString(),text,seite:document.title.replace(/^\(\d+\) /,'')});UNGELESEN++;nkZahl()}
+new MutationObserver(()=>{const t=meld.textContent.trim();if(!t||t===WEG||/…$|\.\.\.$/.test(t))return;meld.textContent='';toast(t)})
+ .observe(meld,{childList:true,characterData:true,subtree:true});
+NK.addEventListener('click',e=>{e.stopPropagation();let p=document.getElementById('nachrichten-liste');if(p){p.remove();return}
+ UNGELESEN=0;nkZahl();const v=verlauf();
+ p=el('div',{id:'nachrichten-liste'},el('div',{class:'nl-kopf'},el('b',{},'Letzte Meldungen'),v.length?el('button',{onclick:()=>{try{localStorage.removeItem('meldungen')}catch(_){}p.remove()}},'leeren'):null),
+  ...(v.length?v.map(m=>el('div',{class:'nl-e'},el('span',{class:'sub'},uhr(m.zeit)+(m.seite?' · '+m.seite:'')),el('div',{},m.text))):[el('div',{class:'sub'},'noch keine Meldungen')]));
+ document.body.append(p)});
+document.addEventListener('click',e=>{const p=document.getElementById('nachrichten-liste');if(p&&!p.contains(e.target))p.remove()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const p=document.getElementById('nachrichten-liste');if(p)p.remove()}});
+hud();
+

@@ -80,6 +80,10 @@ Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
 - **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
+- **Stellwerk** (HUD) rechts im Güterbahnhof, auf Stelzen über dem Gleis: LED (grün: Server läuft, rot: nicht erreichbar,
+  gelb: neuer Server, die Seite lädt gleich neu), Stand von merge-train (letzter Commit mit Zeit, `*` = Änderungen in
+  `src/` noch nicht committet), wer zuhört, Zahl der Kommentare, Hinweise und KI-Threads (offen = nicht erledigt; in der
+  Liste „KI-Threads“ schließt ein Klick auf ○ einen Thread). Meldungen des Servers erscheinen als Toasts (10 s, wegklickbar), die letzten 50 unter 🔔 unten rechts.
 - **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „GitLab-Kommentare“ (offene Agent-Hinweise 🤖,
   eigene bzw. übernommene Kommentare 💬) und „KI-Threads“ (Gespräche mit Agenten, privat). Leere Listen sind ausgeblendet.
   Die Reihenfolge der GitLab-Kommentare ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit
