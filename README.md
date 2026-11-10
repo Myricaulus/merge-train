@@ -128,8 +128,14 @@ es auch ohne):
 ```sh
 merge-train agent feedback gitlab.example.com/gruppe/projekt/42   # oder im Klon: merge-train agent feedback
 merge-train agent antworten <id> "…"
+merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "…"   # GitLab-Kommentar umformulieren (siehe unten)
 merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   # Seite zeigt „🎧 Copilot hört zu“
 ```
+
+Bittet man im Faden, einen GitLab-Kommentar umzuformulieren, landet die Änderung im Kommentar selbst: `feedback` zeigt
+unter jedem Faden die Kommentare und Agent-Hinweise an dessen Zeile. `agent kommentar h:<key>` ändert einen noch nicht
+übernommenen Agent-Hinweis (dessen `text` in der Review-JSON). Bei einem bestehenden Kommentar oder einer Faden-id legt
+es einen neuen Entwurf an derselben Stelle an. Der alte bleibt, man löscht selbst einen von beiden.
 
 ## GitLab nur auf Knopfdruck
 

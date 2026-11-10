@@ -46,6 +46,13 @@ def agent_main(argv):
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: der gefragte Agent)")
+    p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (Hinweis ändern oder neuer Entwurf)",
+                       description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines noch nicht übernommenen "
+                                   "Agent-Hinweises ändert dessen text in der Review-JSON; eine Kommentar- oder Faden-id "
+                                   "legt einen neuen Entwurf an derselben Stelle an (der alte bleibt). IDs zeigt „agent feedback“.")
+    p.add_argument("ziel", help="h:<key> (Agent-Hinweis), Kommentar-id oder Faden-id (Anfang genügt)")
+    p.add_argument("text", help="neuer Kommentartext; - = von stdin")
+    p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
                        description=gs + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")
@@ -55,7 +62,7 @@ def agent_main(argv):
     o = ap.parse_args(argv)
     if not o.befehl:
         ap.print_help(); return 2
-    if o.befehl in ("feedback", "antworten", "horchen"):
+    if o.befehl in ("feedback", "antworten", "horchen", "kommentar"):
         try:
             if o.befehl == "feedback":
                 text, _ = g_abholen(g_ziele(o.projekt), alle=o.alle)
@@ -64,6 +71,8 @@ def agent_main(argv):
                 text, n = g_horchen(g_ziele(o.projekt), o.timeout, o.als)
                 print(text); return 0 if n else 1
             text = sys.stdin.read().strip() if o.text == "-" else o.text.strip()
+            if o.befehl == "kommentar":
+                print(g_kommentar(o.ziel, text, g_ziele(o.projekt) if o.projekt else None)); return 0
             if not text and not o.erledigt:
                 print("merge-train: Antworttext fehlt", file=sys.stderr); return 2
             fid, rest = g_antworten(o.id, text, o.erledigt, o.als, g_ziele(o.projekt) if o.projekt else None)

@@ -62,6 +62,41 @@ merge-train agent antworten <id> "Text" --als Copilot   # only if you were asked
 - One `antworten` call per thread – that is the answer; don't repeat it in the console. If a question is unclear, ask back in the thread instead of guessing.
 - `--erledigt` only when a request is really done; for a plain answer leave the thread open (the user closes it).
 
+## Writing or adjusting a GitLab comment
+
+Often the user asks in a thread to reword a GitLab review comment (a draft or an agent hint on the MR page), or a
+proposal ends in a new comment text. The thread answer itself is German and internal; the **comment text** inside it
+is for the MR author and follows the user's GitLab comment conventions:
+
+- Before writing it, read the rules for `text` in `~/.claude/skills/jira-review/SKILL.md` (step 6, "`text` is the final
+  English GitLab comment") and apply them, plus the repo's memory on review comments if there is one (e.g. FE findings
+  phrased as questions). They win over this summary.
+- In short: English, plain and short (usually 2–4 sentences: problem, why it matters, what to do instead), in the tone
+  of the user's commit messages.
+- **No internal IDs**: no finding IDs (`#8`, `K2`), marker titles, thread or hint ids, nothing that only exists in
+  merge-train or the review JSON. The author reads GitLab file by file and can't resolve them.
+- Refer to other places **by class or file name**, without line numbers ("same copy as in the CVD handler"); exact
+  locations belong in the review JSON's `see_also`, not in the comment.
+- Name the proposal, don't spell it out (no full signatures); at most a few technical terms.
+
+**The change goes into the comment, not into the thread.** `feedback`/`horchen` list under each thread the GitLab
+comments and agent hints on the same line ("an dieser Zeile: …", with id and full text). Then:
+
+```sh
+merge-train agent kommentar h:<key> "New text"      # agent hint not taken over yet: changes its text in the review JSON
+merge-train agent kommentar <kommentar-id> "New text"  # existing comment (draft or already in GitLab): new draft next to it
+merge-train agent kommentar <faden-id> "New text"    # no comment there yet: new draft at the thread's line
+merge-train agent kommentar <ziel> - <<'EOF'         # longer text from stdin
+…
+EOF
+```
+
+- Existing comments are never edited: you add a new draft next to them, the user deletes one of the two.
+  Don't delete anything.
+- Then answer the thread **very briefly**: "Done" for small things, otherwise one line on what changed (e.g. "Done:
+  Finding-ID raus, auf 2 Sätze gekürzt"). Don't repeat the comment text in the thread.
+- If it's unclear which comment is meant (several on the line, none listed), ask back in the thread.
+
 ## Listen
 
 When the user asks you to listen ("hör auf merge-train", "hör zu"), or after answering when the prompt says so:

@@ -313,6 +313,39 @@ def mr_gespraech_test(mr, k, basis, struktur):
     st = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
     pruefe(any(k.get("nachrichten") for k in st["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
+    # GitLab-Kommentar umformulieren: Hinweis (noch nicht übernommen) ändern, sonst neuer Entwurf daneben
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    an11 = [h for h in rv["hinweise"] if h["path"] == "App.cs" and h["b"] == 11 and h["status"] == "offen"]
+    km11 = [x for x in rv["kommentare"] if x["path"] == "App.cs" and x["b"] == 11 and x["status"] != "loeschen"]
+    post("/api/kommentar", dict(basis, gespraech=1, aktion="antworten", id=f["id"], text="Formulier den Kommentar kürzer"))
+    post("/api/gespraech", dict(basis, aktion="senden"))
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
+    pruefe(r.returncode == 0 and "agent kommentar" in r.stdout
+           and all(f"Agent-Hinweis h:{h['key']}" in r.stdout and h["text"] in r.stdout for h in an11)
+           and all(f"GitLab-Kommentar {x['id']}" in r.stdout for x in km11) and (an11 or km11),
+           "Kommentar umformulieren: feedback zeigt Kommentare/Hinweise an der Zeile des Fadens")
+    hw = f"{REPO}/tasks/DEMO-1-review-markers.json"
+    sicher = open(hw, encoding="utf-8").read()
+    if an11:
+        r = sh(sys.executable, SKRIPT, "agent", "kommentar", "h:" + an11[0]["key"][:6], "Null check missing.", env=genv, check=False)
+        neu = json.loads(open(hw, encoding="utf-8").read())
+        pruefe(r.returncode == 0 and "geändert" in r.stdout and any(m.get("text") == "Null check missing." for m in neu["markers"]),
+               "Kommentar umformulieren: offener Hinweis → text in der Review-JSON")
+        open(hw, "w", encoding="utf-8").write(sicher)
+    n = len(json.loads(get(f"/api/review?mr={mr}&k={k}"))["kommentare"])
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", f["id"], "Shorter: add a null check.", env=genv, check=False)
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    neu = [x for x in rv["kommentare"] if x["text"] == "Shorter: add a null check."]
+    pruefe(r.returncode == 0 and len(rv["kommentare"]) == n + 1 and neu and neu[0]["path"] == "App.cs" and neu[0]["b"] == 11
+           and neu[0]["status"] == "neu", "Kommentar umformulieren: Faden-id → neuer Entwurf an derselben Zeile")
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", neu[0]["id"], "Even shorter.", env=genv, check=False)
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    pruefe(r.returncode == 0 and len(rv["kommentare"]) == n + 2 and any(x["text"] == "Shorter: add a null check." for x in rv["kommentare"]),
+           "Kommentar umformulieren: bestehender Kommentar bleibt, neuer daneben")
+    for x in rv["kommentare"][n:]:
+        post("/api/kommentar", dict(basis, aktion="loeschen", id=x["id"]))
+    pruefe(sh(sys.executable, SKRIPT, "agent", "kommentar", "gibtsnicht", "x", env=genv, check=False).returncode == 2,
+           "Kommentar umformulieren: unbekanntes Ziel")
 
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)

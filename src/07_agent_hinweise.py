@@ -115,13 +115,14 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
                         "reviewed_commit": h.get("reviewed_commit"), "reviewed_at": h.get("reviewed_at"),
                         "failing_tests": h.get("failing_tests"),
                         "alt": bool(head and h.get("reviewed_commit") and not head.startswith(str(h["reviewed_commit"])))})
-        for m in h["markers"]:
+        for nr, m in enumerate(h["markers"]):
             text = str(m.get("text") or "").strip()
             fid = str(m.get("finding") or (re.match(r"(#\d+|K\d+)\b", text) or [""])[0])  # ID nur noch lokal, nicht mehr im Text nötig
             path = pfad_norm(m.get("path"))
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
+                     "json": pfad, "nr": nr,  # Herkunft: für „merge-train agent kommentar h:<key>“
                      "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path),
                      "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None

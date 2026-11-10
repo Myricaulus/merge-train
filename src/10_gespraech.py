@@ -377,8 +377,25 @@ def g_zeit(iso):
     except (TypeError, ValueError):
         return "?"
 
-def g_ausgeben(k, wurzel, head, kontext=3):
-    """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, Verlauf."""
+def g_nachbarn(k, rv):
+    """GitLab-Kommentare und Agent-Hinweise an der Zeile des Fadens (damit der Agent weiß, welchen er ändern soll)."""
+    if not rv or not k.get("path"):
+        return []
+    da = lambda x: x.get("path") == k["path"] and ((k.get("b") and x.get("b") == k["b"]) or (not k.get("b") and k.get("a") and x.get("a") == k["a"]))
+    out = []
+    for x in rv["kommentare"]:
+        if da(x) and x["status"] != "loeschen":
+            out.append((f'GitLab-Kommentar {x["id"]}', K_STATUS.get(x["status"], x["status"]), x["text"]))
+    for h in rv["hinweise"]:
+        if da(h) and h["status"] == "offen":
+            out.append((f'Agent-Hinweis h:{h["key"]}', f'noch nicht übernommen, {h["quelle"]} {h["finding"]}'.strip(), h["text"]))
+    return out
+
+K_STATUS = {"neu": "Entwurf (lokal)", "uebertragen": "in GitLab (Entwurf)", "geaendert": "geändert, wird aktualisiert",
+            "weg": "in GitLab veröffentlicht oder gelöscht"}
+
+def g_ausgeben(k, wurzel, head, kontext=3, rv=None):
+    """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""
     von = (k.get("refs") or {}).get("head_sha") or head
     b = zeile_vorwaerts(wurzel, von, head, k["path"], k["b"]) if k.get("path") and k.get("b") else None
     ort = "allgemein" if not k.get("path") else \
@@ -393,6 +410,9 @@ def g_ausgeben(k, wurzel, head, kontext=3):
             out.append(f'  {"→" if i == b else " "} {i:5} │ {zeilen[i - 1]}')
     elif k.get("zeile_text"):
         out.append(f'      damals │ {k["zeile_text"]}')
+    for name, status, text in g_nachbarn(k, rv):
+        out.append(f'    an dieser Zeile: {name} ({status}):')
+        out.append("      " + text.replace("\n", "\n      "))
     for m in k["nachrichten"]:
         if m.get("gesendet") or m["von"] == "claude":
             wer = "Nutzer" if m["von"] == "ich" else (m.get("wer") or k.get("an") or "Claude")
@@ -424,12 +444,90 @@ def g_abholen(ziele, alle=False, markieren=True):
                 teile.append(kopf + "\n(nichts offen)")
             continue
         gesamt += len(zeigen)
-        teile += [kopf, ""] + [g_ausgeben(k, wurzel, head) + "\n" for k in zeigen]
+        rv = None
+        if quelle(g).kann["review"]:
+            try:
+                rv = review_daten(g)
+            except GitLabFehler:
+                pass
+        teile += [kopf, ""] + [g_ausgeben(k, wurzel, head, rv=rv) + "\n" for k in zeigen]
         teile.append("Code-Zeilen beziehen sich auf " + (f"den aktuellen Stand von {BIS}." if quelle(g).kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
+        if any(quelle(g).kann["review"] for g in ziele):
+            teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"')
     return "\n".join(teile) or "(nichts offen)", gesamt
+
+def g_kommentar(ziel, text, ziele=None):
+    """GitLab-Kommentar für den Nutzer umformulieren. h:<key> eines noch nicht übernommenen Agent-Hinweises: dessen
+    text in der Review-JSON ändern. Sonst (Kommentar, übernommener Hinweis, Faden): neuer Entwurf an derselben Stelle –
+    bestehende Kommentare bleiben, der Nutzer löscht selbst einen. Rückgabe: Meldung."""
+    text = (text or "").strip()
+    if not text:
+        raise GitLabFehler("Kommentartext fehlt")
+    ziel = ziel.strip()
+    hkey = ziel[2:] if ziel.startswith("h:") else None
+    passt = lambda i, z: i == z or (len(z) >= 4 and i.startswith(z))
+    treffer = []
+    for g in ziele or g_alle():
+        if not quelle(g).kann["review"]:
+            continue
+        with SPERRE:
+            st = review_laden(g)
+        if hkey:
+            try:
+                rv = review_daten(g)
+            except GitLabFehler:
+                continue
+            treffer += [(g, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
+        else:
+            treffer += [(g, "k", k) for k in rk(st) if passt(k["id"], ziel)]
+            treffer += [(g, "f", k) for k in g_faeden(st) if passt(k["id"], ziel)]
+    if not treffer:
+        raise GitLabFehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
+    if len(treffer) > 1:
+        raise GitLabFehler(f"{ziel} ist nicht eindeutig: " + ", ".join((x.get("key") or x["id"]) for _, _, x in treffer))
+    g, art, x = treffer[0]
+    if art == "h" and x["status"] == "offen":
+        return hinweis_text_aendern(x, text)
+    with SPERRE:
+        st = review_laden(g)
+        struktur = struktur_laden(st)
+        k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "erstellt": jetzt(), "text": text,
+             "refs": x.get("refs") or (struktur or {}).get("refs"), "path": x.get("path") or None,
+             "a": x.get("a"), "b": x.get("b"), "old_path": x.get("old_path") or x.get("path") or None}
+        if art == "h":
+            i = x.get("datei")
+            k.update(finding=x.get("finding"), old_path=struktur["dateien"][i]["alt"] if struktur and i is not None else x["path"])
+        elif art == "k" and x.get("finding"):
+            k["finding"] = x["finding"]
+        st["kommentare"].append(k)
+        review_speichern(g, st)
+    ort = f'{k["path"]}:{k["b"] or k["a"]}' if k["path"] else "allgemein"
+    return f'neuer GitLab-Kommentar {k["id"]} (Entwurf) bei {ort} – der alte bleibt, der Nutzer löscht selbst einen'
+
+def hinweis_text_aendern(h, text):
+    """text eines Markers in der Review-JSON ersetzen, Formatierung der Datei möglichst erhalten."""
+    pfad, nr = h["json"], h["nr"]
+    roh = open(pfad, encoding="utf-8-sig").read()
+    daten = json.loads(roh)
+    markers = daten if isinstance(daten, list) else daten["markers"]
+    alt = markers[nr].get("text")
+    neu_roh = None
+    if isinstance(alt, str):
+        for enc in {json.dumps(alt, ensure_ascii=False), json.dumps(alt)}:
+            if roh.count(enc) == 1:
+                neu_roh = roh.replace(enc, json.dumps(text, ensure_ascii=False)); break
+    if neu_roh is None:
+        markers[nr]["text"] = text
+        neu_roh = json.dumps(daten, indent=2, ensure_ascii=False) + "\n"
+    try:
+        json.loads(neu_roh)
+    except ValueError as e:
+        raise GitLabFehler(f"{pfad}: geänderte JSON wäre ungültig ({e}) – nichts geschrieben")
+    ersetzen(pfad, neu_roh)
+    return f'Agent-Hinweis {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})'
 
 def g_ungelesen(k):
     """Gesendete Nachrichten des Nutzers, die der Agent noch nicht abgeholt hat (auch nach einer Antwort nachgeschoben)."""
