@@ -27,6 +27,13 @@
 # Sonst ein Befehl mit {ordner}, {projekt}, {prompt}, z. B. "konsole --workdir {ordner} -e claude {prompt}"
 # feedback_befehl = ""
 
+# GitLab-Modus: Agenten, die man zu einem MR fragen kann („an <Name>“ im Kommentar-Editor, bleibt privat).
+# Name = Befehl, den „Fragen senden“ startet, wenn keiner zuhört ({ordner} = Klon, {projekt}, {prompt}).
+# Tabelle: muss nach allen einfachen Einträgen stehen.
+# [agenten]
+# Claude = "wt.exe -w 0 nt wsl.exe -e bash -lc 'cd {ordner} && claude \"$0\"' {prompt}"
+# Copilot = "wt.exe -w 0 nt wsl.exe -e bash -lc 'cd {ordner} && copilot -i \"$0\"' {prompt}"
+
 # Lokale Klone der GitLab-Projekte: Diff, Dateien und Commits kommen nur von dort.
 # Muss am Ende stehen: alles nach [repos] gehört zu dieser Tabelle. Schlüssel = Projektpfad in GitLab.
 # [repos]

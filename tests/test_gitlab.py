@@ -201,6 +201,52 @@ def gespraech_test(proj, env, k, hol, g):
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
     pruefe(r["ok"] and not rv["kommentare"], "Gespräch: fertig räumt erledigte Fäden weg")
 
+def mr_gespraech_test(mr, k, basis, struktur):
+    """Fragen an einen Agenten zum MR: eigene Datei, nie im Review, agent feedback/antworten/horchen mit MR-Kennung."""
+    genv = dict(ENV, PATH=f"{T}/gl-bin:" + os.environ["PATH"])
+    i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
+    vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    pruefe(vorher["agenten"] == ["Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Agent aus [agenten] angeboten")
+    r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", datei=i_app, a=None, b=11, text="Was macht Zeile 11?"))
+    pruefe(r["ok"] and len(r["review"]["faeden"]) == 1 and r["review"]["g_ausstehend"] == 1, "MR-Gespräch: Frage an Copilot angelegt")
+    pruefe(len(r["review"]["kommentare"]) == len(vorher["kommentare"]) and r["review"]["ausstehend"] == vorher["ausstehend"],
+           "MR-Gespräch: Frage ist kein Review-Kommentar")
+    f = r["review"]["faeden"][0]
+    pruefe(f["b"] == 11 and f["an"] == "Copilot" and f["status"] == "entwurf", "MR-Gespräch: an Zeile 11, Entwurf")
+    r = post("/api/gespraech", dict(basis, aktion="senden"))
+    for _ in range(50):
+        if os.path.exists(f"{T}/copilot.prompt"):
+            break
+        time.sleep(0.1)
+    prompt = open(f"{T}/copilot.prompt").read() if os.path.exists(f"{T}/copilot.prompt") else ""
+    pruefe(r["ok"] and "Copilot gestartet" in r["text"], "MR-Gespräch: senden startet den Agenten aus [agenten]")
+    pruefe(f"merge-train agent feedback {mr}" in prompt and "nichts committen" in prompt, "MR-Gespräch: Prompt nennt MR und verbietet Commits")
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
+    pruefe(r.returncode == 0 and f'[{f["id"]}] App.cs:11' in r.stdout and "an Copilot" in r.stdout and "Was macht Zeile 11?" in r.stdout,
+           "MR-Gespräch: agent feedback mit MR-Kennung")
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", cwd=REPO, env=genv, check=False)
+    pruefe(r.returncode == 0 and "gruppe/demo!1" in r.stdout, "MR-Gespräch: agent feedback im Klon findet den MR")
+    r = sh(sys.executable, SKRIPT, "agent", "antworten", f["id"][:6], "Sie loggt.", env=genv, check=False)
+    pruefe(r.returncode == 0 and "nichts mehr offen" in r.stdout, "MR-Gespräch: agent antworten (sucht in allen Gesprächen)")
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    m = rv["faeden"][0]["nachrichten"][-1]
+    pruefe(rv["faeden"][0]["status"] == "antwort" and m["text"] == "Sie loggt." and m["wer"] == "Copilot", "MR-Gespräch: Antwort von Copilot auf der Seite")
+    lauscher = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", mr, "--als", "Copilot", "--timeout", "30"], env=genv,
+                                stdout=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if json.loads(get(f"/api/review?mr={mr}&k={k}")).get("horcht") == "Copilot":
+            break
+        time.sleep(0.1)
+    post("/api/kommentar", dict(basis, gespraech=1, aktion="antworten", id=f["id"], text="Und warum?"))
+    r = post("/api/gespraech", dict(basis, aktion="senden"))
+    pruefe(r["ok"] and "zuhört (Copilot)" in r["text"], "MR-Gespräch: Copilot hört zu → übergeben")
+    aus, _ = lauscher.communicate(timeout=30)
+    pruefe(lauscher.returncode == 0 and "Und warum?" in aus, "MR-Gespräch: horchen mit MR-Kennung bekommt die Nachfrage")
+    pruefe(not os.path.exists(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json')
+           or "Was macht Zeile 11" not in open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json').read(),
+           "MR-Gespräch: nichts davon in der Review-Datei")
+    sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
+
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
     pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
@@ -208,7 +254,11 @@ def main():
     os.makedirs(f"{T}/config/merge-train")
     open(ENV["MERGE_TRAIN_CONFIG"], "w").write(
         f'lokal = false\nglab = "{sys.executable} {HIER}/fake-glab"\nport = {PORT}\nbrowser = "true"\n'
-        f'hinweise = ["{REPO}/tasks/*-review-markers.json"]\n')
+        f'hinweise = ["{REPO}/tasks/*-review-markers.json"]\n'
+        f'[agenten]\nCopilot = "{T}/gl-bin/copilot {{prompt}}"\n')  # Gespräch zum MR: Ersatz-Agent schreibt den Prompt mit
+    os.makedirs(f"{T}/gl-bin")
+    open(f"{T}/gl-bin/copilot", "w").write(f'#!/bin/sh\necho "$1" > {T}/copilot.prompt\n'); os.chmod(f"{T}/gl-bin/copilot", 0o755)
+    open(f"{T}/gl-bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/gl-bin/notify-send", 0o755)
     hw = f"{REPO}/tasks/DEMO-1-review-markers.json"
     json.dump({"key": "DEMO-1", "branch": "feature", "reviewed_commit": "abc", "tag": "TODO REVIEW DEMO-1",
                "notes": "Team-Thema: Logging", "failing_tests": {"#1": "AppTest.Neu"},
@@ -296,6 +346,7 @@ def main():
         struktur = json.load(open(sha["struktur"]))
         head = struktur["refs"]["head_sha"]
         basis = dict(mr=mr, k=k, sha=head)
+        mr_gespraech_test(mr, k, basis, struktur)
         # übernehmen, anpassen, eigener Kommentar, allgemeiner Kommentar
         pruefe(post("/api/kommentar", dict(basis, aktion="neu", hinweis=hs["#1"]["key"]))["ok"], "#1 übernommen")
         pruefe(post("/api/kommentar", dict(basis, aktion="neu", hinweis=hs["K2"]["key"], text="K2 Please rename"))["ok"], "K2 angepasst übernommen")

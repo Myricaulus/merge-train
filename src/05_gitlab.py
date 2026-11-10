@@ -246,11 +246,13 @@ def mr_seite(mr, ansicht=None):
     praefix = os.path.join(MR_ORDNER, f'{mr_datei(mr)}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
     pfad, struktur = seite_bauen(mr_id(mr), ordner, refs, praefix,
                                  lambda *a: mr_html(mr, meta, *a), ansicht)
-    if not ansicht and st.get("struktur") != praefix_json(praefix):
-        with SPERRE:  # Kommentare und Hinweise beziehen sich immer auf den ganzen MR
-            st = review_laden(mr)
-            st["struktur"] = praefix_json(praefix)
-            review_speichern(mr, st)
+    if not ansicht:
+        with SPERRE:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
+            for m in (mr, gk(mr)):
+                s = review_laden(m)
+                if s.get("struktur") != praefix_json(praefix):
+                    s["struktur"] = praefix_json(praefix)
+                    review_speichern(m, s)
     return pfad, struktur, mr
 
 def mr_html(mr, meta, dateien, commits, texte, struktur):
@@ -276,7 +278,9 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
            if gl_head and gl_head != head else "")
     titel = f'{mr["projekt"]}!{mr["iid"]}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
-    knoepfe = (f'<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR '
+    knoepfe = ('<button id="feedback" hidden disabled title="Fragen an den Agenten abschicken (gehen nicht nach GitLab)">Fragen senden</button>\n'
+               '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>\n'
+               f'<button id="fertig"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) in den MR '
                'übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button>')
     return diff_seite(titel=f'!{mr["iid"]} {html.escape(meta.get("title") or "")}', gitlab=True, daten=daten, head=head,
                       dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',

@@ -3,6 +3,8 @@
 def review_datei(mr):
     if mr.get("lokal"):  # lokales Projekt: Gespräch mit dem Agenten (siehe Gespräch)
         return os.path.join(DATEN, "lokal", dateiname(mr["lokal"])[:-5] + ".json")
+    if mr.get("gespraech"):  # Fragen an den Agenten zu einem MR: eigene Datei, geht nie nach GitLab
+        return os.path.join(DATEN, "gespraech", mr_datei(mr) + ".json")
     return os.path.join(DATEN, "reviews", mr_datei(mr) + ".json")
 
 def review_laden(mr):

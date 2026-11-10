@@ -147,9 +147,9 @@ def hinweise_aufloesen(mr, st, struktur, nur=None):
 
 def stand(mr, st):
     teile = [st.get("struktur") or ""]
-    if mr.get("lokal"):  # „🎧 Claude hört zu“ soll sich auch ohne neue Nachricht aktualisieren
-        teile.append("horcht" if horcht(mr["lokal"]) else "")
-    for p in [review_datei(mr)] + hinweis_dateien(mr, st):
+    g = mr if mr.get("lokal") else gk(mr)  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+    teile.append(horcht(g) or "")
+    for p in [review_datei(mr)] + ([] if mr.get("lokal") else [review_datei(g)]) + hinweis_dateien(mr, st):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -178,8 +178,11 @@ def review_daten(mr, ansicht=None):
         kom = ansicht_zuordnen(struktur, ans_st, kom)
         hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
         ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
+    gs = g_daten(gk(mr), ansicht)
     return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, st),
-            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb}
+            "web_url": st["mr"].get("web_url", ""), "ausstehend": ausstehend(st), "ausserhalb": ausserhalb,
+            "faeden": gs.get("kommentare") or [], "g_ausstehend": gs.get("ausstehend", 0), "horcht": gs.get("horcht"),
+            "todo": gs.get("todo"), "agenten": gs.get("agenten", [])}
 
 def seiten_struktur(sid, ansicht=None):
     """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""

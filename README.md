@@ -28,9 +28,9 @@ merge-train --mrs               # MRs, bei denen ich Reviewer bin
 merge-train agent pruefen tasks/PROJ-824-review-markers.json   # siehe docs/agent-hinweise.md
 merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-Update seit reviewed_commit
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
-merge-train agent feedback [projekt]        # Agent: Fragen/Feedback aus dem lokalen Modus abholen
+merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
-merge-train agent horchen [projekt]         # Agent: warten, bis „Feedback senden“ gedrückt wird
+merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „Feedback/Fragen senden“ gedrückt wird
 ```
 
 In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion.
@@ -100,6 +100,30 @@ Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
 
 Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cache in `~/.cache/merge-train/`.
 
+## Fragen an einen Agenten (GitLab-Modus)
+
+Auch zu einem MR kann man einen Agenten fragen (Claude, Copilot …), wie im lokalen Modus, nur privat:
+Im Kommentar-Editor gibt es neben „als Review-Kommentar“ je Agent einen Knopf **„an <Name>“**. Solche Fragen liegen
+getrennt vom Review (`~/.local/share/merge-train/gespraech/<mr>.json`) und gehen **nie** nach GitLab.
+„Fragen senden“ schickt die Entwürfe ab, die Antworten erscheinen als Gespräch an der Zeile.
+
+Aktiv sind die Knöpfe nur für Agenten aus `[agenten]` in der Einstellung oder wenn gerade einer zuhört (sonst ausgegraut):
+
+```toml
+[agenten]
+Copilot = "wt.exe -w 0 nt --title Copilot wsl.exe -e bash -lc 'cd {ordner} && copilot -i \"$0\"' {prompt}"   # Beispiel, anpassen
+```
+
+„Fragen senden“ startet den Befehl (Platzhalter `{ordner}` = Klon, `{projekt}`, `{prompt}`), sofern nicht schon jemand
+zuhört. Der Agent braucht nur die Shell, Befehle wie im lokalen Modus, mit der MR-Kennung aus dem Prompt (im Klon geht
+es auch ohne):
+
+```sh
+merge-train agent feedback gitlab.example.com/gruppe/projekt/42   # oder im Klon: merge-train agent feedback
+merge-train agent antworten <id> "…"
+merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   # Seite zeigt „🎧 Copilot hört zu“
+```
+
 ## GitLab nur auf Knopfdruck
 
 Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten (Titel, Beschreibung, Branches,
@@ -123,6 +147,7 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
+| `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.
 

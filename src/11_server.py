@@ -175,6 +175,18 @@ def server():
                         return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                     return self.json_senden(200, {"ok": ok, "text": text, "todo": tid,
                                                   "review": g_daten(mr, ansicht) if ok else None})
+                if d.get("gespraech") and self.path == "/api/kommentar" or self.path == "/api/gespraech":
+                    mr = mr_aus_id(d.get("mr", ""))  # Fragen an den Agenten zum MR: eigene Datei, nie nach GitLab
+                    ansicht = ansicht_lesen(d.get("ansicht"))
+                    if self.path == "/api/kommentar":
+                        ok, text = g_aktion(gk(mr), d)
+                    elif d.get("aktion") == "senden":
+                        ok, text, _ = feedback_senden(gk(mr))
+                    elif d.get("aktion") == "starten":
+                        ok, text = session_starten(gk(mr))
+                    else:
+                        return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
+                    return self.json_senden(200, {"ok": ok, "text": text, "review": review_daten(mr, ansicht)})
                 if self.path == "/api/gitlab":  # Güterbahnhof: GitLab nur auf Knopfdruck
                     if d.get("aktion") == "mrliste":
                         items, _ = mr_liste_holen()
