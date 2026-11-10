@@ -100,6 +100,12 @@ def main():
                 h, kurz, s, b, t = c.strip("\n").split("\x1f")
                 out.append({"id": h, "short_id": kurz, "title": s, "message": b, "authored_date": t})
         return raus(out)
+    if rest == "/notes":  # veröffentlichte Kommentare (Test legt sie in notes.json ab)
+        try:
+            n = json.load(open(os.path.join(STATE, "notes.json")))
+        except FileNotFoundError:
+            n = []
+        return raus(n if seite == 1 else [])
     if rest == "/draft_notes":
         d = drafts()
         if methode == "GET":

@@ -105,3 +105,4 @@ details.kliste>summary .sortknopf{float:right;font:11px system-ui,sans-serif;pad
 .ke.sort{cursor:grab} .ke.zieht{opacity:.4} .ke .griff{flex:none;color:var(--muted)}
 .ke.drop-oben{box-shadow:inset 0 2px 0 var(--tn)} .ke.drop-unten{box-shadow:inset 0 -2px 0 var(--tn)}
 .ke .pfeile{flex:none;display:flex;gap:2px} .ke .pfeile button{font-size:11px;padding:0 4px;border:1px solid var(--rand);border-radius:3px;background:var(--bg);color:var(--tn);cursor:pointer}
+.ke .gesendet{flex:none;color:var(--p);font-size:11px;margin-left:-3px}

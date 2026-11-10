@@ -74,6 +74,7 @@ function kasten(id,name,items,sortierbar){const k=document.getElementById(id);if
   const e=el('div',{class:'ke '+i.art+(s?' sort':''),title:f,onclick:s?null:()=>springen(i)},
    s?el('span',{class:'griff',title:'ziehen zum Umsortieren'},'⠿'):null,
    el('span',{class:'ki '+((STATUS[i.st]||[])[1]||''),title:i.st?(STATUS[i.st]||[''])[0]:'Agent-Hinweis'},i.art==='hw'?'🤖':'💬'),
+   ['uebertragen','geaendert','weg'].includes(i.st)&&id==='kliste'?el('span',{class:'gesendet',title:'schon an GitLab gesendet'+(i.st==='geaendert'?' – Änderung wird beim nächsten Abschließen übertragen':'')},'➜'):null,
    i.f?el('b',{},i.f):null,el('span',{class:'kt2'},f),
    s?el('span',{class:'pfeile'},el('button',{title:'ganz nach oben',onclick:()=>verschieben(i.id,'oben')},'⤒'),
      el('button',{title:'ganz nach unten',onclick:()=>verschieben(i.id,'unten')},'⤓')):null);

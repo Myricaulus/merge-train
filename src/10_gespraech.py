@@ -392,7 +392,7 @@ def g_nachbarn(k, rv):
     return out
 
 K_STATUS = {"neu": "staged", "geaendert": "staged, Änderung an einem gesendeten", "uebertragen": "sent",
-            "weg": "sent, in GitLab veröffentlicht oder gelöscht"}  # Stufen siehe AGENTS.md
+            "weg": "sent, in GitLab veröffentlicht"}  # Stufen siehe AGENTS.md
 
 def g_ausgeben(k, wurzel, head, kontext=3, rv=None):
     """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""

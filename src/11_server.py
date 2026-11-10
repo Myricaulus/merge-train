@@ -159,8 +159,17 @@ def server():
                         items, _ = mr_liste_holen()
                         return self.json_senden(200, {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"})
                     if d.get("aktion") == "mrdaten":
-                        mr_meta_holen(mr_aus_id(d.get("mr", "")))
-                        return self.json_senden(200, {"ok": True, "text": "MR-Daten geholt"})
+                        mr = mr_aus_id(d.get("mr", ""))
+                        mr_meta_holen(mr)
+                        with SPERRE:  # gesendete Kommentare abgleichen: in GitLab veröffentlicht oder verworfen?
+                            st = review_laden(mr)
+                            pub, verw = entwuerfe_abgleichen(mr, st)
+                            if pub or verw:
+                                review_speichern(mr, st)
+                        text = "MR-Daten geholt" + (f" · {verw} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, "
+                                                    "„Review abschließen“ sendet sie neu" if verw else "") + \
+                            (f" · {pub} in GitLab veröffentlicht" if pub else "")
+                        return self.json_senden(200, {"ok": True, "text": text})
                     return self.json_senden(400, {"ok": False, "text": "unbekannte Aktion"})
                 if self.path == "/fertig":
                     g = schluessel_von(d.get("mr") or "projekt:" + str(d.get("projekt", "")))

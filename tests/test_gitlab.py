@@ -536,10 +536,35 @@ def main():
         r = post("/api/abschliessen", basis)
         notes = sorted(x["note"] for x in drafts())
         pruefe(r["ok"] and len(notes) == 3 and "Insgesamt sehr gut." in notes and "Warum gelöscht?" not in notes, "PUT und DELETE in GitLab")
-        # in GitLab veröffentlicht (Draft weg) → nicht erneut senden
+        # in GitLab veröffentlicht (Draft weg, Kommentar da) → nicht erneut senden
+        json.dump([{"id": 900, "body": "Insgesamt sehr gut.", "author": {"id": 1}, "system": False}], open(f"{T}/glab/notes.json", "w"))
         json.dump([x for x in drafts() if x["note"] != "Insgesamt sehr gut."], open(f"{T}/glab/drafts.json", "w"))
         r = post("/api/abschliessen", basis)
-        pruefe(len(drafts()) == 2 and "gibt es in GitLab nicht mehr" in r["text"], "veröffentlichte Entwürfe werden nicht doppelt angelegt")
+        pruefe(len(drafts()) == 2 and "schon veröffentlicht" in r["text"], "veröffentlichte Entwürfe werden nicht doppelt angelegt")
+        # in GitLab verworfen (Draft weg, kein Kommentar) → „↻ MR-Daten“ macht sie wieder lokal, Abschließen sendet neu
+        weg = drafts()[0]["note"]
+        json.dump(drafts()[1:], open(f"{T}/glab/drafts.json", "w"))
+        r = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        pruefe(r["ok"] and "1 Entwurf/Entwürfe in GitLab verworfen" in r["text"]
+               and next(x for x in rv["kommentare"] if x["text"] == weg or weg.endswith(x["text"]))["status"] == "neu",
+               "verworfener Entwurf: MR-Daten macht ihn wieder lokal (staged)")
+        r = post("/api/abschliessen", basis)
+        pruefe(r["ok"] and len(drafts()) == 2 and any(x["note"] == weg for x in drafts()), "verworfener Entwurf wird neu gesendet")
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        pruefe(next(x for x in rv["kommentare"] if x["text"] == "Insgesamt sehr gut.")["status"] == "weg", "veröffentlichter bleibt sent")
+        # früher als „weg“ markiert, aber gar nicht veröffentlicht (altes Verhalten) → MR-Daten holt ihn zurück
+        rp = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        zst = json.load(open(rp))
+        alt = next(x for x in zst["kommentare"] if x.get("gitlab_id") and x.get("nachrichten") is None and x["text"] != "Insgesamt sehr gut.")
+        alt["gitlab_weg"] = True
+        json.dump(zst, open(rp, "w"))
+        json.dump([x for x in drafts() if x["id"] != alt["gitlab_id"]], open(f"{T}/glab/drafts.json", "w"))
+        r = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        pruefe(r["ok"] and next(x for x in rv["kommentare"] if x["id"] == alt["id"])["status"] == "neu"
+               and next(x for x in rv["kommentare"] if x["text"] == "Insgesamt sehr gut.")["status"] == "weg",
+               "fälschlich als veröffentlicht markiert: MR-Daten macht ihn wieder lokal, echter bleibt sent")
         # Fallback: GitLab lehnt Position ab → allgemeiner Kommentar mit Link
         os.environ["FAKE_GLAB_FEHLER_POSITION"] = "1"
         srv.terminate(); srv.wait()

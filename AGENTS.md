@@ -19,7 +19,7 @@ Nur für die Entwicklung (Doku, Code-Kommentare, Skill, Ausgaben von `merge-trai
 |---|---|---|---|
 | **draft** | Agent-Hinweis aus der Review-JSON, noch nicht übernommen. Darf noch geändert werden (auch vom Agenten). | lila Hinweis, „übernehmen“ | Hinweis-Status `offen` |
 | **staged** | übernommen bzw. selbst geschrieben, wird mit „Review abschließen“ gesendet | „Entwurf (lokal)“, „geändert – wird aktualisiert“, „wird in GitLab gelöscht“ | `k_status`: `neu`, `geaendert`, `loeschen` |
-| **sent** | als Draft-Note in GitLab (bzw. dort veröffentlicht/gelöscht) | „in GitLab (Entwurf)“, „in GitLab veröffentlicht oder dort gelöscht“ | `k_status`: `uebertragen`, `weg` |
+| **sent** | als Draft-Note in GitLab bzw. dort veröffentlicht (in GitLab verworfene werden wieder staged) | „in GitLab (Entwurf)“, „in GitLab veröffentlicht“ | `k_status`: `uebertragen`, `weg` |
 
 **staged entsteht nur durch den Nutzer**: Klick auf „übernehmen“ (oder ein selbst geschriebener Kommentar). Der Agent legt
 nie Review-Kommentare an. Er ändert nur drafts und legt sonst einen neuen draft daneben an (`merge-train agent kommentar`,

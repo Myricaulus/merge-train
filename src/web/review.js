@@ -7,7 +7,7 @@ function laden(){return fetch('/api/review?'+qs()).then(r=>r.json()).then(d=>{if
  if(!d.ok){meld.textContent=d.text;return}Object.assign(RV,d);zeichnen();autoLaden()})
  .catch(()=>{meld.textContent=WEG})}
 const STATUS={neu:['Entwurf (lokal)','b-neu'],uebertragen:['in GitLab (Entwurf)','b-ok'],geaendert:['geändert – wird aktualisiert','b-geaendert'],
- loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht oder dort gelöscht','b-ok'],
+ loeschen:['wird in GitLab gelöscht','b-loeschen'],weg:['in GitLab veröffentlicht','b-ok'],
  // Gespräch (lokales Projekt)
  entwurf:['Entwurf – noch nicht gesendet','b-entwurf'],wartet:['wartet auf Claude','b-wartet'],antwort:['Claude hat geantwortet','b-antwort'],erledigt:['erledigt','b-erledigt']};
 const FD=()=>RV.faeden||[],GA=()=>RV.g_ausstehend||0,RVW=!!KANN.review; // RVW: Waggon mit Review (Kommentare nach außen)

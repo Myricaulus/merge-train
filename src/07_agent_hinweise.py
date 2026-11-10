@@ -407,6 +407,30 @@ def entwurf_anlegen(mr, k, head, proj_url):
         text = f"**[`{ort}`]({link})**\n\n{text}"
     return glab(host, f"{P}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
 
+def entwuerfe_abgleichen(mr, st, vorhanden=None):
+    """Gesendete Kommentare, deren Draft-Note in GitLab fehlt: als Kommentar veröffentlicht → bleibt sent („weg“);
+    sonst in GitLab verworfen (z. B. ganzes Review verworfen) → wieder staged, „Review abschließen“ sendet ihn neu.
+    Rückgabe (veröffentlicht, verworfen). Ändert st, speichert nicht."""
+    host, P = mr["host"], mr_pfad(mr)
+    if vorhanden is None:
+        vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
+    # auch schon als „weg“ markierte prüfen: früher galt jeder fehlende Entwurf als veröffentlicht
+    fehlen = [k for k in rk(st) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
+    if not fehlen:
+        return 0, 0
+    ich = (glab(host, "user") or {}).get("id")
+    texte = [n.get("body") or "" for n in alle(host, f"{P}/notes") if (n.get("author") or {}).get("id") == ich and not n.get("system")]
+    pub = verw = 0
+    for k in fehlen:
+        if any((k.get("gitlab_text") or k["text"]) in t for t in texte):  # „allgemein“: Text steht hinter dem Link
+            pub += not k.get("gitlab_weg")
+            k["gitlab_weg"] = True
+        else:
+            for f in ("gitlab_id", "gitlab_text", "gitlab_art", "gitlab_weg"):
+                k.pop(f, None)
+            verw += 1
+    return pub, verw
+
 def abschliessen(mr):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen – nicht veröffentlichen."""
     host, P = mr["host"], mr_pfad(mr)
@@ -428,7 +452,11 @@ def abschliessen(mr):
             vorhanden = {d.get("id") for d in alle(host, f"{P}/draft_notes")}
         except GitLabFehler as e:
             return False, f"Entwürfe nicht abrufbar: {e}", web
-        z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0, "verschwunden": 0}
+        z = {"neu": 0, "allg": 0, "akt": 0, "weg": 0}
+        try:
+            z["veroeffentlicht"], z["verworfen"] = entwuerfe_abgleichen(mr, st, vorhanden)
+        except GitLabFehler as e:
+            return False, f"Kommentare des MR nicht abrufbar: {e}", web
         fehler = []
         for k in sorted(rk(st), key=lambda k: pos.get(k["id"], len(pos))):  # Gesprächsfäden bleiben privat
             try:
@@ -439,9 +467,7 @@ def abschliessen(mr):
                 elif k.get("gitlab_weg"):
                     pass
                 elif k.get("gitlab_id"):
-                    if k["gitlab_id"] not in vorhanden:
-                        k["gitlab_weg"] = True; z["verschwunden"] += 1  # in GitLab veröffentlicht oder gelöscht
-                    elif k["text"] != k.get("gitlab_text"):
+                    if k["text"] != k.get("gitlab_text"):
                         glab(host, f'{P}/draft_notes/{k["gitlab_id"]}', "PUT", {"note": k["text"]})
                         k["gitlab_text"] = k["text"]; z["akt"] += 1
                 else:
@@ -460,8 +486,10 @@ def abschliessen(mr):
     if z["weg"]: teile.append(f'{z["weg"]} gelöscht')
     text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
             if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
-    if z["verschwunden"]:
-        text += f' {z["verschwunden"]} Entwurf/Entwürfe gibt es in GitLab nicht mehr (veröffentlicht oder dort gelöscht).'
+    if z["verworfen"]:
+        text += f' {z["verworfen"]} davon waren in GitLab verworfen und wurden neu angelegt.'
+    if z["veroeffentlicht"]:
+        text += f' {z["veroeffentlicht"]} Entwurf/Entwürfe sind in GitLab schon veröffentlicht.'
     if fehler:
         text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
     return not fehler, text, web
