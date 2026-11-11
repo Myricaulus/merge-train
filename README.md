@@ -44,6 +44,38 @@ merge-train agent thread [--ort pfad:zeile] [--siehe …] [--vergleich A B] "…
 
 In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion.
 
+## Die Diff-Seite (alle Quellen)
+
+- **Quelle des Diffs**: Diff, Dateien und Commits kommen immer aus dem lokalen Klon, nie aus GitLab. Lokal ist der Stand
+  der Branch `claude`, die Basis `reviewed` (`bis`/`von` in der Einstellung). Bei einem MR ist der Stand der Quell-Branch (lokal, sonst `origin/…`), die Basis
+  der gemeinsame Vorgänger mit dem Ziel-Branch. Welcher Branch ausgecheckt ist und lokale Änderungen spielen keine Rolle
+  (außer beim [Beobachten](#beobachten-arbeitsstand-live-z-b-was-ein-agent-in-einem-worktree-baut)).
+  Diffs nicht über die GitLab-API, weil sie bei großen Änderungen oft keinen Diff liefert und langsam ist.
+- **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
+  Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
+  automatisch, sobald ein Kommentar oder Hinweis darin liegt.
+- **Commit-Ansichten**: Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
+  - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
+    Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des Diffs, außerhalb
+    der Änderungen), stehen sie unter dem Dateinamen mit dem Grund.
+  - *seit diesem*: alles nach dem Commit bis zum Stand. Rechts steht der Stand, dort wird normal kommentiert und
+    übernommen. Links (Stand des Commits) lässt sich nicht kommentieren.
+  - Einträge in Dateien, die die Ansicht nicht ändert, werden nur gezählt. Kommentare und Fäden gehören immer zum ganzen Vergleich.
+- **Siehe-auch-Links und `pfad:zeile`** (in Agent-Hinweisen und Nachrichten) öffnen den Code im Popup, die Zeile bzw.
+  der Bereich (`pfad:10-20`) ist hervorgehoben. Liegt die Datei im Diff, zeigt das Popup deren Diff (Lücken aufklappbar,
+  „alles aufklappen“), sonst den Dateiinhalt (mehr laden / ganze Datei).
+- **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „KI-Threads“ (Gespräche mit Agenten) und bei einem MR
+  „GitLab-Kommentare“ (siehe unten). Leere Listen sind ausgeblendet. Ein Klick springt zum Eintrag und klappt dafür bei
+  Bedarf Kontext oder Datei auf.
+- **Stellwerk** (HUD) rechts im Güterbahnhof, auf Stelzen über dem Gleis: LED (grün: Server läuft, rot: nicht erreichbar,
+  gelb: neuer Server, die Seite lädt gleich neu), Stand von merge-train (letzter Commit mit Zeit, `*` = Änderungen in
+  `src/` noch nicht committet), wer zuhört, Zahl der Kommentare, Hinweise und KI-Threads (offen = nicht erledigt; in der
+  Liste „KI-Threads“ schließt ein Klick auf ○ einen Thread) und der Kontext-Füllstand der Claude-Session, die zuletzt
+  mit `agent horchen` zugehört hat („34 % ctx“ als Balken: bis 15 % grün, bis 20 % nach orange, bis 25 % nach rot, ab 35 % giftlila mit
+  schillerndem Rahmen; Schwellen in `kontext_schwellen`), solange die Session läuft, also auch
+  während sie arbeitet. Der Füllstand stammt aus deren Transcript (`~/.claude/projects/*/<session>.jsonl`), der Agent
+  muss nichts tun. Fenster 200k, mit `[1m]` im Modell 1M, sonst `kontext_fenster` in der Einstellung. Meldungen des Servers erscheinen als Toasts (10 s, wegklickbar), die letzten 50 unter 🔔 unten rechts.
+
 ## Gespräch mit Claude (lokaler Modus)
 
 Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ein Review-Kommentar:
@@ -83,41 +115,17 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 
 ## GitLab-Review
 
-- **Quelle**: Diff, Dateien und Commits kommen immer aus dem lokalen Klon (`[repos]` oder Repo der Hinweis-Datei):
-  Stand = Quell-Branch des MR (lokal, sonst `origin/…`), Basis = gemeinsamer Vorgänger mit dem Ziel-Branch.
-  Welcher Branch ausgecheckt ist und lokale Änderungen spielen keine Rolle. Stand GitLab beim letzten Holen woanders,
-  sagt das ein Hinweis oben. Diffs nicht über die GitLab-API, weil sie bei großen Änderungen oft keinen Diff liefert
-  und langsam ist.
-- **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
-  Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
-  automatisch, sobald ein Kommentar oder Hinweis darin liegt.
-- **Stellwerk** (HUD) rechts im Güterbahnhof, auf Stelzen über dem Gleis: LED (grün: Server läuft, rot: nicht erreichbar,
-  gelb: neuer Server, die Seite lädt gleich neu), Stand von merge-train (letzter Commit mit Zeit, `*` = Änderungen in
-  `src/` noch nicht committet), wer zuhört, Zahl der Kommentare, Hinweise und KI-Threads (offen = nicht erledigt; in der
-  Liste „KI-Threads“ schließt ein Klick auf ○ einen Thread) und der Kontext-Füllstand der Claude-Session, die zuletzt
-  mit `agent horchen` zugehört hat („34 % ctx“ als Balken: bis 15 % grün, bis 20 % nach orange, bis 25 % nach rot, ab 35 % giftlila mit
-  schillerndem Rahmen; Schwellen in `kontext_schwellen`), solange die Session läuft, also auch
-  während sie arbeitet. Der Füllstand stammt aus deren Transcript (`~/.claude/projects/*/<session>.jsonl`), der Agent
-  muss nichts tun. Fenster 200k, mit `[1m]` im Modell 1M, sonst `kontext_fenster` in der Einstellung. Meldungen des Servers erscheinen als Toasts (10 s, wegklickbar), die letzten 50 unter 🔔 unten rechts.
-- **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „GitLab-Kommentare“ (offene Agent-Hinweise 🤖,
-  eigene bzw. übernommene Kommentare 💬) und „KI-Threads“ (Gespräche mit Agenten, privat). Leere Listen sind ausgeblendet.
-  Die Reihenfolge der GitLab-Kommentare ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit
-  „⇅ sortieren“ per Drag & Drop oder ⤒/⤓ (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet
-  an seiner Stelle nach Datei und Zeile, ein übernommener Hinweis behält seinen Platz. Ein Klick springt zum Kommentar und klappt dafür bei Bedarf Kontext oder Datei auf.
-- **Commit-Ansichten** (auch im lokalen Projekt-Diff): Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
-  - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
-    Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des MR, außerhalb
-    der Änderungen), stehen sie unter dem Dateinamen mit dem Grund.
-  - *seit diesem*: alles nach dem Commit bis zum MR-Stand. Rechts steht der MR-Stand, dort wird normal kommentiert und
-    übernommen. Links (Stand des Commits) lässt sich nicht kommentieren.
-  - Einträge in Dateien, die die Ansicht nicht ändert, werden nur gezählt. Kommentare gehören immer zum ganzen MR.
+- **Stand**: Lag GitLab beim letzten Holen auf einem anderen Stand als der Klon (`[repos]` oder Repo der Hinweis-Datei),
+  sagt das ein Hinweis oben.
+- **GitLab-Kommentare** (Liste links): offene Agent-Hinweise 🤖, eigene bzw. übernommene Kommentare 💬. Die Reihenfolge
+  ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅ sortieren“ per Drag & Drop oder ⤒/⤓
+  (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet an seiner Stelle nach Datei und Zeile,
+  ein übernommener Hinweis behält seinen Platz.
 - **Kommentar schreiben**: Auf eine Zeilennummer klicken (links = alte Zeile, rechts = neue). Speichern mit Strg+Enter, abbrechen mit Esc.
   Allgemeine Kommentare über „＋ allgemeiner Kommentar“.
 - **Agent-Hinweise** (lila) stehen an ihrer Zeile. Liegt die Zeile außerhalb des Diffs, stehen sie oben unter „Review“.
   Ein Klick auf den Ort klappt den Kontext dorthin auf (oder öffnet ein Popup, wenn die Datei nicht im MR ist).
-  „Siehe auch“-Verweise öffnen den Code im Popup, die Zeile bzw. der Bereich (`pfad:10-20`) ist hervorgehoben.
-  Liegt die Datei im Diff, zeigt das Popup deren Diff (Lücken aufklappbar, „alles aufklappen“), sonst den Dateiinhalt
-  (mehr laden / ganze Datei). Die Verweise gehören nicht zum GitLab-Kommentar.
+  „Siehe auch“-Verweise (Popup wie oben) gehören nicht zum GitLab-Kommentar.
   Mit „übernehmen“ oder „anpassen & übernehmen“ werden Hinweise zu einem eigenen Kommentar, „verwerfen“ blendet sie aus.
 - **Kommentare** lassen sich bearbeiten und löschen. Das Etikett zeigt den Stand: *Entwurf (lokal)*, *in GitLab (Entwurf)*,
   *geändert* oder *wird in GitLab gelöscht*.
