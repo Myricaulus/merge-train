@@ -1,7 +1,7 @@
 """Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
 import hashlib, os, re, threading
 from datetime import datetime
-from .waggon import Fehler, Waggon
+from .waggon import Fehler, Ungueltig, Waggon
 from .einstellungen import KONF, jetzt
 from .git import ANLASS, anlass, branch_auschecken, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
@@ -11,7 +11,7 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
     diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import alle, glab, mr_lokal, mr_meta_holen, mr_pfad
+from .gitlab import GitLabFehler, alle, glab, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
@@ -761,9 +761,9 @@ def schritt_eintragen(akte, s, gitlab_id, gitlab_art):
     return True
 
 
-def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False):
-    """Text nach „Review abschließen“. gezaehlt: Counter über die ausgeführten Arten, dazu „allgemein“ und bei direkt
-    „publiziert“ (1 = alle Entwürfe in GitLab veröffentlicht)."""
+def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False, urteil="kommentieren"):
+    """Text nach „Review abschließen“. gezaehlt: Counter über die ausgeführten Arten, dazu „allgemein“, bei direkt
+    „publiziert“ (1 = alle Entwürfe in GitLab veröffentlicht) und „urteil“ (1 = Urteil in GitLab gesetzt)."""
     teile = []
     if gezaehlt["anlegen"]:
         teile.append(f'{gezaehlt["anlegen"]} neu' +
@@ -775,7 +775,9 @@ def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False
         text = "In GitLab veröffentlicht" + (": " + ", ".join(teile) if teile else "") + "."
     else:
         text = ("Entwürfe in GitLab: " + ", ".join(teile) + ". Jetzt in GitLab prüfen und dort das Review abschicken."
-                if teile else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
+                if teile else "" if urteil != "kommentieren" else "Nichts zu übertragen – alles ist schon als Entwurf in GitLab.")
+    if gezaehlt["urteil"]:
+        text = URTEILE[urteil] + (" · " + text if text else ".")
     if verworfen:
         text += f" {verworfen} davon waren in GitLab verworfen und wurden neu angelegt."
     if veroeffentlicht:
@@ -785,26 +787,47 @@ def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False
     return text
 
 
+URTEILE = {"kommentieren": "", "genehmigen": "In GitLab genehmigt", "aendern": "In GitLab Änderungen angefordert"}
+
+
+def urteil_senden(mr, urteil):
+    """Urteil des Reviews in GitLab setzen: genehmigen (REST approve) oder Änderungen anfordern (GraphQL
+    mergeRequestRequestChanges – REST kennt das nicht). kommentieren setzt nichts."""
+    if urteil == "genehmigen":
+        glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
+    elif urteil == "aendern":
+        r = glab(mr.host, "graphql", "POST", {
+            "query": "mutation($p: ID!, $i: String!) { mergeRequestRequestChanges(input: {projectPath: $p, iid: $i}) "
+                     "{ errors } }", "variables": {"p": mr.projekt, "i": str(mr.iid)}}) or {}
+        fehler = [e.get("message", str(e)) for e in r.get("errors") or []] + \
+            list(((r.get("data") or {}).get("mergeRequestRequestChanges") or {}).get("errors") or [])
+        if fehler:
+            raise GitLabFehler("; ".join(fehler))
+
+
 _ABSCHLUSS_LAEUFT, _ABSCHLUSS_SPERRE = set(), threading.Lock()  # Waggons, deren „Review abschließen“ gerade läuft
 LAEUFT_SCHON = "„Review abschließen“ läuft für diesen MR schon (anderer Tab?) – danach die Seite neu laden."
 
 
-def abschliessen(mr, direkt=False):
+def abschliessen(mr, direkt=False, urteil="kommentieren"):
     """Kommentare als Entwürfe (Draft-Notes) in den MR übertragen; direkt: danach alle meine Entwürfe des MR
-    veröffentlichen (wie „Submit review“ in GitLab: eine Benachrichtigung). Rückgabe (ok, text, web_url).
+    veröffentlichen (wie „Submit review“ in GitLab: eine Benachrichtigung); urteil (URTEILE): zuletzt genehmigen bzw.
+    Änderungen anfordern – das geht auch ohne Kommentare. Rückgabe (ok, text, web_url).
     Je MR nur ein Lauf gleichzeitig: zwei Läufe planten denselben Stand und legten jeden Entwurf doppelt an."""
     with _ABSCHLUSS_SPERRE:
         if mr.id in _ABSCHLUSS_LAEUFT:
             return False, LAEUFT_SCHON, akte_lesen(mr)["mr"].get("web_url", "")
         _ABSCHLUSS_LAEUFT.add(mr.id)
     try:
-        return abschluss_lauf(mr, direkt)
+        return abschluss_lauf(mr, direkt, urteil)
     finally:
         with _ABSCHLUSS_SPERRE:
             _ABSCHLUSS_LAEUFT.discard(mr.id)
 
 
-def abschluss_lauf(mr, direkt=False):
+def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
+    if urteil not in URTEILE:
+        raise Ungueltig(f"unbekanntes Urteil {urteil!r}")
     akte = akte_lesen(mr)
     head = ((struktur_laden(akte) or {}).get("refs") or {}).get("head_sha")
     web = akte["mr"].get("web_url", "")
@@ -839,17 +862,23 @@ def abschluss_lauf(mr, direkt=False):
         gezaehlt[s.art] += 1
         gezaehlt["allgemein"] += s.art == "anlegen" and gitlab_art == "allgemein"
     teile = []
-    if not fehler and direkt:
+    if not fehler and direkt and (schritte or vorhanden):
         try:
             glab(mr.host, f"{mr_pfad(mr)}/draft_notes/bulk_publish", "POST")
             gezaehlt["publiziert"] = 1
             teile = mr_gitlab_holen(mr)  # Entwürfe sind weg: als veröffentlicht erkennen, Diskussionen dazu holen
         except Fehler as e:
             fehler.append(f"Veröffentlichen: {e} – die Entwürfe liegen in GitLab")
+    if not fehler and URTEILE[urteil]:
+        try:
+            urteil_senden(mr, urteil)
+            gezaehlt["urteil"] = 1
+        except Fehler as e:
+            fehler.append(f"{URTEILE[urteil]}: nicht geklappt – {e}")
     if not fehler:
         with akte_bearbeiten(mr) as akte:
             akte["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
-    text = abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt)
+    text = abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt, urteil)
     return not fehler, " · ".join([text] + [t for t in teile if "veröffentlicht" not in t]), web
 
 

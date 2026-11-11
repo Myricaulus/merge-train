@@ -151,3 +151,9 @@ tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>t
 tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
 tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}
 .kbox.gl{border-left-style:dashed} .gs .msg.andere{border-left-color:var(--tn)}
+.split{position:relative;display:inline-flex} .split #abschliessen{border-radius:6px 0 0 6px}
+.split .urteilauf{font:600 14px system-ui;padding:6px 8px;border:1px solid var(--p);border-left-color:rgba(255,255,255,.4);border-radius:0 6px 6px 0;background:var(--p);color:#fff;cursor:pointer}
+.split.u-aendern #abschliessen,.split.u-aendern .urteilauf{background:var(--tb);border-color:var(--tb);color:#1b1b1b}
+.urteilmenue{position:absolute;right:0;top:calc(100% + 4px);z-index:30;display:flex;flex-direction:column;min-width:160px;padding:4px;background:var(--bg);border:1px solid var(--rand);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.urteilmenue[hidden]{display:none} .urteilmenue button{font:13px system-ui,sans-serif;text-align:left;padding:5px 10px;border:0;border-radius:4px;background:none;color:var(--fg);cursor:pointer}
+.urteilmenue button:hover{background:var(--rand)} .urteilmenue button.akt::before{content:"✓ "} .urteilmenue button:not(.akt){padding-left:24px}

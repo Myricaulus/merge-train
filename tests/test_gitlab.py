@@ -853,6 +853,18 @@ def main():
                and any("Eingefügt?" in x["text"] for x in rv["diskussionen"])
                and d950["stand"] == "wartet" and d950["nachrichten"][-1]["text"] == "Noch was.",
                "direkt veröffentlichen: alles in GitLab veröffentlicht und gleich als Diskussionen geholt")
+        # Urteil: genehmigen geht ohne Kommentare, ein zweites Mal meldet GitLab einen Fehler; ändern lassen per GraphQL
+        r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="genehmigen"))
+        urteile = lambda: json.load(open(f"{T}/glab/urteile.json"))
+        pruefe(r["ok"] and r["text"].startswith("In GitLab genehmigt") and urteile() == ["genehmigt"]
+               and not any("bulk_publish" in z for z in open(f"{T}/glab/aufrufe.log").readlines()[-3:]),
+               "Genehmigen ohne Kommentare: approve, kein bulk_publish")
+        r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="genehmigen"))
+        pruefe(not r["ok"] and "nicht geklappt" in r["text"], "zweites Genehmigen: Fehler von GitLab gemeldet")
+        r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="aendern"))
+        pruefe(r["ok"] and r["text"].startswith("In GitLab Änderungen angefordert") and urteile()[-1] == "aendern",
+               "Ändern lassen: GraphQL mergeRequestRequestChanges")
+        pruefe(not post("/api/abschliessen", dict(basis2, urteil="weg"))["ok"], "unbekanntes Urteil abgelehnt")
         # Übersicht, Zug, lokal=false
         pruefe("Güterbahnhof" in get("/") and "Demo-Änderung" not in get("/"), "Startseite ohne MR-Liste (lokal = false)")
         r = post("/api/gitlab", dict(k=k, aktion="mrliste"))

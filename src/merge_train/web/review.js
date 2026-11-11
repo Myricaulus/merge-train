@@ -919,7 +919,47 @@
     );
   });
   const abschliessenKnopf = document.getElementById('abschliessen');
+  // Urteil des Reviews (Split-Knopf „▾“ rechts): kommentieren ist der Standard, genehmigen und ändern lassen gelten nur
+  // für das nächste Abschließen (nicht gespeichert – ein versehentliches Genehmigen soll nicht hängen bleiben)
+  const URTEILE = {
+    kommentieren: ['Review abschließen → GitLab', 'Kommentieren', 'nur die Kommentare senden (Standard)'],
+    genehmigen: ['Genehmigen → GitLab', 'Genehmigen', 'Kommentare senden und den MR genehmigen (Approve) – auch ohne Kommentar'],
+    aendern: ['Ändern lassen → GitLab', 'Ändern lassen', 'Kommentare senden und Änderungen anfordern (Request changes)']
+  };
+  let urteil = 'kommentieren';
+  function urteilSetzen(u) {
+    urteil = u;
+    abschliessenKnopf.textContent = URTEILE[u][0];
+    abschliessenKnopf.parentNode.classList.toggle('u-aendern', u === 'aendern');
+    abschliessenStand();
+  }
   if (abschliessenKnopf) {
+    const menue = el('div', {class: 'urteilmenue', hidden: true}),
+      auf = el('button', {class: 'urteilauf', title: 'Urteil wählen: kommentieren, genehmigen, ändern lassen'}, '▾'),
+      split = el('span', {class: 'split'});
+    for (const [u, [, name, titel]] of Object.entries(URTEILE)) {
+      const b = el('button', {title: titel}, name);
+      b.dataset.u = u;
+      b.addEventListener('click', () => {
+        menue.hidden = true;
+        urteilSetzen(u);
+      });
+      menue.append(b);
+    }
+    auf.addEventListener('click', e => {
+      e.stopPropagation();
+      menue.hidden = !menue.hidden;
+      menue.querySelectorAll('button').forEach(b => b.classList.toggle('akt', b.dataset.u === urteil));
+    });
+    document.addEventListener('click', e => {
+      if (!menue.hidden && !split.contains(e.target)) menue.hidden = true;
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') menue.hidden = true;
+    });
+    abschliessenKnopf.replaceWith(split);
+    split.append(abschliessenKnopf, auf, menue);
+    if (abschliessenKnopf.hidden) split.hidden = true;
     const d = el('input', {type: 'checkbox'});
     d.checked = direkt();
     d.addEventListener('change', () => {
@@ -927,18 +967,21 @@
       abschliessenStand();
       kommentarListe(); // Filter „Entwurf in GitLab“ nur ohne direkt
     });
-    abschliessenKnopf.after(
+    split.after(
       el('label', {class: 'sofort', title: DIREKT_TITEL}, d, ' direkt veröffentlichen'),
       el('label', {class: 'sofort', title: SOFORT_TITEL}, sofortHaken(), ' sofort senden')
     );
   }
-  /** „Review abschließen“ nur, wenn es lokale Entwürfe (staged) gibt. */
+  /** „Review abschließen“ nur, wenn es lokale Entwürfe (staged) gibt – mit Urteil (genehmigen …) immer. */
   function abschliessenStand() {
     if (!abschliessenKnopf || abschliessenKnopf.dataset.laeuft) return;
     const inGitlab = direkt() ? review.in_gitlab || 0 : 0;
-    abschliessenKnopf.disabled = !review.ausstehend && !inGitlab;
+    abschliessenKnopf.disabled = !review.ausstehend && !inGitlab && urteil === 'kommentieren';
     abschliessenKnopf.title =
-      review.ausstehend || inGitlab
+      urteil !== 'kommentieren'
+        ? URTEILE[urteil][2] +
+          (review.ausstehend ? ' (' + review.ausstehend + ' lokale Entwürfe' + (direkt() ? ', veröffentlicht)' : ' als Entwürfe)') : '')
+        : review.ausstehend || inGitlab
         ? (review.ausstehend ? review.ausstehend + ' lokale Entwürfe ' : '') +
           (inGitlab ? (review.ausstehend ? 'und ' : '') + inGitlab + ' Entwürfe in GitLab ' : '') +
           (direkt()
@@ -950,11 +993,18 @@
     abschliessenKnopf.addEventListener('click', () => {
       abschliessenKnopf.dataset.laeuft = 1;
       abschliessenKnopf.disabled = true;
-      App.melden(direkt() ? 'veröffentlicht in GitLab …' : 'überträgt Entwürfe nach GitLab …');
-      post('/api/abschliessen', {direkt: direkt() ? 1 : ''}).then(d => {
+      App.melden(
+        urteil !== 'kommentieren'
+          ? URTEILE[urteil][1] + ' in GitLab …'
+          : direkt()
+            ? 'veröffentlicht in GitLab …'
+            : 'überträgt Entwürfe nach GitLab …'
+      );
+      post('/api/abschliessen', {direkt: direkt() ? 1 : '', urteil}).then(d => {
         delete abschliessenKnopf.dataset.laeuft;
         abschliessenKnopf.disabled = false;
-        abschliessenStand();
+        if (d.ok) urteilSetzen('kommentieren');
+        else abschliessenStand();
         App.melden((d.text || '') + (d.web_url ? ' → in GitLab prüfen ↗' : ''));
         if (d.review) {
           Object.assign(review, d.review);

@@ -8,6 +8,7 @@ jeder Aufruf wird in $FAKE_GLAB_STATE/aufrufe.log protokolliert.
 
 Umgebung: FAKE_GLAB_REPO (Pfad), FAKE_GLAB_STATE (Ordner), FAKE_GLAB_PROJEKT (Standard: gruppe/demo),
 FAKE_GLAB_FEHLER_POSITION=1 → Draft-Notes mit Position werden abgelehnt (wie bei ungültiger Zeile).
+Urteile (approve, GraphQL mergeRequestRequestChanges) landen in $FAKE_GLAB_STATE/urteile.json.
 FAKE_GLAB_ZU_GROSS=a.cs,b.cs → für diese Dateien kein Diff („collapsed“, wie GitLab bei großen MRs).
 """
 import json, os, re, subprocess, sys, urllib.parse
@@ -60,6 +61,12 @@ def main():
     p_enc = urllib.parse.quote(PROJEKT, safe="")
     basis = git("merge-base", ZIEL, BRANCH).strip()
     head = git("rev-parse", BRANCH).strip()
+    if weg == "graphql":  # nur mergeRequestRequestChanges
+        body = json.loads(eingabe)
+        if "mergeRequestRequestChanges" not in body["query"] or body["variables"] != {"p": PROJEKT, "i": "1"}:
+            return raus({"errors": [{"message": "fake-glab: unbekannte Anfrage"}]})
+        json.dump(zustand("urteile.json", []) + ["aendern"], open(os.path.join(STATE, "urteile.json"), "w"))
+        return raus({"data": {"mergeRequestRequestChanges": {"errors": []}}})
     if weg == "user":
         return raus({"id": 1, "username": "tester", "name": "Test Er"})
     if weg == "merge_requests":
@@ -144,6 +151,11 @@ def main():
         antworten.setdefault(m.group(1), []).append(neu)
         json.dump(antworten, open(os.path.join(STATE, "discussions.json"), "w"))
         return raus(neu)
+    if rest in ("/approve",) and methode == "POST":  # genehmigen (zweimal: wie GitLab abgelehnt)
+        urteile = zustand("urteile.json", [])
+        if "genehmigt" in urteile:
+            raise SystemExit('glab: 401 Unauthorized {"message":"401 Unauthorized"}')
+        json.dump(urteile + ["genehmigt"], open(os.path.join(STATE, "urteile.json"), "w")); return raus({"iid": 1})
     if rest == "/draft_notes/bulk_publish" and methode == "POST":  # alle Entwürfe veröffentlichen
         notes, antworten = zustand("notes.json", []), zustand("discussions.json", {})
         for x in drafts():

@@ -349,7 +349,8 @@ def api_abschliessen(anfrage, waggon):
     ansicht = anfrage.ansicht
     if ansicht and ansicht[0] == "commit":
         return {"ok": False, "text": NUR_LESEN}
-    ok, text, web = abschliessen(waggon, direkt=bool(anfrage.daten.get("direkt")))
+    ok, text, web = abschliessen(waggon, direkt=bool(anfrage.daten.get("direkt")),
+                                 urteil=anfrage.daten.get("urteil") or "kommentieren")
     return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht)}
 
 

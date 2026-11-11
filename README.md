@@ -168,6 +168,8 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   veröffentlicht, wie „Submit review“ in GitLab (eine Benachrichtigung), und die Diskussionen gleich geholt. Ohne
   Haken bleiben sie „Pending comments“ in GitLab (➜), dort prüfen und das Review abschicken.
   Mehrfaches Abschließen erzeugt keine Duplikate. Einen in GitLab veröffentlichten Kommentar fasst das Tool nicht an.
+  Das **„▾“ rechts am Knopf** wählt das Urteil: *Kommentieren* (Standard), *Genehmigen* (Approve) oder *Ändern lassen*
+  (Request changes). Genehmigen und Ändern lassen gehen auch ohne Kommentar und gelten nur für dieses eine Abschließen.
 - **GitLab-Diskussionen als Threads**: „↻ MR-Daten“ holt alle Diskussionen des MR (ohne Systemnotizen wie „changed this
   line“). Veröffentlichte eigene Kommentare und die anderer (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab
   Geschriebenes) stehen als Threads an ihrer Zeile, genau wie die KI-Threads: Verlauf mit deinen Beiträgen rechts, Stand

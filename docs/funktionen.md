@@ -93,8 +93,10 @@ Eigene Kommentare an Zeilen oder allgemein, bearbeiten, löschen, Reihenfolge (s
 gleicht mit GitLab ab und legt Draft-Notes an, aktualisiert oder löscht sie, ohne Duplikate. Mit „☑ direkt
 veröffentlichen“ (Standard, im Browser gemerkt) danach `draft_notes/bulk_publish` und gleich `mr_gitlab_holen`: die
 Kommentare stehen dann als Diskussionen da. Ohne: sie bleiben Entwürfe in GitLab (Stand `gitlab_entwurf`). Zeilen
-außerhalb des Diffs: erst Zeilen-Kommentar, sonst allgemeiner mit Link.
-- Achsen: Senden (direkt veröffentlichen, nur Entwürfe).
+außerhalb des Diffs: erst Zeilen-Kommentar, sonst allgemeiner mit Link. Zuletzt setzt das Urteil (Split-Knopf „▾“,
+`URTEILE`/`urteil_senden`) „genehmigen“ (REST `approve`) bzw. „ändern lassen“ (GraphQL `mergeRequestRequestChanges`);
+mit Urteil geht Abschließen auch ohne Kommentare, das Urteil gilt nur für ein Abschließen.
+- Achsen: Senden (direkt veröffentlichen, nur Entwürfe); Urteil (kommentieren, genehmigen, ändern lassen).
 - Ort: `review.py` (planen: `abschluss_planen`, ausführen: `schritt_ausfuehren`), Routen `api/kommentar`,
   `api/abschliessen`.
 - Erweitern: neue Arten von Übertragung als weiterer `Schritt`, nicht als eigener Ablauf.
