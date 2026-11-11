@@ -201,6 +201,11 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 - beim **Review abschließen**: aktueller GitLab-Stand (steht GitLab woanders als die Seite, wird nichts übertragen),
   dann die Draft-Notes.
 
+Steht GitLab woanders als der lokale Klon, sagt das eine rote Meldung über dem Diff. Ist origin weiter (neue Commits
+im MR), holt **„⇣ lokal aktualisieren“** origin und zieht den Quell-Branch nach: vorspulen oder, nach einem Force-Push,
+neu setzen, ausgecheckt samt Arbeitsverzeichnis und Submodulen. Lokale Commits oder nicht committete Änderungen
+bleiben unangetastet, dann bricht es mit Meldung ab. GitLab fragt der Knopf nicht.
+
 ## Einstellungen
 
 `~/.config/merge-train/config.toml`, Vorlage: [`config.example.toml`](config.example.toml). Die wichtigsten Einträge:

@@ -4,11 +4,11 @@ import urllib.parse
 from datetime import datetime
 from .einstellungen import BIS, KONF, SKRIPT, VON, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
-from .git import ANLASS, anlass, finde_repos, git, statistik
+from .git import ANLASS, anlass, branch_aktualisieren, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
 from .akte import akte_lesen
 from .beobachter import neue_zeilen, veraltet
-from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_ref, mr_vollstaendig
+from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
@@ -367,7 +367,15 @@ def mr_daten_aktion(anfrage):
     return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
 
 
-GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion}
+def aktualisieren_aktion(anfrage):
+    """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren)."""
+    mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
+    meta = akte_lesen(mr).get("meta") or {}
+    ordner, _ = mr_lokal(mr, meta)
+    return {"ok": True, "text": branch_aktualisieren(ordner, meta.get("source_branch") or ""), "neu_laden": True}
+
+
+GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion}
 
 
 @route("POST", "api/gitlab", quelle=GITLAB)

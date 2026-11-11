@@ -107,7 +107,8 @@ Draft-Antwort anlegt.
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
-Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt.
+Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt; ist
+origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren` in `git.py`, Aktion `aktualisieren`).
 - Ort: `gitlab.py`, `mr_gitlab_holen`/`mr_daten_holen` (`review.py`), Route `api/gitlab`, `web/bahnhof.js`.
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen eigenen Abruf beim Laden der Seite.
 

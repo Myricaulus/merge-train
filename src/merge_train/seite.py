@@ -3,7 +3,7 @@ import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
 from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, SKRIPT, VON, dateiname, ersetzen, projektname, schluessel
 from .waggon import Waggon, fertig_moeglich
-from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, projekt_wurzel, zerlegen
+from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, origin_voraus, projekt_wurzel, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
@@ -74,9 +74,12 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+    voraus = bool(gl_head and gl_head != head and origin_voraus(struktur["ordner"], head, gl_head))
+    knopf = ('<button data-g="aktualisieren" title="git fetch, Quell-Branch vorspulen (ausgecheckt samt Submodulen)">'
+             '⇣ lokal aktualisieren</button>' if voraus else "")
     abw = (f'<div class="warn">GitLab stand beim letzten Holen ({html.escape(meta.get("_zeit") or "?")}) auf '
-           f'{html.escape(gl_head[:8])}, lokal ist {html.escape(head[:8])} – Branch aktualisieren oder MR-Daten holen.</div>'
-           if gl_head and gl_head != head else "")
+           f'{html.escape(gl_head[:8])}, lokal ist {html.escape(head[:8])} – Branch aktualisieren oder MR-Daten holen. '
+           f'{knopf}</div>' if gl_head and gl_head != head else "")
     titel = f'{mr.projekt}!{mr.iid}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return diff_seite(titel=f'!{mr.iid} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,

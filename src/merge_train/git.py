@@ -220,6 +220,55 @@ def ref_sha(ordner, name, remote_zuerst=False):
     return None
 
 
+def git_oder_fehler(ordner, *a):
+    """git wie git(), ein Fehlschlag wird zum Fehler mit der Meldung von git (für die Seite)."""
+    try:
+        return git(ordner, *a)
+    except subprocess.CalledProcessError as e:
+        raise Fehler(f"git {a[0]} in {kurzpfad(ordner)}: {(e.stderr or e.output or '').strip()[-300:]}")
+
+
+def origin_voraus(ordner, sha, ziel):
+    """Ist ziel (z. B. der Stand in GitLab) ein Nachfolger von sha – oder lokal noch gar nicht da (erst holen)?"""
+    if git(ordner, "cat-file", "-e", ziel + "^{commit}", check=False) is None:
+        return True
+    return git(ordner, "merge-base", "--is-ancestor", sha, ziel, check=False) is not None
+
+
+def branch_aktualisieren(ordner, branch):
+    """origin holen und den lokalen Branch auf origin/<branch> nachziehen: vorspulen, oder – nach einem Force-Push –
+    auf den neuen Stand setzen, wenn der lokale Branch keine eigenen Commits hat (stand auf dem alten origin).
+    Ausgecheckt (auch in einem anderen Worktree) samt Arbeitsverzeichnis und Submodulen; dafür muss der Stand sauber
+    sein (Submodul-Zeiger zählen nicht, die zieht submodule update mit). Rückgabe: Text."""
+    remote = f"refs/remotes/origin/{branch}"
+    def sha(ref):
+        return (git(ordner, "rev-parse", "--verify", "-q", ref + "^{commit}", check=False) or "").strip()
+    alt = sha(remote)
+    git_oder_fehler(ordner, "fetch", "--recurse-submodules=on-demand", "origin")
+    neu, lokal = sha(remote), sha(f"refs/heads/{branch}")
+    if not neu:
+        raise Fehler(f"origin/{branch} gibt es nicht")
+    if not lokal or lokal == neu:
+        return f"origin geholt, {branch} ist auf {neu[:8]}"
+    vorspulen = git(ordner, "merge-base", "--is-ancestor", lokal, neu, check=False) is not None
+    if not vorspulen and lokal != alt:
+        raise Fehler(f"{branch} hat lokale Commits, die nicht auf origin sind – bitte selbst zusammenführen")
+    baum = None  # Worktree, in dem der Branch ausgecheckt ist
+    for block in (git(ordner, "worktree", "list", "--porcelain", check=False) or "").split("\n\n"):
+        zeilen = dict(z.split(" ", 1) for z in block.splitlines() if " " in z)
+        if zeilen.get("branch") == f"refs/heads/{branch}":
+            baum = zeilen.get("worktree")
+    if not baum:
+        git(ordner, "update-ref", f"refs/heads/{branch}", neu, lokal)
+    else:
+        offen = git(baum, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
+        if offen.strip():
+            raise Fehler(f"{kurzpfad(baum)} hat nicht committete Änderungen:\n{offen.rstrip()}")
+        git_oder_fehler(baum, *(["merge", "--ff-only", "-q"] if vorspulen else ["reset", "--keep", "-q"]), neu)
+        git_oder_fehler(baum, "submodule", "update", "--init", "--recursive")
+    return f"{branch}: {lokal[:8]} → {neu[:8]}" + ("" if vorspulen else " (neu gesetzt, origin wurde umgeschrieben)")
+
+
 INHALT = {}
 
 

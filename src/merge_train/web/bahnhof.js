@@ -1,5 +1,6 @@
 // Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne
-// GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g), danach holt zugHolen den Zug neu. Lokal (data-l)
+// GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g, auch „⇣ lokal aktualisieren“ in der Meldung zum
+// abweichenden Stand), danach holt zugHolen den Zug neu bzw. lädt bei neu_laden die Seite. Lokal (data-l)
 // lädt zug.js neu. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
 (() => {
   const {waggon} = App;
@@ -24,12 +25,12 @@
       sessionStorage.removeItem('meldung');
     }
   } catch (_) {} // Meldung von „↻ MR-Daten“ über das Neuladen
-  document.querySelectorAll('#bahnhof button[data-g]').forEach(b => {
+  document.querySelectorAll('button[data-g]').forEach(b => {
     if (b.dataset.g === 'mrdaten' && (!waggon.id || waggon.id.startsWith('projekt:'))) b.hidden = true;
     const bh = document.querySelector('.szene');
     b.addEventListener('click', () => {
       b.disabled = true;
-      App.melden('frage GitLab …');
+      App.melden(b.dataset.g === 'aktualisieren' ? 'hole origin …' : 'frage GitLab …');
       bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet
       fetch('/api/gitlab', {
         method: 'POST',
@@ -42,7 +43,7 @@
           bh.classList.remove('laedt');
           App.melden(d.text || '');
           if (!d.ok) return;
-          if (b.dataset.g === 'mrdaten' && (d.neu_laden || !App.reviewLaden)) {
+          if (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden)) {
             try {
               sessionStorage.meldung = d.text || '';
             } catch (_) {}

@@ -15,7 +15,7 @@ os.environ.update(MERGE_TRAIN_CONFIG=f"{T}/leer.toml", XDG_CACHE_HOME=f"{T}/cach
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from merge_train.waggon import Fehler, Waggon
-from merge_train.git import zerlegen
+from merge_train.git import branch_aktualisieren, origin_voraus, zerlegen
 from merge_train.zeilen import alt_zeile, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts, zurueck_diffs
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
@@ -562,6 +562,79 @@ class AbschlussLaufTest(unittest.TestCase):
         review.glab = verboten
         with self.assertRaises(Fehler):  # Rechte fehlen: nicht still als allgemeinen Kommentar senden
             review.entwurf_anlegen(self.mr, k, "abc", "https://gitlab.example/g/p")
+
+
+def schreiben(pfad, text):
+    with open(pfad, "w") as f:
+        f.write(text)
+
+
+def lesen(pfad):
+    with open(pfad) as f:
+        return f.read()
+
+
+class AktualisierenTest(unittest.TestCase):
+    """branch_aktualisieren: vorspulen, nach Force-Push neu setzen, eigene Commits und Änderungen schützen."""
+    def setUp(self):
+        self.d = tempfile.mkdtemp(dir=T)
+        self.g("init", "-q", "--bare", "-b", "mr", "origin.git", ort=self.d)
+        self.g("clone", "-q", "origin.git", "oben", ort=self.d)  # der Autor, der pusht
+        self.oben = f"{self.d}/oben"
+        self.commit(self.oben, "a")
+        self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
+        self.g("clone", "-q", "-b", "mr", "origin.git", "klon", ort=self.d)
+        self.klon = f"{self.d}/klon"
+
+    def g(self, *a, ort=None):
+        return subprocess.run(["git", "-C", ort, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                              capture_output=True, text=True, check=True).stdout.strip()
+
+    def commit(self, ort, text):
+        schreiben(f"{ort}/f", text + "\n")
+        self.g("add", "f", ort=ort); self.g("commit", "-qm", text, ort=ort)
+        return self.g("rev-parse", "HEAD", ort=ort)
+
+    def test_vorspulen_ausgecheckt(self):
+        neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
+        self.assertTrue(origin_voraus(self.klon, self.g("rev-parse", "HEAD", ort=self.klon), neu))  # noch nicht geholt
+        branch_aktualisieren(self.klon, "mr")
+        self.assertEqual(self.g("rev-parse", "HEAD", ort=self.klon), neu)
+        self.assertEqual(lesen(f"{self.klon}/f"), "b\n")
+        self.assertFalse(origin_voraus(self.klon, neu, self.g("rev-parse", "HEAD~1", ort=self.klon)))
+
+    def test_nicht_ausgecheckt(self):
+        self.g("switch", "-q", "-c", "anders", ort=self.klon)
+        neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
+        branch_aktualisieren(self.klon, "mr")
+        self.assertEqual(self.g("rev-parse", "mr", ort=self.klon), neu)
+        self.assertEqual(lesen(f"{self.klon}/f"), "a\n")  # Arbeitsverzeichnis bleibt
+
+    def test_force_push(self):
+        self.g("reset", "-q", "--hard", "HEAD", ort=self.oben)
+        schreiben(f"{self.oben}/f", "a2\n")
+        self.g("commit", "-qam", "a2", "--amend", ort=self.oben)
+        self.g("push", "-qf", "origin", "HEAD:mr", ort=self.oben)
+        self.assertIn("umgeschrieben", branch_aktualisieren(self.klon, "mr"))
+        self.assertEqual(lesen(f"{self.klon}/f"), "a2\n")
+
+    def test_aktion(self):
+        neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
+        mr = Waggon("gitlab.example", "g/akt", 7)
+        with akte_bearbeiten(mr) as akte:
+            akte.update(klon=self.klon, meta={"source_branch": "mr", "target_branch": "mr"})
+        from merge_train.server import aktualisieren_aktion
+        d = aktualisieren_aktion(Anfrage("POST", "api/gitlab", "", {"mr": mr.id}, None))
+        self.assertTrue(d["ok"] and d["neu_laden"]); self.assertIn(neu[:8], d["text"])
+
+    def test_schuetzt_eigenes(self):
+        self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
+        schreiben(f"{self.klon}/f", "lokal\n")
+        with self.assertRaisesRegex(Fehler, "nicht committete"):
+            branch_aktualisieren(self.klon, "mr")
+        self.g("commit", "-qam", "eigen", ort=self.klon)
+        with self.assertRaisesRegex(Fehler, "lokale Commits"):
+            branch_aktualisieren(self.klon, "mr")
 
 
 if __name__ == "__main__":
