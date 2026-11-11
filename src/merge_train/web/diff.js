@@ -1,12 +1,12 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
-// Dateivergleich, Kommentarliste links (sortierbar).
-// Braucht von App: waggon, kann, el, melden, dateien, inlineBauen, dateiFesthalten; aus review.js (später geladen, daher
-// erst beim Aufruf): review, zeichnen, statusTexte, kommentarAktion, fadenAktion.
-// Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden,
-// kommentarListe.
+// Dateivergleich, Kommentarliste links (sortierbar). Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
+// dateiFesthalten; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, statusTexte,
+// kommentarAktion, fadenAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen, zeileFinden, popup,
+// sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
   const {el, waggon, dateien} = App;
-  // Commit-Ansicht (waggon.ansicht = 'commit:<sha>' nur lesen, 'seit:<sha>' rechts = MR-Stand): Server rechnet die Zeilen um
+  // Commit-Ansicht (waggon.ansicht = 'commit:<sha>' nur lesen, 'seit:<sha>' rechts = MR-Stand): Server rechnet die
+  // Zeilen um
   const waggonAbfrage = mrStand =>
     'mr=' +
     encodeURIComponent(waggon.id) +
@@ -87,8 +87,10 @@
           neu.push(
             trAus(
               sbs
-                ? `<tr class="kx" data-a="${na}" data-b="${nb}"><td class="n">${na}</td><td class="c">${h}</td><td class="n">${nb}</td><td class="c">${h}</td></tr>`
-                : `<tr class="kx" data-a="${na}" data-b="${nb}"><td class="n">${na}</td><td class="n">${nb}</td><td class="c">${h}</td></tr>`
+                ? `<tr class="kx" data-a="${na}" data-b="${nb}"><td class="n">${na}</td><td class="c">${h}</td>` +
+                    `<td class="n">${nb}</td><td class="c">${h}</td></tr>`
+                : `<tr class="kx" data-a="${na}" data-b="${nb}">` +
+                    `<td class="n">${na}</td><td class="n">${nb}</td><td class="c">${h}</td></tr>`
             )
           );
         });
@@ -208,7 +210,8 @@
     // links: GitLab-Kommentare (Entwürfe, Agent-Hinweise) und KI-Threads (privat) getrennt
     const nach = (p, q) => (p.x.datei ?? -1) - (q.x.datei ?? -1) || (p.x.b || p.x.a || 0) - (q.x.b || q.x.a || 0);
     const pos = {};
-    (App.review.reihenfolge || []).forEach((id, n) => (pos[id] = n)); // vom Server: Sende-Reihenfolge bei „Review abschließen“
+    // vom Server: Sende-Reihenfolge bei „Review abschließen“
+    (App.review.reihenfolge || []).forEach((id, n) => (pos[id] = n));
     kasten(
       'kliste',
       'GitLab-Kommentare',
@@ -526,7 +529,8 @@
           pb.textContent = 'Diff nicht verfügbar';
           return;
         }
-        // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie dort
+        // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie
+        // dort
         const platz = el('div', {class: 'leihplatz', style: 'height:' + d.offsetHeight + 'px'});
         d.replaceWith(platz);
         d.open = true;
@@ -599,7 +603,8 @@
           ...r.zeilen.map((h, i) => {
             const nr = r.von + i;
             return trAus(
-              `<tr${zeile && nr >= zeile && nr <= ende ? ' class="ziel"' : ''}><td class="n">${nr}</td><td class="c">${h}</td></tr>`
+              `<tr${zeile && nr >= zeile && nr <= ende ? ' class="ziel"' : ''}>` +
+                `<td class="n">${nr}</td><td class="c">${h}</td></tr>`
             );
           })
         );

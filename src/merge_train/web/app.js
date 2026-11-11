@@ -1,6 +1,6 @@
-// Gemeinsamer Rahmen der Seiten-Skripte, auf allen Seiten zuerst geladen. Jede Datei läuft in ihrer eigenen Funktion und
-// sieht die anderen nur über App: was sie bereitstellt, trägt sie hier ein (steht oben in der jeweiligen Datei).
-// MR kommt vom Server (Seite davor) und heißt hier App.waggon.
+// Gemeinsamer Rahmen der Seiten-Skripte, auf allen Seiten zuerst geladen. Jede Datei läuft in ihrer eigenen Funktion
+// und sieht die anderen nur über App: was sie bereitstellt, trägt sie hier ein (steht oben in der jeweiligen Datei). MR
+// kommt vom Server (Seite davor) und heißt hier App.waggon.
 const App = {
   waggon: MR,
   kann: MR.kann || {},

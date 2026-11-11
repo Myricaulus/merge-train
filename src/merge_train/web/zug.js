@@ -56,25 +56,31 @@
         );
       const titel = esc(
         w.titel ||
-          `${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)${todos.length ? '\ntodos: ' + todos.join(', ') : ''}`
+          `${w.p}: +${w.plus} −${w.minus}, ${w.dateien} Datei(en), ${w.commits} Commit(s)` +
+            (todos.length ? '\ntodos: ' + todos.join(', ') : '')
       );
       const zmax = Math.max(6, 24 - marke.length);
       const z2 =
         w.zeile2 != null
           ? `<tspan class="klein">${esc(w.zeile2.length > zmax ? w.zeile2.slice(0, zmax - 1) + '…' : w.zeile2)}</tspan>`
-          : `<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> <tspan class="klein">${w.dateien} Dat.</tspan>`;
+          : `<tspan class="tp">+${w.plus}</tspan> <tspan class="tm">−${w.minus}</tspan> ` +
+            `<tspan class="klein">${w.dateien} Dat.</tspan>`;
       const balken =
         w.plus + w.minus > 0
-          ? `<rect x="${x + 10}" y="${y + 43}" width="${bp}" height="4" class="tp"/><rect x="${x + 10 + bp}" y="${y + 43}" width="${W - 20 - bp}" height="4" class="tm"/>`
+          ? `<rect x="${x + 10}" y="${y + 43}" width="${bp}" height="4" class="tp"/>` +
+            `<rect x="${x + 10 + bp}" y="${y + 43}" width="${W - 20 - bp}" height="4" class="tm"/>`
           : '';
-      s += `<g class="wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${mr ? 'mr' : ''}" data-i="${i}"><title>${titel}</title>
+      const klassen = `wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${mr ? 'mr' : ''}`;
+      s += `<g class="${klassen}" data-i="${i}"><title>${titel}</title>
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
    <text x="${x + 10}" y="${y + 17}" font-weight="600">${name}</text>
    <text x="${x + 10}" y="${y + 35}">${z2}</text>
    <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f ? 'mf' : 'mo'}">${marke}</text>
    ${balken}
-   <circle cx="${x + 24}" cy="${y + H + 4}" r="6" class="rad"/><circle cx="${x + W - 24}" cy="${y + H + 4}" r="6" class="rad"/></g>
-   <line x1="${x + W}" y1="${y + H - 8}" x2="${x + W + G}" y2="${y + H - 8}" class="rad" stroke="currentColor" stroke-width="2"/>`;
+   <circle cx="${x + 24}" cy="${y + H + 4}" r="6" class="rad"/>
+   <circle cx="${x + W - 24}" cy="${y + H + 4}" r="6" class="rad"/></g>
+   <line x1="${x + W}" y1="${y + H - 8}" x2="${x + W + G}" y2="${y + H - 8}" class="rad"
+     stroke="currentColor" stroke-width="2"/>`;
     });
     s += `<g transform="translate(${4 + zugWagen.length * (W + G)},${yr - 70})">${App.lokSvg()}</g>`;
     svg.innerHTML = s;
@@ -138,7 +144,8 @@
     for (let i = 0; i < 110; i++) {
       const e = document.createElement('span');
       e.textContent = '👍';
-      e.style.cssText = `position:absolute;left:0;top:0;font-size:${16 + zf() * 30}px;line-height:1;will-change:transform`;
+      e.style.cssText =
+        `position:absolute;left:0;top:0;font-size:${16 + zf() * 30}px;line-height:1;will-change:transform`;
       o.appendChild(e);
       const seite = i % 4,
         x0 = seite === 1 ? W + 60 : seite === 3 ? -60 : zf() * W,

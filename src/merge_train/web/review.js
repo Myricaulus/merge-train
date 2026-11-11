@@ -1,9 +1,9 @@
 // Diff-Seiten: Review-Kommentare, Agent-Hinweise (drafts) und Gesprächsfäden an den Zeilen; Eingabefelder, Senden,
-// Abschließen; fragt alle 4 s den Stand ab (lädt neu bei neuen Daten oder neuem Server).
-// Braucht von App: waggon, kann, el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js
-// waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe;
-// später geladen: hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js).
-// Stellt bereit: review (Daten der Seite), zeichnen, statusTexte, kommentarAktion, fadenAktion, reviewLaden.
+// Abschließen; fragt alle 4 s den Stand ab (lädt neu bei neuen Daten oder neuem Server). Braucht von App: waggon, kann,
+// el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js waggonAbfrage, nurLesen,
+// seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
+// hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js). Stellt bereit: review (Daten der Seite),
+// zeichnen, statusTexte, kommentarAktion, fadenAktion, reviewLaden.
 (() => {
   const {
     el,
@@ -91,7 +91,8 @@
   function fadenAktion(d) {
     return kommentarAktion(Object.assign({gespraech: 1}, d));
   } // Fragen an den Agenten: Fäden, nie ins Review
-  const agenten = () => (review.agenten && review.agenten.length ? review.agenten : mitReview ? [] : ['Claude']); // wen man fragen kann (lokal mindestens Claude)
+  // wen man fragen kann (lokal mindestens Claude)
+  const agenten = () => (review.agenten && review.agenten.length ? review.agenten : mitReview ? [] : ['Claude']);
   function neuSpeichern(d) {
     // neuer Kommentar: mit Review als Review-Kommentar, sonst als Frage an den ersten Agenten
     return t =>
@@ -314,7 +315,7 @@
     box.append(v);
     const sa = sieheAuch(k.see_also);
     if (sa) box.append(sa);
-    if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten, bei langen Fäden
+    if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten (lange Fäden)
     return box;
   }
   function verlinkt(text, links) {
@@ -808,9 +809,9 @@
         App.zugHolen();
       });
     });
-  // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut oder
-  // Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist.
-  // --beobachten: veraltet = im Repo hat sich etwas geändert → neu laden (beobachten.js rahmt danach das Neue ein)
+  // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut
+  // oder Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist. --beobachten: veraltet = im Repo
+  // hat sich etwas geändert → neu laden (beobachten.js rahmt danach das Neue ein)
   function pruefen() {
     fetch('/api/stand?' + waggonAbfrage() + '&sha=' + encodeURIComponent(waggon.sha || ''))
       .then(r => r.json())

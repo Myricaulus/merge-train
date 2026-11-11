@@ -8,6 +8,8 @@ Die JS-Dateien laufen im Browser zusammengehängt in einem <script> (Reihenfolge
 Diff-Seiten, JS_START_DATEIEN für die Startseite). Jede Datei steckt in einer eigenen Funktion und sieht die anderen
 nur über das globale App (app.js). Geprüft wird deshalb je Seite das Bündel, wie sie es bekommt, mit MR als dem, was
 der Server davor setzt; Fundstellen werden auf Datei:Zeile zurückgerechnet. Ohne biome im PATH: Hinweis und Exit 0.
+
+Vorher (immer, auch ohne Biome): werkzeug/app_pruefen.py – App-Namen, Ladereihenfolge und Kopfkommentare der Dateien.
 """
 import ast, json, os, re, shutil, subprocess, sys, tempfile
 
@@ -66,9 +68,10 @@ def ausgeben(d, datei, z):
 
 
 def main():
+    app = subprocess.run([sys.executable, os.path.join(HIER, "werkzeug", "app_pruefen.py")])
     if not shutil.which("biome"):
-        print("biome nicht gefunden – Prüfung übersprungen (sudo pacman -Syu biome)")
-        return
+        print("biome nicht gefunden – Lint übersprungen (sudo pacman -Syu biome)")
+        sys.exit(app.returncode)
     gesehen, n = set(), 0
     with tempfile.TemporaryDirectory() as tmp:
         for name, dateien in buendel_aus_web_py():
@@ -90,7 +93,8 @@ def main():
         n += 1
     if n:
         sys.exit(f"\n{n} Befund(e)")
-    print("src/merge_train/web: keine Befunde")
+    print("src/merge_train/web: keine Befunde von Biome")
+    sys.exit(app.returncode)
 
 
 if __name__ == "__main__":

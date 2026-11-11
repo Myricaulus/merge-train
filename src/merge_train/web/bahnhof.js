@@ -1,6 +1,6 @@
-// Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne GitLab-Anfrage);
-// GitLab wird nur auf Knopfdruck gefragt (data-g), danach holt zugHolen den Zug neu. Lokal (data-l) lädt zug.js neu.
-// Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
+// Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne
+// GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g), danach holt zugHolen den Zug neu. Lokal (data-l)
+// lädt zug.js neu. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
 (() => {
   const {waggon} = App;
   const mitGitlab = !!document.querySelector('#bahnhof button[data-g]');
@@ -59,7 +59,8 @@
         });
     });
   });
-  // Himmel rutscht weg (#kopf klebt bei top:-96px): Kulisse um bis zu 36 px nach unten schieben, Horizont landet am Unterrand
+  // Himmel rutscht weg (#kopf klebt bei top:-96px): Kulisse um bis zu 36 px nach unten schieben, Horizont landet am
+  // Unterrand
   {
     const k = document.getElementById('kopf'),
       sz = document.querySelector('.szene');

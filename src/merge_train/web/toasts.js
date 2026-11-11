@@ -2,8 +2,8 @@
 // Braucht von App: el, uhrzeit, meldung, serverWeg. Ersetzt: melden.
 (() => {
   const {el} = App;
-  // Toasts: Meldungen des Servers (alles, was in #meldung landet, außer Fortschritt „… “ und „Server weg“) 10 s gut sichtbar,
-  // wegklickbar; die letzten 50 merkt sich der Browser für den Knopf „Nachrichten“.
+  // Toasts: Meldungen des Servers (alles, was in #meldung landet, außer Fortschritt „… “ und „Server weg“) 10 s gut
+  // sichtbar, wegklickbar; die letzten 50 merkt sich der Browser für den Knopf „Nachrichten“.
   const toastBox = el('div', {id: 'toasts'}),
     nachrichtenKnopf = el('button', {id: 'nachrichten', title: 'letzte Meldungen von merge-train'}, '🔔');
   document.body.append(toastBox, nachrichtenKnopf);

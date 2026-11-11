@@ -37,7 +37,8 @@
     }
     if (erste) setTimeout(() => erste.scrollIntoView({block: 'center', behavior: 'smooth'}), 150);
   }
-  fetch('/api/neu?' + App.waggonAbfrage() + '&alt=' + encodeURIComponent(alt) + '&sha=' + encodeURIComponent(waggon.sha))
+  const abfrage = App.waggonAbfrage() + '&alt=' + encodeURIComponent(alt) + '&sha=' + encodeURIComponent(waggon.sha);
+  fetch('/api/neu?' + abfrage)
     .then(r => r.json())
     .then(d => d.ok && einrahmen(d.zeilen || {}))
     .catch(() => {});

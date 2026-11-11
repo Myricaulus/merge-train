@@ -1,6 +1,6 @@
-// Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle zu/auf),
-// c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen.
-// Braucht von App: –. Stellt bereit: dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten.
+// Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle
+// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen. Braucht von App: –. Stellt bereit:
+// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten.
 (() => {
   const dateien = [...document.querySelectorAll('.datei')], // die Dateien des Diffs (<details class="datei">)
     dateiLinks = [...document.querySelectorAll('#liste a')], // ihre Links in der Liste links

@@ -3,7 +3,8 @@
 // Braucht von App: el, kann, review. Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
 (() => {
   const {el} = App;
-  // HUD: Stellwerk auf Stelzen rechts neben der Schurre (Zug fährt drunter durch): Server-LED, Stand, Zähler, wer zuhört.
+  // HUD: Stellwerk auf Stelzen rechts neben der Schurre (Zug fährt drunter durch): Server-LED, Stand, Zähler, wer
+  // zuhört.
   let ledZustand = 'an',
     serverStand = null; // SERVER: Stand von merge-train (Commit, Zeit, ungespeicherte Änderungen) aus /api/stand
   function serverLed(z) {
@@ -36,7 +37,8 @@
     if (W < 230) return;
     Object.assign(hudTeile.h.style, {left: x + 'px', top: y + 'px', width: W + 'px', height: h + 'px'});
     const turm = xl => {
-      let s = `<path d="M${xl},${y + h + 3} V${gl - 4} M${xl + 9},${y + h + 3} V${gl - 4}" class="hud-stelze"/>`; // schlanke Gittertürme, Zug fährt dazwischen
+      // schlanke Gittertürme, Zug fährt dazwischen
+      let s = `<path d="M${xl},${y + h + 3} V${gl - 4} M${xl + 9},${y + h + 3} V${gl - 4}" class="hud-stelze"/>`;
       for (let yy = y + h + 3; yy < gl - 12; yy += 13)
         s += `<path d="M${xl},${yy} L${xl + 9},${yy + 13} M${xl + 9},${yy} L${xl},${yy + 13}" class="hud-strebe"/>`;
       return s;
@@ -48,7 +50,8 @@
       `<rect x="${x - 4}" y="${y + h}" width="${W + 8}" height="4" class="hud-boden"/>` +
       `<rect x="${x}" y="${y}" width="${W}" height="${h}" rx="2" class="hud-kabine"/>` +
       `<rect x="${x - 6}" y="${y - 5}" width="${W + 12}" height="6" rx="1" class="hud-dach"/>` +
-      `<path d="M${x + W - 30},${y - 5} V${y - 18} M${x + W - 36},${y - 14} H${x + W - 24}" class="hud-antenne"/><circle cx="${x + W - 30}" cy="${y - 19}" r="1.8" class="hud-funk"/>`;
+      `<path d="M${x + W - 30},${y - 5} V${y - 18} M${x + W - 36},${y - 14} H${x + W - 24}" class="hud-antenne"/>` +
+      `<circle cx="${x + W - 30}" cy="${y - 19}" r="1.8" class="hud-funk"/>`;
   }
   const tokenKurz = n => (n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'M' : Math.round(n / 1e3) + 'k');
   function hudZeichnen() {
@@ -154,8 +157,8 @@
     }
     hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen), ag);
   }
-  // Balkenfarbe Kontext, Schwellen [a,b,c,d] aus kontext_schwellen: bis a grün, bis b nach orange, bis c nach rot, dann rot,
-  // ab d giftlila (Klasse gift, ohne Übergang)
+  // Balkenfarbe Kontext, Schwellen [a,b,c,d] aus kontext_schwellen: bis a grün, bis b nach orange, bis c nach rot, dann
+  // rot, ab d giftlila (Klasse gift, ohne Übergang)
   function ctxFarbe(p, [a, b, c, d]) {
     const G = [63, 185, 80],
       O = [240, 136, 62],
