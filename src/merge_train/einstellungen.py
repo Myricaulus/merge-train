@@ -113,14 +113,16 @@ def ersetzen(ziel, inhalt):
 def schluessel():
     os.makedirs(ORDNER, exist_ok=True)
     try:
-        return open(SCHLUESSEL).read().strip()
+        with open(SCHLUESSEL) as f:
+            return f.read().strip()
     except FileNotFoundError:
         import secrets
         k = secrets.token_hex(16)
         try:
             fd = os.open(SCHLUESSEL, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
-            return open(SCHLUESSEL).read().strip()
+            with open(SCHLUESSEL) as f:
+                return f.read().strip()
         os.write(fd, k.encode()); os.close(fd)
         return k
 

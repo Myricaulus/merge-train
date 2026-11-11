@@ -3,9 +3,10 @@
 
 Aufruf:  python3 tests/test_einheiten.py      (vor tests/test_gitlab.py)
 
-Für Zeilen-Arithmetik, Diff-Zerlegung und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an.
+Für Zeilen-Arithmetik, Diff-Zerlegung und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an. Akten liegen
+im Temp-Ordner (XDG_DATA_HOME), GitLab ersetzt ein Fake für review.glab.
 """
-import os, subprocess, sys, tempfile, unittest
+import contextlib, glob, io, os, subprocess, sys, tempfile, threading, unittest
 
 T = tempfile.mkdtemp(prefix="merge-train-einheiten-")
 open(f"{T}/leer.toml", "w").close()
@@ -19,6 +20,11 @@ from merge_train.zeilen import alt_zeile, im_diff, kontext_zeile, paare_und_hunk
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
 from merge_train.review import Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
+from merge_train.einstellungen import DATEN, schluessel
+from merge_train.akte import akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, faeden_von, kommentar_anhaengen
+from merge_train.gespraech import gespraech_aktion
+from merge_train.server import Anfrage, bearbeiten
+from merge_train import review
 
 
 def git(*a):
@@ -266,6 +272,220 @@ class Hinweise(unittest.TestCase):
                                                          "needle nicht gefunden", "diff: fehlt.txt nicht im MR-Stand"])
         self.assertEqual(see_also_aufloesen(REPO, B, {"path": "a.txt", "diff": True}, "")[0]["problem"],
                          "diff: Hinweis hat keine eigene Datei – Pfad angeben")
+
+
+# ---- Akte: Speichern, Ablehnen, kaputte Datei, Sperre
+
+def frische_akte(name):
+    w = Waggon(lokal=name)
+    for p in [akte_datei(w)] + glob.glob(akte_datei(w) + ".kaputt-*"):
+        os.remove(p) if os.path.exists(p) else None
+    return w
+
+
+class AkteTest(unittest.TestCase):
+    def test_speichert_nur_bei_aenderung(self):
+        w = frische_akte("speichern")
+        with akte_bearbeiten(w):
+            pass
+        self.assertFalse(os.path.exists(akte_datei(w)))  # nichts geändert: keine Datei
+        with akte_bearbeiten(w) as akte:
+            akte["x"] = 1
+        self.assertEqual(akte_lesen(w)["x"], 1)
+        with akte_bearbeiten(w, speichern=False) as akte:
+            akte["x"] = 2
+        self.assertEqual(akte_lesen(w)["x"], 1)
+        with self.assertRaises(KeyError):
+            with akte_bearbeiten(w) as akte:
+                akte["x"] = 3
+                raise KeyError
+        self.assertEqual(akte_lesen(w)["x"], 1)  # Ausnahme: nicht gespeichert
+
+    def test_abgelehnte_aktion_speichert_nichts(self):
+        w = frische_akte("ablehnen")
+        def halb(akte):
+            akte["x"] = "halb geändert"
+            return False, "abgelehnt"
+        self.assertEqual(aktion_ausfuehren(w, halb), (False, "abgelehnt"))
+        self.assertNotIn("x", akte_lesen(w))
+        def ganz(akte):
+            akte["x"] = "ganz"
+            return True, "gut"
+        self.assertEqual(aktion_ausfuehren(w, ganz), (True, "gut"))
+        self.assertEqual(akte_lesen(w)["x"], "ganz")
+
+    def test_kaputte_datei_wird_beiseitegelegt(self):
+        w = frische_akte("kaputt")
+        os.makedirs(os.path.dirname(akte_datei(w)), exist_ok=True)
+        with open(akte_datei(w), "w") as f:
+            f.write("{kaputt")
+        self.assertEqual(akte_lesen(w)["kommentare"], [])  # nur lesen: liegen lassen
+        with open(akte_datei(w)) as f:
+            self.assertEqual(f.read(), "{kaputt")
+        with contextlib.redirect_stderr(io.StringIO()) as meldung, akte_bearbeiten(w) as akte:
+            akte["x"] = 1
+        self.assertIn("ist kaputt", meldung.getvalue())
+        beiseite = glob.glob(akte_datei(w) + ".kaputt-*")
+        self.assertEqual(len(beiseite), 1)
+        with open(beiseite[0]) as f:
+            self.assertEqual(f.read(), "{kaputt")
+        self.assertEqual(akte_lesen(w)["x"], 1)
+
+    def test_sperre_gilt_auch_fuer_andere_prozesse(self):
+        w = frische_akte("sperre")
+        versuch = "import fcntl, sys; fcntl.flock(open(sys.argv[1], 'a'), fcntl.LOCK_EX | fcntl.LOCK_NB)"
+        anderer = lambda: subprocess.run([sys.executable, "-c", versuch, os.path.join(DATEN, ".sperre")],
+                                         capture_output=True).returncode
+        with akte_bearbeiten(w):
+            with akte_bearbeiten(w):  # verschachtelt im selben Thread: keine Selbstblockade
+                pass
+            self.assertNotEqual(anderer(), 0)
+        self.assertEqual(anderer(), 0)
+
+
+# ---- Server: bearbeiten() und Routen (ohne HTTP)
+
+class RoutenTest(unittest.TestCase):
+    def frage(self, methode, pfad, **daten):
+        return bearbeiten(Anfrage(methode, pfad, "", daten, None))
+
+    def test_ping_und_unbekannt(self):
+        self.assertEqual((self.frage("GET", "ping").status, self.frage("GET", "ping").inhalt), (200, "merge-train"))
+        self.assertEqual(self.frage("GET", "gibt/es/nicht").status, 404)
+        self.assertEqual(self.frage("POST", "api/gibtsnicht").status, 404)
+
+    def test_falscher_schluessel(self):
+        for methode, pfad in (("GET", "api/review"), ("POST", "api/kommentar")):
+            a = self.frage(methode, pfad, mr="projekt:x", k="falsch")
+            self.assertEqual(a.status, 403)
+            self.assertTrue(a.typ.startswith("application/json"), pfad)
+
+    def test_fehler_nach_art(self):
+        a = self.frage("POST", "api/kommentar", k=schluessel(), mr="kaputt")  # ungültige Kennung
+        self.assertEqual((a.status, a.typ.split(";")[0]), (400, "application/json"))
+        a = self.frage("POST", "api/gespraech", k=schluessel(), mr="projekt:x", aktion="gibtsnicht")
+        self.assertEqual(a.status, 400)
+        self.assertIn("unbekannte Aktion", a.inhalt)
+
+    def test_dict_wird_json(self):
+        a = self.frage("POST", "tschuess", k=schluessel())
+        self.assertEqual((a.status, a.inhalt), (200, '{"ok": true}'))
+
+
+# ---- Gesprächsfäden: Aktionen von der Seite
+
+class FadenAktionenTest(unittest.TestCase):
+    def test_ablauf(self):
+        w = frische_akte("faeden")
+        aktion = lambda **e: gespraech_aktion(w, e)
+        self.assertEqual(aktion(aktion="neu", text="Warum?"), (True, ""))
+        faden = lambda: faeden_von(akte_lesen(w))[0] if faeden_von(akte_lesen(w)) else None
+        fid, nid = faden()["id"], faden()["nachrichten"][0]["id"]
+        self.assertEqual(aktion(aktion="erledigt", id=fid)[0], True)
+        self.assertEqual(faden()["erledigt"]["von"], "ich")
+        self.assertTrue(aktion(aktion="antworten", id=fid, text="Doch noch was")[0])
+        self.assertIsNone(faden()["erledigt"])  # Antwort öffnet wieder
+        self.assertEqual(aktion(aktion="aendern", id=fid, nid=nid, text=""), (False, "leere Nachricht"))
+        self.assertEqual(faden()["nachrichten"][0]["text"], "Warum?")
+        with akte_bearbeiten(w) as akte:  # Antwort des Agenten: gesendet, nicht vom Nutzer
+            faeden_von(akte)[0]["nachrichten"].append({"id": "c1", "von": "claude", "text": "Darum", "gesendet": "x"})
+        self.assertFalse(aktion(aktion="aendern", id=fid, nid="c1", text="anders")[0])
+        self.assertFalse(aktion(aktion="gibtsnicht", id=fid)[0])
+        aktion(aktion="loeschen", id=fid)  # ohne Nachricht: ganzer Faden
+        self.assertIsNone(faden())
+
+
+# ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
+
+class GitLabFake:
+    """Ersatz für review.glab: zählt Aufrufe, vergibt ids, „kaputt“ im Text → Fehler; bremse hält POSTs an."""
+    def __init__(self):
+        self.aufrufe, self.naechste, self.bremse, self.beim_anlegen, self.entwuerfe = [], 100, None, None, {}
+
+    def __call__(self, host, pfad, methode="GET", daten=None, roh=False):
+        self.aufrufe.append((methode, pfad, (daten or {}).get("note")))
+        if self.bremse:
+            self.bremse.wait(5)
+        if "kaputt" in ((daten or {}).get("note") or ""):
+            raise Fehler("glab api POST draft_notes: 500 kaputt")
+        if methode == "POST":
+            if self.beim_anlegen:
+                self.beim_anlegen(daten)
+            self.naechste += 1
+            self.entwuerfe[self.naechste] = {"id": self.naechste, "note": daten["note"]}
+            return {"id": self.naechste}
+        if methode == "DELETE":
+            self.entwuerfe.pop(int(pfad.rsplit("/", 1)[1]), None)
+        return {}
+
+
+class AbschlussLaufTest(unittest.TestCase):
+    def setUp(self):
+        self.vorher = review.glab, review.meta_und_entwuerfe
+        self.fake = review.glab = GitLabFake()
+        review.meta_und_entwuerfe = lambda mr: ({}, dict(self.fake.entwuerfe))
+        self.mr = Waggon(host="gitlab.example", projekt="g/" + self._testMethodName.replace("_", "-"), iid=1)
+        if os.path.exists(akte_datei(self.mr)):
+            os.remove(akte_datei(self.mr))
+
+    def tearDown(self):
+        review.glab, review.meta_und_entwuerfe = self.vorher
+
+    def kommentare(self, *texte):
+        with akte_bearbeiten(self.mr) as akte:
+            for t in texte:
+                kommentar_anhaengen(akte, {"id": t, "text": t, "path": None, "a": None, "b": None})
+
+    def test_fehler_mitten_drin(self):
+        self.kommentare("erster", "kaputt", "dritter")
+        ok, text, _ = review.abschliessen(self.mr)
+        self.assertFalse(ok)
+        self.assertTrue(text.startswith("Fehler: allgemein: glab api POST draft_notes: 500 kaputt – Rest: Entwürfe in GitLab: 2 neu"), text)
+        status = {k["id"]: kommentar_status(k) for k in akte_lesen(self.mr)["kommentare"]}
+        self.assertEqual(status, {"erster": "uebertragen", "kaputt": "neu", "dritter": "uebertragen"})
+        self.assertNotIn("abgeschlossen", akte_lesen(self.mr))
+
+    def test_waehrenddessen_geloescht_wird_in_gitlab_wieder_entfernt(self):
+        self.kommentare("bleibt", "geht")
+        def nutzer_loescht(daten):
+            if daten["note"] == "geht":
+                with akte_bearbeiten(self.mr) as akte:
+                    akte["kommentare"] = [k for k in akte["kommentare"] if k["id"] != "geht"]
+        self.fake.beim_anlegen = nutzer_loescht
+        ok, text, _ = review.abschliessen(self.mr)
+        self.assertTrue(ok)
+        self.assertIn(("DELETE", "projects/g%2Ftest-waehrenddessen-geloescht-wird-in-gitlab-wieder-entfernt/merge_requests/1/draft_notes/102", None),
+                      self.fake.aufrufe)
+        self.assertIn("1 neu", text)
+
+    def test_nur_ein_lauf_je_mr(self):
+        self.kommentare("langsam")
+        self.fake.bremse = threading.Event()
+        erster = threading.Thread(target=review.abschliessen, args=(self.mr,))
+        erster.start()
+        while not self.fake.aufrufe:
+            erster.join(0.01)
+        self.assertEqual(review.abschliessen(self.mr)[:2], (False, review.LAEUFT_SCHON))
+        self.fake.bremse.set()
+        erster.join()
+        self.assertEqual(len([a for a in self.fake.aufrufe if a[0] == "POST"]), 1)
+        self.assertEqual(review.abschliessen(self.mr)[0], True)  # danach wieder frei
+
+    def test_entwurf_rueckfall_auf_allgemein(self):
+        k = {"text": "Hier", "path": "a.txt", "old_path": "a.txt", "a": None, "b": 5, "refs": {"head_sha": "abc"}}
+        def position_abgelehnt(host, pfad, methode="GET", daten=None, roh=False):
+            if "position" in daten:
+                raise Fehler("glab api POST draft_notes: 400 line_code ungültig")
+            return {"id": 1, "note": daten["note"]}
+        review.glab = position_abgelehnt
+        antwort, art = review.entwurf_anlegen(self.mr, k, "abc", "https://gitlab.example/g/p")
+        self.assertEqual(art, "allgemein")
+        self.assertEqual(antwort["note"], "**[`a.txt:5`](https://gitlab.example/g/p/-/blob/abc/a.txt#L5)**\n\nHier")
+        def verboten(host, pfad, methode="GET", daten=None, roh=False):
+            raise Fehler("glab api POST draft_notes: 403 Forbidden")
+        review.glab = verboten
+        with self.assertRaises(Fehler):  # Rechte fehlen: nicht still als allgemeinen Kommentar senden
+            review.entwurf_anlegen(self.mr, k, "abc", "https://gitlab.example/g/p")
 
 
 if __name__ == "__main__":

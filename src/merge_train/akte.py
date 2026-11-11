@@ -38,7 +38,8 @@ def akte_laden(waggon, kaputte_beiseite=False):
     vorher nach <datei>.kaputt-<zeit> verschieben, damit das nächste Speichern sie nicht überschreibt."""
     pfad = akte_datei(waggon)
     try:
-        akte = json.load(open(pfad, encoding="utf-8"))
+        with open(pfad, encoding="utf-8") as f:
+            akte = json.load(f)
     except FileNotFoundError:
         akte = {}
     except ValueError as e:
