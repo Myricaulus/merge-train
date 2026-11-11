@@ -56,16 +56,16 @@ def zeit_kurz(iso):
         return "?"
 
 
-def faden_nachbarn(k, rv):
+def faden_nachbarn(k, review):
     """GitLab-Kommentare und Agent-Hinweise an der Zeile des Fadens (damit der Agent weiß, welchen er ändern soll)."""
-    if not rv or not k.get("path"):
+    if not review or not k.get("path"):
         return []
     da = lambda x: x.get("path") == k["path"] and ((k.get("b") and x.get("b") == k["b"]) or (not k.get("b") and k.get("a") and x.get("a") == k["a"]))
     out = []
-    for x in rv["kommentare"]:
+    for x in review["kommentare"]:
         if da(x) and x["status"] != "loeschen":
             out.append((f'GitLab-Kommentar {x["id"]}', K_STATUS.get(x["status"], x["status"]), x["text"]))
-    for h in rv["hinweise"]:
+    for h in review["hinweise"]:
         if da(h) and h["status"] == "offen":
             out.append((f'Agent-Hinweis h:{h["key"]}', f'draft, {h["quelle"]} {h["finding"]}'.strip(), h["text"]))
     return out
@@ -75,7 +75,7 @@ K_STATUS = {"neu": "staged", "geaendert": "staged, Änderung an einem gesendeten
             "weg": "sent, in GitLab veröffentlicht"}  # Stufen siehe AGENTS.md
 
 
-def faden_ausgeben(k, wurzel, head, kontext=3, rv=None):
+def faden_ausgeben(k, wurzel, head, kontext=3, review=None):
     """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""
     von = (k.get("refs") or {}).get("head_sha") or head
     b = zeile_vorwaerts(wurzel, von, head, k["path"], k["b"]) if k.get("path") and k.get("b") else None
@@ -91,7 +91,7 @@ def faden_ausgeben(k, wurzel, head, kontext=3, rv=None):
             out.append(f'  {"→" if i == b else " "} {i:5} │ {zeilen[i - 1]}')
     elif k.get("zeile_text"):
         out.append(f'      damals │ {k["zeile_text"]}')
-    for name, status, text in faden_nachbarn(k, rv):
+    for name, status, text in faden_nachbarn(k, review):
         out.append(f'    an dieser Zeile: {name} ({status}):')
         out.append("      " + text.replace("\n", "\n      "))
     for m in k["nachrichten"]:
@@ -123,13 +123,13 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                 teile.append(kopf + "\n(nichts offen)")
             continue
         gesamt += len(zeigen)
-        rv = None
+        review = None
         if waggon.kann["review"]:
             try:
-                rv = review_daten(waggon)
+                review = review_daten(waggon)
             except Fehler:
                 pass
-        teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, rv=rv) + "\n" for k in zeigen]
+        teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review) + "\n" for k in zeigen]
         teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
                      "nicht committen." if BIS == ARBEITSSTAND else f"den aktuellen Stand von {BIS}.") if waggon.kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
@@ -152,10 +152,10 @@ def umformulieren_ziel_finden(ziel, ziele=None):
             continue
         if hkey:
             try:
-                rv = review_daten(waggon)
+                review = review_daten(waggon)
             except Fehler:
                 continue
-            treffer += [(waggon, "h", h) for h in rv["hinweise"] if passt(h["key"], hkey)]
+            treffer += [(waggon, "h", h) for h in review["hinweise"] if passt(h["key"], hkey)]
         else:
             akte = akte_lesen(waggon)
             treffer += [(waggon, "k", k) for k in review_kommentare(akte) if passt(k["id"], ziel)]
@@ -394,7 +394,7 @@ def mr_fuer_hinweise(pfad, daten, ref=None):
     return mr, ordner
 
 
-def agent_main(argv):
+def agent_parser():
     ap = argparse.ArgumentParser(prog="merge-train agent",
                                  description="Agent-Hinweise (tasks/<KEY>-review-markers.json) einem GitLab-MR zuordnen und anzeigen; "
                                              "Gespräch mit dem Nutzer (feedback, antworten, horchen) – lokal und zu MRs")
@@ -403,24 +403,27 @@ def agent_main(argv):
                         ("pruefen", "nur prüfen: auf welche Zeilen des MR-Stands die Hinweise fallen (Exit 1 bei Problemen)")):
         p = sub.add_parser(name, help=hilfe, description=hilfe)
         p.add_argument("datei", help="Hinweis-Datei (JSON)")
+        p.set_defaults(aufruf=befehl_hinweise)
         p.add_argument("--mr", help="MR-URL, '!42' oder gruppe/projekt!42 (sonst Feld „mr“ oder der offene MR zu „branch“)")
         p.add_argument("--seit", nargs="?", const="", metavar="COMMIT",
                        help="Review-Update: Stand der Einträge seit COMMIT (ohne Wert: reviewed_commit der JSON)")
         if name == "zeigen":
             p.add_argument("--nicht-oeffnen", action="store_true", help="Browser nicht öffnen, nur URL ausgeben")
-    gs = "Gespräch (Fragen/Feedback des Nutzers aus merge-train, lokal oder zu einem MR): "
+    gespraech = "Gespräch (Fragen/Feedback des Nutzers aus merge-train, lokal oder zu einem MR): "
     p = sub.add_parser("feedback", help="Gespräch: Fragen/Feedback des Nutzers abholen",
-                       description=gs + "Fäden ausgeben, die auf eine Antwort warten (markiert sie als abgeholt)")
+                       description=gespraech + "Fäden ausgeben, die auf eine Antwort warten (markiert sie als abgeholt)")
     p.add_argument("projekt", nargs="?", help="Projektordner, Name unter ~/Projects oder MR (Kennung/URL/gruppe/projekt!42); "
                                               "Standard: aktuelles Repo samt seinen MRs")
     p.add_argument("--alle", action="store_true", help="auch beantwortete Fäden zeigen")
+    p.set_defaults(aufruf=befehl_feedback)
     p = sub.add_parser("antworten", help="Gespräch: auf einen Faden antworten",
-                       description=gs + "auf einen Faden antworten; der Nutzer sieht die Antwort sofort in merge-train")
+                       description=gespraech + "auf einen Faden antworten; der Nutzer sieht die Antwort sofort in merge-train")
     p.add_argument("id", help="id des Fadens (aus „agent feedback“, Anfang genügt)")
     p.add_argument("text", nargs="?", default="", help="Antwort (Markdown-artig, mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: der gefragte Agent)")
+    p.set_defaults(aufruf=befehl_antworten)
     p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (draft ändern, sonst neuer draft)",
                        description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines drafts (noch nicht übernommener "
                                    "Agent-Hinweis) ändert dessen text in der JSON; eine Kommentar-id (staged/sent) oder Faden-id legt "
@@ -430,8 +433,9 @@ def agent_main(argv):
     p.add_argument("ziel", help="h:<key> (draft), Kommentar-id oder Faden-id (Anfang genügt)")
     p.add_argument("text", help="neuer Kommentartext; - = von stdin")
     p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
+    p.set_defaults(aufruf=befehl_kommentar)
     p = sub.add_parser("thread", help="Gespräch: neuen Thread anlegen (Hinweis, offene Frage, Zusammenfassung)",
-                       description=gs + "Neuer Thread vom Agenten, an einer Code-Zeile oder allgemein (ohne --ort, z. B. die "
+                       description=gespraech + "Neuer Thread vom Agenten, an einer Code-Zeile oder allgemein (ohne --ort, z. B. die "
                                    "Zusammenfassung am Ende). Datei- und pfad:zeile-Angaben im Text werden auf der Seite zu "
                                    "Links. Antworten des Nutzers kommen wie sonst über feedback/horchen.")
     p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")
@@ -442,50 +446,94 @@ def agent_main(argv):
                    help="zwei Dateien nebeneinander vergleichen (Popup); mehrfach möglich")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: Claude)")
+    p.set_defaults(aufruf=befehl_thread)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
-                       description=gs + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
+                       description=gespraech + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")
     p.add_argument("projekt", nargs="?", help="Projektordner, Name oder MR (Standard: aktuelles Repo samt seinen MRs)")
     p.add_argument("--als", default="Claude", help="Name, der auf der Seite als Zuhörer erscheint (z. B. Copilot)")
     p.add_argument("--timeout", type=int, default=0, metavar="S", help="nach S Sekunden aufgeben (Exit 1)")
-    o = ap.parse_args(argv)
-    if not o.befehl:
-        ap.print_help(); return 2
-    if o.befehl in ("feedback", "antworten", "horchen", "kommentar", "thread"):
-        try:
-            if o.befehl == "feedback":
-                text, _ = faeden_abholen(gespraech_ziele(o.projekt), alle=o.alle)
-                print(text); return 0
-            if o.befehl == "horchen":
-                text, n = faeden_horchen(gespraech_ziele(o.projekt), o.timeout, o.als)
-                print(text); return 0 if n else 1
-            text = sys.stdin.read().strip() if o.text == "-" else o.text.strip()
-            if o.befehl == "thread":
-                def eintrag(x, diff=None):
-                    x, _, label = x.partition("|")
-                    m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", x.strip())
-                    e = {"path": m.group(1)}
-                    if m.group(2):
-                        e["line"] = int(m.group(2))
-                    if m.group(3):
-                        e["end"] = int(m.group(3))
-                    if label.strip():
-                        e["label"] = label.strip()
-                    if diff:
-                        e["diff"] = diff.strip()
-                    return e
-                siehe = [eintrag(x) for x in o.siehe] + [eintrag(b, a) for a, b in o.vergleich]
-                print(faden_anlegen(gespraech_ziele(o.projekt), text, o.ort, siehe, o.als)[1]); return 0
-            if o.befehl == "kommentar":
-                print(kommentar_umformulieren(o.ziel, text, gespraech_ziele(o.projekt) if o.projekt else None)); return 0
-            if not text and not o.erledigt:
-                print("merge-train: Antworttext fehlt", file=sys.stderr); return 2
-            fid, rest = faden_antworten(o.id, text, o.erledigt, o.als, gespraech_ziele(o.projekt) if o.projekt else None)
-            print(f"[{fid}] beantwortet" + (" und erledigt" if o.erledigt else "")
-                  + (f" · {rest} weitere(r) wartet/warten noch" if rest else " · nichts mehr offen"))
-            return 0
-        except Fehler as e:
-            print(f"merge-train: {e}", file=sys.stderr); return 2
+    p.set_defaults(aufruf=befehl_horchen)
+    return ap
+
+
+def befehl_feedback(o):
+    print(faeden_abholen(gespraech_ziele(o.projekt), alle=o.alle)[0]); return 0
+
+
+def befehl_horchen(o):
+    text, n = faeden_horchen(gespraech_ziele(o.projekt), o.timeout, o.als)
+    print(text); return 0 if n else 1
+
+
+def text_von(o):
+    """Text aus dem Argument, „-“ = von stdin."""
+    return sys.stdin.read().strip() if o.text == "-" else o.text.strip()
+
+
+def siehe_eintrag(angabe, diff=None):
+    """--siehe/--vergleich „pfad[:zeile[-bis]][|label]“ → see_also-Eintrag wie in den Hinweis-Dateien."""
+    angabe, _, label = angabe.partition("|")
+    m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", angabe.strip())
+    eintrag = {"path": m.group(1)}
+    if m.group(2):
+        eintrag["line"] = int(m.group(2))
+    if m.group(3):
+        eintrag["end"] = int(m.group(3))
+    if label.strip():
+        eintrag["label"] = label.strip()
+    if diff:
+        eintrag["diff"] = diff.strip()
+    return eintrag
+
+
+def befehl_thread(o):
+    siehe = [siehe_eintrag(x) for x in o.siehe] + [siehe_eintrag(b, a) for a, b in o.vergleich]
+    print(faden_anlegen(gespraech_ziele(o.projekt), text_von(o), o.ort, siehe, o.als)[1]); return 0
+
+
+def befehl_kommentar(o):
+    print(kommentar_umformulieren(o.ziel, text_von(o), gespraech_ziele(o.projekt) if o.projekt else None)); return 0
+
+
+def befehl_antworten(o):
+    text = text_von(o)
+    if not text and not o.erledigt:
+        print("merge-train: Antworttext fehlt", file=sys.stderr); return 2
+    fid, rest = faden_antworten(o.id, text, o.erledigt, o.als, gespraech_ziele(o.projekt) if o.projekt else None)
+    print(f"[{fid}] beantwortet" + (" und erledigt" if o.erledigt else "")
+          + (f" · {rest} weitere(r) wartet/warten noch" if rest else " · nichts mehr offen"))
+    return 0
+
+
+def hinweis_befund(h, geaendert):
+    """Zeile der Ausgabe von „agent zeigen/pruefen“ für einen Hinweis → (befund, fehlt: zählt als Problem)."""
+    fehlt = bool(not h["zeile"] and h["path"])
+    if geaendert is not None and h["path"]:  # --seit
+        if h["problem"] == "Datei nicht im MR-Stand":
+            befund = "WEG: Datei gibt es nicht mehr → Diff gegen resolved_when prüfen"
+        elif fehlt:
+            befund = f'GEÄNDERT: {h["problem"]} → Diff gegen resolved_when prüfen'
+        else:
+            befund = "offen* (Datei geändert)" if h["path"] in geaendert else "offen (Datei unverändert)"
+        fehlt = False
+    elif not h["path"]:
+        befund = "allgemeiner MR-Kommentar"
+    elif h["im_diff"]:
+        befund = "im Diff"
+    elif h["zeile"]:
+        befund = f'{h["problem"]} → wird allgemeiner Kommentar mit Link'
+    else:
+        befund = f'FEHLT: {h["problem"]}'
+    if h["mehrfach"]:
+        befund += f' (needle passt {h["mehrfach"]}×)'
+    if h["status"] != "offen":
+        befund += f' [{h["status"]}]'
+    return befund, fehlt
+
+
+def befehl_hinweise(o):
+    """agent zeigen / agent pruefen: Hinweis-Datei einem MR zuordnen und die Zuordnung ausgeben."""
     pfad = os.path.abspath(o.datei)
     try:
         daten = hinweise_lesen(pfad)
@@ -532,28 +580,8 @@ def agent_main(argv):
     schlecht = 0
     for h in hinweise:
         ort = f'{h["path"]}:{h["zeile"]}' if h["zeile"] else (h["path"] or "-")
-        fehlt = not h["zeile"] and h["path"]
-        if geaendert is not None and h["path"]:
-            if h["problem"] == "Datei nicht im MR-Stand":
-                befund = "WEG: Datei gibt es nicht mehr → Diff gegen resolved_when prüfen"
-            elif fehlt:
-                befund = f'GEÄNDERT: {h["problem"]} → Diff gegen resolved_when prüfen'
-            else:
-                befund = "offen* (Datei geändert)" if h["path"] in geaendert else "offen (Datei unverändert)"
-            fehlt = False
-        elif not h["path"]:
-            befund = "allgemeiner MR-Kommentar"
-        elif h["im_diff"]:
-            befund = "im Diff"
-        elif h["zeile"]:
-            befund = f'{h["problem"]} → wird allgemeiner Kommentar mit Link'
-        else:
-            befund = f'FEHLT: {h["problem"]}'
-        schlecht += bool(fehlt)
-        if h["mehrfach"]:
-            befund += f' (needle passt {h["mehrfach"]}×)'
-        if h["status"] != "offen":
-            befund += f' [{h["status"]}]'
+        befund, fehlt = hinweis_befund(h, geaendert)
+        schlecht += fehlt
         print(f'{h["finding"]:<5} {ort:<60} {befund}')
         for s in h["see_also"]:
             if s["problem"]:
@@ -563,3 +591,16 @@ def agent_main(argv):
     if schlecht:
         return 1
     return 3 if abweichend else 0
+
+
+def agent_main(argv):
+    ap = agent_parser()
+    o = ap.parse_args(argv)
+    if not o.befehl:
+        ap.print_help(); return 2
+    if o.aufruf is befehl_hinweise:  # meldet seine Fehler selbst (Exit 2 bzw. 3)
+        return befehl_hinweise(o)
+    try:
+        return o.aufruf(o)
+    except Fehler as e:
+        print(f"merge-train: {e}", file=sys.stderr); return 2

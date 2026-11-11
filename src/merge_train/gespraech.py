@@ -23,14 +23,14 @@ from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_
 
 def wagen_daten(waggon, ansicht=None):
     """Alles, was die Seite über ihren Waggon braucht: Gespräch immer, Review (Kommentare, Hinweise) je nach Quelle."""
-    gs = gespraech_daten(waggon, ansicht)
-    if not gs.get("ok"):
-        return gs
-    rv = review_daten(waggon, ansicht) if waggon.kann["review"] else \
+    gespraech = gespraech_daten(waggon, ansicht)
+    if not gespraech.get("ok"):
+        return gespraech
+    review = review_daten(waggon, ansicht) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     akte = akte_lesen(waggon)
-    return dict(rv, faeden=gs["kommentare"], g_ausstehend=gs["ausstehend"], horcht=gs["horcht"], kontext=gs["kontext"], todo=gs["todo"],
-                agenten=gs["agenten"], kann=waggon.kann, stand=stand(waggon, akte), ausserhalb=rv["ausserhalb"] + gs["ausserhalb"])
+    return dict(review, faeden=gespraech["kommentare"], g_ausstehend=gespraech["ausstehend"], horcht=gespraech["horcht"], kontext=gespraech["kontext"], todo=gespraech["todo"],
+                agenten=gespraech["agenten"], kann=waggon.kann, stand=stand(waggon, akte), ausserhalb=review["ausserhalb"] + gespraech["ausserhalb"])
 
 
 def gespraech_agenten(waggon):
@@ -52,7 +52,7 @@ def gespraech_daten(mr, ansicht=None):
         except Fehler as e:
             return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
-    kom = []
+    kommentare = []
     for k in faeden_von(akte):
         von = (k.get("refs") or {}).get("head_sha") or head
         b, unter = k.get("b"), None
@@ -63,11 +63,11 @@ def gespraech_daten(mr, ansicht=None):
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         a = alt_zeile(f, b) if f and b else (k.get("a") if not k.get("b") else None)
-        imd = bool(f and (a or b) and im_diff(f, a, b))  # Kontextzeilen: unter dem Dateinamen, „aufklappen“
-        if f and b and not imd and not unter:
+        zeile_im_diff = bool(f and (a or b) and im_diff(f, a, b))  # Kontextzeilen: unter dem Dateinamen, „aufklappen“
+        if f and b and not zeile_im_diff and not unter:
             unter = f"Zeile {b} liegt außerhalb der Änderungen"
-        kom.append({"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
-                    "a": a, "b": b, "datei": i, "im_diff": imd, "unter": unter if i is not None else None,
+        kommentare.append({"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
+                    "a": a, "b": b, "datei": i, "im_diff": zeile_im_diff, "unter": unter if i is not None else None,
                     "problem": unter, "zeile_text": k.get("zeile_text"), "status": faden_status(k),
                     "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
                     "vom_agenten": bool(k.get("vom_agenten")),
@@ -77,12 +77,12 @@ def gespraech_daten(mr, ansicht=None):
                                         [d["neu"] for d in struktur["dateien"]])})
     ausserhalb = 0
     if ansicht:
-        ans_st = ansicht_struktur(struktur, ansicht)
-        vorher = len(kom)
-        kom = ansicht_zuordnen(struktur, ans_st, kom)
-        ausserhalb = vorher - len(kom)
+        ansicht_seite = ansicht_struktur(struktur, ansicht)
+        vorher = len(kommentare)
+        kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
+        ausserhalb = vorher - len(kommentare)
     entwuerfe = sum(1 for k in faeden_von(akte) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
-    return {"ok": True, "kommentare": kom, "stand": stand(mr, akte),
+    return {"ok": True, "kommentare": kommentare, "stand": stand(mr, akte),
             "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "kontext": kontext(mr),
             "agenten": gespraech_agenten(mr),
             "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
@@ -240,6 +240,6 @@ def code_links(ordner, sha, texte, bevorzugt=()):
                 if len(kand) != 1:
                     continue
                 p = kand[0]
-            z = int(m.group(2)) if m.group(2) else None
-            out[t] = {"t": t, "path": p, "zeile": z, "bis": int(m.group(3)) if m.group(3) and z and int(m.group(3)) > z else None}
+            zeile = int(m.group(2)) if m.group(2) else None
+            out[t] = {"t": t, "path": p, "zeile": zeile, "bis": int(m.group(3)) if m.group(3) and zeile and int(m.group(3)) > zeile else None}
     return list(out.values())

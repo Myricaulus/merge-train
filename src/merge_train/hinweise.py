@@ -108,10 +108,10 @@ def hinweis_dateien(mr, akte):
 def needle_zeilen(text, needle, tag):
     rx = re.compile(r"\s*(//|<!--) " + re.escape(tag) + r"(?![0-9A-Za-z]).*$") if tag else None
     out = []
-    for nr, z in enumerate(text.split("\n"), 1):
+    for nr, text_zeile in enumerate(text.split("\n"), 1):
         if rx:
-            z = rx.sub("", z)
-        if (z.strip() == needle[1:].strip()) if needle.startswith("=") else (needle in z):
+            text_zeile = rx.sub("", text_zeile)
+        if (text_zeile.strip() == needle[1:].strip()) if needle.startswith("=") else (needle in text_zeile):
             out.append(nr)
     return out
 
@@ -161,12 +161,12 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
                         problem = "needle nicht gefunden"
             i = datei_index(struktur, path)
             f = struktur["dateien"][i] if i is not None else None
-            for j, z in enumerate(zeilen or [None]):
+            for j, zeile in enumerate(zeilen or [None]):
                 key = hashlib.sha1(f"{name}|{fid}|{path}|{needle}|{text}|{j}".encode()).hexdigest()[:12]
-                a = alt_zeile(f, z) if f and z else None
-                imd = bool(f and z and im_diff(f, a, z))
-                pr = problem or (None if imd else ("Zeile außerhalb des Diffs" if f else "Datei nicht im Diff") if z else None)
-                hinweise.append(dict(basis, key=key, zeile=z, datei=i, a=a, b=z, im_diff=imd, problem=pr,
+                a = alt_zeile(f, zeile) if f and zeile else None
+                zeile_im_diff = bool(f and zeile and im_diff(f, a, zeile))
+                zeilen_problem = problem or (None if zeile_im_diff else ("Zeile außerhalb des Diffs" if f else "Datei nicht im Diff") if zeile else None)
+                hinweise.append(dict(basis, key=key, zeile=zeile, datei=i, a=a, b=zeile, im_diff=zeile_im_diff, problem=zeilen_problem,
                                      mehrfach=len(zeilen) if len(zeilen) > 1 else None,
                                      status=akte["hinweise"].get(key, "offen")))
     return hinweise, quellen

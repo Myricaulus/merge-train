@@ -29,11 +29,11 @@ def stand(mr, akte):
     return hashlib.sha1("|".join(teile).encode()).hexdigest()[:16]
 
 
-def gitlab_reihenfolge(akte, kom, hinweise):
+def gitlab_reihenfolge(akte, kommentare, hinweise):
     """Reihenfolge der Box „GitLab-Kommentare“ = Sende-Reihenfolge bei „Review abschließen“: ids der Kommentare und keys
     der offenen Hinweise. Vom Nutzer sortiert (st["reihenfolge"]), Neues an seiner Stelle nach Datei und Zeile."""
     nat = lambda x: (x["datei"] if x.get("datei") is not None else -1, x.get("b") or x.get("a") or 0)
-    eintraege = sorted([(x["id"], x) for x in kom if x["status"] != "loeschen"] +
+    eintraege = sorted([(x["id"], x) for x in kommentare if x["status"] != "loeschen"] +
                        [(h["key"], h) for h in hinweise if h["status"] == "offen"], key=lambda e: nat(e[1]))
     da = dict(eintraege)
     out = [i for i in akte.get("reihenfolge") or [] if i in da]
@@ -72,16 +72,16 @@ def review_daten(mr, ansicht=None):
         _, struktur, mr = mr_seite(mr)
         akte = akte_lesen(mr)
     hinweise, quellen = hinweise_aufloesen(mr, akte, struktur)
-    kom = kommentare_fuer_seite(akte, struktur)
-    reihenfolge = gitlab_reihenfolge(akte, kom, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
+    kommentare = kommentare_fuer_seite(akte, struktur)
+    reihenfolge = gitlab_reihenfolge(akte, kommentare, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
-        ans_st = ansicht_struktur(struktur, ansicht)
-        vorher = len(kom) + sum(1 for h in hinweise if h["status"] == "offen")
-        kom = ansicht_zuordnen(struktur, ans_st, kom)
-        hinweise = ansicht_zuordnen(struktur, ans_st, hinweise)
-        ausserhalb = vorher - len(kom) - sum(1 for h in hinweise if h["status"] == "offen")
-    return {"ok": True, "kommentare": kom, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, akte),
+        ansicht_seite = ansicht_struktur(struktur, ansicht)
+        vorher = len(kommentare) + sum(1 for h in hinweise if h["status"] == "offen")
+        kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
+        hinweise = ansicht_zuordnen(struktur, ansicht_seite, hinweise)
+        ausserhalb = vorher - len(kommentare) - sum(1 for h in hinweise if h["status"] == "offen")
+    return {"ok": True, "kommentare": kommentare, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, akte),
             "web_url": akte["mr"].get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
             "reihenfolge": reihenfolge}
 
@@ -304,7 +304,7 @@ def hinweis_aktion(mr, eingabe):
 
 def entwurf_anlegen(mr, k, head, proj_url):
     """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
-    host, P = mr.host, mr_pfad(mr)
+    host, mr_api = mr.host, mr_pfad(mr)
     refs = k.get("refs") or {}
     if k.get("path") and (k.get("a") or k.get("b")) and refs.get("head_sha"):
         pos = {"position_type": "text", "base_sha": refs.get("base_sha"), "start_sha": refs.get("start_sha"),
@@ -312,19 +312,19 @@ def entwurf_anlegen(mr, k, head, proj_url):
         if k.get("a"): pos["old_line"] = k["a"]
         if k.get("b"): pos["new_line"] = k["b"]
         try:
-            return glab(host, f"{P}/draft_notes", "POST", {"note": k["text"], "position": pos}), "position"
+            return glab(host, f"{mr_api}/draft_notes", "POST", {"note": k["text"], "position": pos}), "position"
         except Fehler as e:
             fehler = str(e)
             if re.search(r"\b(401|403|404)\b", fehler):
                 raise
     text = k["text"]
     if k.get("path"):
-        z = k.get("b") or k.get("a")
+        zeile = k.get("b") or k.get("a")
         ref = refs.get("head_sha") or head
-        ort = f'{k["path"]}:{z}' if z else k["path"]
-        link = f'{proj_url}/-/blob/{ref}/{k["path"]}' + (f"#L{z}" if z else "")
+        ort = f'{k["path"]}:{zeile}' if zeile else k["path"]
+        link = f'{proj_url}/-/blob/{ref}/{k["path"]}' + (f"#L{zeile}" if zeile else "")
         text = f"**[`{ort}`]({link})**\n\n{text}"
-    return glab(host, f"{P}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
+    return glab(host, f"{mr_api}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
 
 
 _ICH = {}  # GitLab-Benutzer-id je Host
@@ -338,10 +338,10 @@ def fehlende_entwuerfe(akte, vorhanden):
 
 def eigene_kommentartexte(mr):
     """Texte meiner (nicht System-)Kommentare im MR – um veröffentlichte Entwürfe zu erkennen. GitLab-Anfragen."""
-    host, P = mr.host, mr_pfad(mr)
+    host, mr_api = mr.host, mr_pfad(mr)
     if host not in _ICH:  # ändert sich nicht, kostet aber eine eigene Anfrage
         _ICH[host] = (glab(host, "user") or {}).get("id")
-    return [n.get("body") or "" for n in alle(host, f"{P}/notes") if (n.get("author") or {}).get("id") == _ICH[host] and not n.get("system")]
+    return [n.get("body") or "" for n in alle(host, f"{mr_api}/notes") if (n.get("author") or {}).get("id") == _ICH[host] and not n.get("system")]
 
 
 def abgleich_vorbereiten(mr, vorhanden):
@@ -355,16 +355,16 @@ def entwuerfe_abgleichen(akte, vorhanden, eigene_texte):
     eigene_texte None = nicht geholt (es fehlte nichts): dann nichts tun. Rückgabe (veröffentlicht, verworfen)."""
     if eigene_texte is None:
         return 0, 0
-    pub = verw = 0
+    veroeffentlicht = verworfen = 0
     for k in fehlende_entwuerfe(akte, vorhanden):
         if any((k.get("gitlab_text") or k["text"]) in t for t in eigene_texte):  # „allgemein“: Text steht hinter dem Link
-            pub += not k.get("gitlab_weg")
+            veroeffentlicht += not k.get("gitlab_weg")
             k["gitlab_weg"] = True
         else:
             for f in ("gitlab_id", "gitlab_text", "gitlab_art", "gitlab_weg"):
                 k.pop(f, None)
-            verw += 1
-    return pub, verw
+            verworfen += 1
+    return veroeffentlicht, verworfen
 
 
 def meta_und_entwuerfe(mr):
@@ -418,8 +418,8 @@ def mr_daten_holen(mr):
 # ---- Review abschließen: planen (rein) → ausführen (GitLab, ohne Sperre) → je Schritt eintragen (kurz gesperrt)
 
 def kommentar_ort(k):
-    z = k.get("b") or k.get("a")
-    return (k.get("path") or "allgemein") + (f":{z}" if z else "")
+    zeile = k.get("b") or k.get("a")
+    return (k.get("path") or "allgemein") + (f":{zeile}" if zeile else "")
 
 
 @dataclass
@@ -584,13 +584,13 @@ def abschluss_lauf(mr):
     return not fehler, abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler), web
 
 
-def ansicht_zuordnen(haupt, ans_st, eintraege):
+def ansicht_zuordnen(haupt, ansicht_seite, eintraege):
     """Kommentare/Hinweise (Zeilen im MR-Stand) in die Ansicht übertragen. Ändert die Einträge:
     datei/a/b/im_diff in Ansichts-Zeilen, „unter“ = Hinweistext, wenn sie unter dem Dateinamen stehen,
     „lesen“ = nicht änderbar, „mr_b“/„mr_a“ = Zeile im MR-Stand. Rückgabe: Einträge in Dateien der Ansicht."""
-    ans = ans_st["ansicht"]
+    ans = ansicht_seite["ansicht"]
     commit = ans["art"] == "commit"
-    zurueck = zurueck_diffs(ans_st["ordner"], ans["bis"], haupt["refs"]["head_sha"],
+    zurueck = zurueck_diffs(ansicht_seite["ordner"], ans["bis"], haupt["refs"]["head_sha"],
                             {x["path"] for x in eintraege if x.get("path")}) if commit else {}
     out = []
     for x in eintraege:
@@ -598,16 +598,16 @@ def ansicht_zuordnen(haupt, ans_st, eintraege):
         x["lesen"] = commit
         if not x.get("path"):  # allgemein
             out.append(x); continue
-        z = zurueck.get(x["path"])
-        if z and z["status"] == "neu":
+        rueckweg = zurueck.get(x["path"])
+        if rueckweg and rueckweg["status"] == "neu":
             continue  # Datei gab es nach dem Commit an diesem Pfad noch nicht
-        i = datei_index(ans_st, z["alt"] if z else x["path"])
+        i = datei_index(ansicht_seite, rueckweg["alt"] if rueckweg else x["path"])
         if i is None:
             continue  # Datei ist in dieser Ansicht nicht geändert
-        f = ans_st["dateien"][i]
+        f = ansicht_seite["dateien"][i]
         b, unter = x.get("b"), None
-        if b and z:
-            b = alt_zeile(z, b)  # Zeile im MR-Stand → Zeile nach dem Commit (None = später geändert)
+        if b and rueckweg:
+            b = alt_zeile(rueckweg, b)  # Zeile im MR-Stand → Zeile nach dem Commit (None = später geändert)
             if b is None:
                 unter = f'Zeile {x["mr_b"]} wurde nach diesem Commit noch geändert'
         elif not b:
@@ -616,10 +616,10 @@ def ansicht_zuordnen(haupt, ans_st, eintraege):
             if not commit:
                 x["lesen"] = True
         a = alt_zeile(f, b) if b else None
-        imd = bool(b and im_diff(f, a, b))
-        if b and not imd:
+        zeile_im_diff = bool(b and im_diff(f, a, b))
+        if b and not zeile_im_diff:
             unter = f"Zeile {b} liegt außerhalb der Änderungen" + (" dieses Commits" if commit else "")
-        x.update(datei=i, a=a, b=b, im_diff=imd, unter=unter)
+        x.update(datei=i, a=a, b=b, im_diff=zeile_im_diff, unter=unter)
         if b and "problem" in x:
             x["problem"] = None
         out.append(x)
