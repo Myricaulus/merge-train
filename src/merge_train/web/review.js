@@ -347,7 +347,7 @@
             },
             '🗑'
           )
-    ];
+    ].filter(Boolean); // append() schriebe null als Text
   }
   /** Für die Liste links (○ → erledigt). */
   function fadenErledigen(k) {
