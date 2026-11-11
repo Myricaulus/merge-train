@@ -118,7 +118,9 @@ danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
 Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt; ist
-origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren` in `git.py`, Aktion `aktualisieren`).
+origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren` in `git.py`, Aktion `aktualisieren`)
+und holt danach die MR-Daten (`mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
+lädt offene Tabs neu (`neuLaden` in `web/review.js`).
 - Ort: `gitlab.py`, `mr_gitlab_holen`/`mr_daten_holen` (`review.py`), Route `api/gitlab`, `web/bahnhof.js`.
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen eigenen Abruf beim Laden der Seite.
 

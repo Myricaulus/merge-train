@@ -699,6 +699,7 @@ class AktualisierenTest(unittest.TestCase):
         from merge_train.server import aktualisieren_aktion
         d = aktualisieren_aktion(Anfrage("POST", "api/gitlab", "", {"mr": mr.id}, None))
         self.assertTrue(d["ok"] and d["neu_laden"]); self.assertIn(neu[:8], d["text"])
+        self.assertIn("MR-Daten", d["text"])  # danach geholt (hier ohne GitLab: gescheitert, aber gemeldet)
 
     def test_schuetzt_eigenes(self):
         self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)

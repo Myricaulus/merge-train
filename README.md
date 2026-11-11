@@ -238,7 +238,9 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 Steht GitLab woanders als der lokale Klon, sagt das eine rote Meldung über dem Diff. Ist origin weiter (neue Commits
 im MR), holt **„⇣ lokal aktualisieren“** origin und zieht den Quell-Branch nach: vorspulen oder, nach einem Force-Push,
 neu setzen, ausgecheckt samt Arbeitsverzeichnis und Submodulen. Lokale Commits oder nicht committete Änderungen
-bleiben unangetastet, dann bricht es mit Meldung ab. GitLab fragt der Knopf nicht.
+bleiben unangetastet, dann bricht es mit Meldung ab. Danach holt der Knopf gleich die MR-Daten, damit die Meldung
+auch verschwindet, wenn inzwischen weiter gepusht wurde. Holt der Zug neue MR-Daten im Hintergrund und ändert sich
+dadurch die Seite, lädt ein offener Tab von selbst neu (nicht, solange ein Eingabefeld offen ist).
 
 ## Einstellungen
 

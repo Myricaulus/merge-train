@@ -248,9 +248,11 @@ def api_review(anfrage, waggon):
 
 @route("GET", "api/stand", waggon=True)
 def api_stand(anfrage, waggon):
-    """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden."""
+    """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden.
+    seite: die zuletzt gebaute Seite des MR – im Hintergrund neu gebaut (z. B. MR-Daten aus dem Zug) → neu laden."""
     seite_lebt(waggon)
-    return {"stand": stand(waggon, akte_lesen(waggon)), "version": VERSION, "server": server_stand(),
+    akte = akte_lesen(waggon)
+    return {"stand": stand(waggon, akte), "seite": None if waggon.lokal else akte.get("struktur"), "version": VERSION, "server": server_stand(),
             "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
 
 
@@ -374,11 +376,18 @@ def mr_daten_aktion(anfrage):
 
 
 def aktualisieren_aktion(anfrage):
-    """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren)."""
+    """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren), dann
+    die MR-Daten holen – wurde inzwischen weiter gepusht, ist origin schon neuer als der zuletzt geholte GitLab-Stand,
+    und die Meldung bliebe sonst (ohne Knopf) stehen."""
     mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
     meta = akte_lesen(mr).get("meta") or {}
     ordner, _ = mr_lokal(mr, meta)
-    return {"ok": True, "text": branch_aktualisieren(ordner, meta.get("source_branch") or ""), "neu_laden": True}
+    text = branch_aktualisieren(ordner, meta.get("source_branch") or "")
+    try:  # der Branch ist schon nachgezogen: scheitert GitLab, trotzdem melden und neu laden
+        text += " · " + mr_daten_holen(mr)["text"]
+    except Fehler as e:
+        text += f" · MR-Daten nicht geholt: {e}"
+    return {"ok": True, "text": text, "neu_laden": True}
 
 
 GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion}

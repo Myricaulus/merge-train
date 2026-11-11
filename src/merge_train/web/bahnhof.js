@@ -41,15 +41,15 @@
         .then(d => {
           b.disabled = false;
           bh.classList.remove('laedt');
-          App.melden(d.text || '');
-          if (!d.ok) return;
-          if (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden)) {
+          if (d.ok && (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden))) {
             try {
-              sessionStorage.meldung = d.text || '';
+              sessionStorage.meldung = d.text || ''; // erst nach dem Neuladen melden – sonst steht sie zweimal in der Glocke
             } catch (_) {}
             location.reload();
             return;
           }
+          App.melden(d.text || '');
+          if (!d.ok) return;
           if (b.dataset.g === 'mrdaten') App.reviewLaden(); // Seite unverändert: nur Kommentare/Entwürfe auffrischen
           zugHolen();
         })

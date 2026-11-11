@@ -965,33 +965,29 @@
     });
   // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut
   // oder Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist. --beobachten: veraltet = im Repo
-  // hat sich etwas geändert → neu laden (beobachten.js rahmt danach das Neue ein)
+  // hat sich etwas geändert → neu laden (beobachten.js rahmt danach das Neue ein). Seite im Hintergrund neu gebaut
+  // (z. B. MR-Daten über den Zug) → ebenfalls neu laden
+  // Seite neu laden (mit Meldung danach), sobald kein Eingabefeld offen ist
+  function neuLaden(meldung, alt) {
+    App.serverLed('neu');
+    if (document.querySelector('textarea')) return;
+    try {
+      sessionStorage.meldung = meldung;
+      if (alt !== undefined) sessionStorage.beobachtetAlt = alt;
+    } catch (_) {}
+    location.reload();
+  }
+  let seite; // zuletzt gebaute Seite des Waggons (beim ersten Abfragen gemerkt)
   function pruefen() {
     fetch('/api/stand?' + waggonAbfrage() + '&sha=' + encodeURIComponent(waggon.sha || ''))
       .then(r => r.json())
       .then(d => {
         if (d.server) App.serverStandSetzen(d.server);
-        if (d.version && waggon.version && d.version !== waggon.version) {
-          App.serverLed('neu');
-          if (!document.querySelector('textarea')) {
-            try {
-              sessionStorage.meldung = 'merge-train wurde aktualisiert – Seite neu geladen';
-            } catch (_) {}
-            location.reload();
-          }
-          return;
-        }
-        if (d.veraltet) {
-          App.serverLed('neu');
-          if (!document.querySelector('textarea')) {
-            try {
-              sessionStorage.meldung = 'Änderung im Repo – Seite neu geladen';
-              sessionStorage.beobachtetAlt = waggon.sha || '';
-            } catch (_) {}
-            location.reload();
-          }
-          return;
-        }
+        if (d.version && waggon.version && d.version !== waggon.version)
+          return neuLaden('merge-train wurde aktualisiert – Seite neu geladen');
+        if (d.veraltet) return neuLaden('Änderung im Repo – Seite neu geladen', waggon.sha || '');
+        if (seite === undefined) seite = d.seite;
+        else if (d.seite && d.seite !== seite) return neuLaden('Seite im Hintergrund neu gebaut (MR-Daten) – neu geladen');
         App.serverLed('an');
         if (d.stand && (d.stand !== review.stand || App.meldung.textContent === App.serverWeg)) laden();
       })
