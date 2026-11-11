@@ -115,8 +115,15 @@ def main():
             antworten = json.load(open(os.path.join(STATE, "discussions.json")))
         except FileNotFoundError:
             antworten = {}
-        return raus([{"id": f"d{x.get('id', i)}", "notes": [x] + antworten.get(f"d{x.get('id', i)}", [])}
+        return raus([diskussion(f"d{x.get('id', i)}", [x] + antworten.get(f"d{x.get('id', i)}", []))
                      for i, x in enumerate(n)] if seite == 1 else [])
+    m = re.fullmatch(r"/discussions/([^/]+)", rest)
+    if m and methode == "PUT":  # erledigen / wieder öffnen (?resolved=true|false)
+        aufgeloest = zustand("resolved.json", {})
+        aufgeloest[m.group(1)] = q.get("resolved") == "true"
+        json.dump(aufgeloest, open(os.path.join(STATE, "resolved.json"), "w"))
+        n = {f"d{x.get('id')}": x for x in zustand("notes.json", [])}
+        return raus(diskussion(m.group(1), [n[m.group(1)]] + zustand("discussions.json", {}).get(m.group(1), [])))
     if rest == "/draft_notes":
         d = drafts()
         if methode == "GET":
@@ -150,5 +157,21 @@ def main():
         if methode == "PUT":
             x["note"] = json.loads(eingabe)["note"]; drafts_speichern(d); return raus(x)
     raise SystemExit(f"glab: 404 Not Found {weg}")
+
+def zustand(name, leer):
+    try:
+        return json.load(open(os.path.join(STATE, name)))
+    except FileNotFoundError:
+        return leer
+
+
+def diskussion(did, notes):
+    """Diskussion mit dem Erledigt-Stand aus resolved.json (sonst wie in den notes)."""
+    zu = zustand("resolved.json", {}).get(did)
+    if zu is not None:
+        notes = [dict(x, resolvable=True, resolved=zu, resolved_by={"id": 1, "name": "Test Er"} if zu else None)
+                 if not x.get("system") else x for x in notes]
+    return {"id": did, "notes": notes}
+
 
 main()

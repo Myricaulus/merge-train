@@ -453,7 +453,6 @@ class DiskussionenTest(unittest.TestCase):
         a["text"] = a["gitlab_text"] = "in GitLab umformuliert"  # gemerkte id gilt weiter, auch ohne passenden Text
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (0, 0))
         self.assertEqual(a["gitlab_diskussion"]["id"], "d1")
-        self.assertEqual(review.diskussion_fuer_seite({"mr": {"web_url": "https://g/mr/1"}}, a)["url"], "https://g/mr/1#note_10")
 
     def test_neu_und_stand(self):
         from merge_train.akte import diskussionen_stand

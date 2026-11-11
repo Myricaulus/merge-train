@@ -138,16 +138,17 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **Review abschließen → GitLab** legt neue Kommentare als Draft-Notes an, aktualisiert geänderte und löscht entfernte.
   Nichts wird veröffentlicht: In GitLab steht dann „Pending comments“, dort prüfen und das Review abschicken.
   Mehrfaches Abschließen erzeugt keine Duplikate. Einen in GitLab veröffentlichten Kommentar fasst das Tool nicht an.
-- **Antworten aus GitLab**: „↻ MR-Daten“ holt zu veröffentlichten Kommentaren die Diskussion. Am Kommentar stehen dann
-  die Antworten (ohne Systemnotizen wie „changed this line“) und „✓ in GitLab erledigt von …“ bzw. „offen in GitLab“.
-  Das Etikett führt zur Diskussion in GitLab. Erledigen geht weiter nur in GitLab.
-- **Antworten auf GitLab-Diskussionen** („↩ antworten“ unter jeder Diskussion, eigener wie fremder): Mit „sofort senden“
+- **GitLab-Diskussionen als Threads**: „↻ MR-Daten“ holt alle Diskussionen des MR (ohne Systemnotizen wie „changed this
+  line“). Veröffentlichte eigene Kommentare und die anderer (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab
+  Geschriebenes) stehen als Threads an ihrer Zeile, genau wie die KI-Threads: Verlauf mit deinen Beiträgen rechts, Stand
+  (wartet auf Antwort, Antwort in GitLab, erledigt), „↩ antworten“, „✓ erledigt“ und „wieder öffnen“. Links stehen sie
+  in der Liste „GitLab-Diskussionen“ mit ○/✓. Der einzige Unterschied ist das Ziel: Erledigen und wieder öffnen gehen
+  sofort an GitLab. Die Liste „GitLab-Kommentare“ enthält nur noch, was „Review abschließen“ sendet.
+- **Antworten auf GitLab-Diskussionen**: Mit „sofort senden“
   geht die Antwort gleich als veröffentlichter Kommentar in die Diskussion, ohne lokalen und GitLab-Entwurf. Ohne wird sie
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine
   Einstellung des Browsers und gilt auch für Fragen an Agenten. Sie steht neben „Review abschließen“ und in jedem
   Eingabefeld. „Review abschließen“ ist ausgegraut, solange es keine lokalen Entwürfe gibt.
-- **Diskussionen anderer** (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab Geschriebenes) stehen nur zum
-  Lesen an ihrer Zeile, umgerechnet auf den Stand der Seite, und links in der Liste „GitLab-Diskussionen“.
 - **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
   anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (nicht erledigte Diskussionen), sonst „✓ in GitLab“
   bzw. „● N Komm.“. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene

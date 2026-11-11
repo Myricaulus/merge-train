@@ -86,7 +86,7 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .gs .verlauf{display:flex;flex-direction:column;gap:6px;margin:4px 0}
 .gs .msg{max-width:min(720px,88%);padding:5px 9px 4px;border-radius:10px;border:1px solid var(--rand);background:var(--bg)}
 .gs .msg.ich{align-self:flex-end;border-bottom-right-radius:3px;background:var(--akt)}
-.gs .msg.claude{align-self:flex-start;border-bottom-left-radius:3px;border-left:3px solid var(--tf)}
+.gs .msg.claude,.gs .msg.andere{align-self:flex-start;border-bottom-left-radius:3px;border-left:3px solid var(--tf)}
 .gs .msg.entwurf{border-style:dashed;opacity:.85}
 .gs .mk{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin-bottom:1px}
 .gs .mk button{font-size:11px;padding:0 5px}
@@ -149,11 +149,4 @@ body.mit-hud #rvstand{display:none}
 tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>td:last-child{box-shadow:inset -3px 0 0 var(--tf)}
 tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
 tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}
-.b-gl-erledigt{color:var(--p);text-decoration:none} .b-gl-offen{color:var(--tn);text-decoration:none}
-.kbox.gl-erledigt>.kt{opacity:.7}
-.gl-antworten{display:flex;flex-direction:column;gap:6px;margin:6px 0 2px 14px}
-.gl-antwort{padding:4px 9px;border-radius:8px;border:1px solid var(--rand);border-left:3px solid var(--tn);background:var(--bg)}
-.gl-antwort .mk{font-size:11px;opacity:.75} .gl-antwort .kt{white-space:pre-wrap}
-.kbox.gl{border-left-color:var(--tn);border-left-style:dashed} .b-gl{color:var(--tn)} .ke.gl{border-left-color:var(--tn)}
-.gl-antwort.entwurf{border-style:dashed} .gl-antwort:has(textarea){padding:6px} .kbox.gl>.kbox{margin:6px 0 0 14px}
-.kbox.km>.kbox{margin:6px 0 0 14px}
+.kbox.gl,.ke.gl{border-left-style:dashed} .gs .msg.andere{border-left-color:var(--tn)}

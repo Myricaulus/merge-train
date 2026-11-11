@@ -1,8 +1,8 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
 // Dateivergleich, Kommentarliste links (sortierbar). Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
 // dateiFesthalten; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, statusTexte,
-// kommentarAktion, fadenAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen, zeileFinden, popup,
-// sieheAuch, ortLink, dateiLaden, kommentarListe.
+// fadenStatus, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
+// zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
   const {el, waggon, dateien} = App;
   // Commit-Ansicht (waggon.ansicht = 'commit:<sha>' nur lesen, 'seit:<sha>' rechts = MR-Stand): Server rechnet die
@@ -226,9 +226,7 @@
     kasten(
       'kliste-gl',
       'GitLab-Diskussionen',
-      (App.review.diskussionen || [])
-        .map(x => ({art: 'gl', id: x.id, x, st: x.erledigt ? 'gl_erledigt' : 'gl_offen'}))
-        .sort(nach)
+      (App.review.diskussionen || []).map(x => ({art: 'km gl', id: x.id, x, st: x.status})).sort(nach)
     );
     kasten(
       'kliste-ki',
@@ -294,7 +292,9 @@
   /** Zeile der Liste: Symbol, ➜ (schon gesendet), ○/✓ (Faden offen/erledigt), Ort, Text; beim Sortieren Pfeile. */
   function listenEintrag(id, i, s) {
     const t = String(i.x.text || ((i.x.nachrichten && i.x.nachrichten[0]) || {}).text || '').replace(/\*\*|`/g, ''),
-      f = eintragTitel(i.x) || (i.f && t.startsWith(i.f) ? t.slice(i.f.length).trim() : t);
+      f = eintragTitel(i.x) || (i.f && t.startsWith(i.f) ? t.slice(i.f.length).trim() : t),
+      thread = !!i.x.nachrichten, // KI-Thread oder GitLab-Diskussion
+      stand = thread ? App.fadenStatus(i.x) : App.statusTexte[i.st];
     return el(
       'div',
       {class: 'ke ' + i.art + (s ? ' sort' : ''), title: f, onclick: s ? null : () => springen(i)},
@@ -302,13 +302,13 @@
       el(
         'span',
         {
-          class: 'ki ' + ((App.statusTexte[i.st] || [])[1] || ''),
-          title: i.st ? (App.statusTexte[i.st] || [''])[0] : 'Agent-Hinweis'
+          class: 'ki ' + ((stand || [])[1] || ''),
+          title: i.st ? (stand || [''])[0] : 'Agent-Hinweis'
         },
         i.art === 'hw' ? '🤖' : '💬'
       ),
       ['uebertragen', 'geaendert', 'weg'].includes(i.st) && id === 'kliste' ? gesendetPfeil(i) : null,
-      id === 'kliste-ki' ? erledigtKnopf(i) : null,
+      thread ? erledigtKnopf(i) : null,
       i.f ? el('b', {}, i.f) : null,
       el('span', {class: 'kt2'}, f),
       s
@@ -328,7 +328,8 @@
     return el('span', {class: 'gesendet', title: titel}, '➜');
   }
   function erledigtKnopf(i) {
-    if (i.st === 'erledigt') return el('span', {class: 'zu erledigt', title: 'erledigt'}, '✓');
+    if (i.x.erledigt) return el('span', {class: 'zu erledigt', title: 'erledigt'}, '✓');
+    if (i.x.ziel === 'gitlab' && !i.x.loesbar) return null;
     return el(
       'span',
       {
@@ -336,7 +337,7 @@
         title: 'noch offen – Klick: als erledigt markieren',
         onclick: e => {
           e.stopPropagation();
-          App.fadenAktion({aktion: 'erledigt', id: i.id});
+          App.fadenErledigen(i.x);
         }
       },
       '○'

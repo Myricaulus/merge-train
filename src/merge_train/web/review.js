@@ -3,7 +3,7 @@
 // el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js waggonAbfrage, nurLesen,
 // seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
 // hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js). Stellt bereit: review (Daten der Seite),
-// zeichnen, statusTexte, kommentarAktion, fadenAktion, reviewLaden.
+// zeichnen, statusTexte, fadenStatus, fadenErledigen, kommentarAktion, reviewLaden.
 (() => {
   const {
     el,
@@ -86,16 +86,38 @@
     wartet: ['wartet auf Claude', 'b-wartet'],
     antwort: ['Claude hat geantwortet', 'b-antwort'],
     erledigt: ['erledigt', 'b-erledigt'],
-    // Diskussion aus GitLab (nur lesen)
-    gl_offen: ['GitLab-Diskussion', 'b-wartet'],
+    // GitLab-Diskussion als Thread (fadenStatus)
+    gl_entwurf: ['Antwort-Entwurf (lokal)', 'b-entwurf'],
+    gl_wartet: ['wartet auf Antwort', 'b-wartet'],
+    gl_antwort: ['Antwort in GitLab', 'b-antwort'],
     gl_erledigt: ['in GitLab erledigt', 'b-erledigt']
   };
+  /** [Text, Klasse] des Stands eines Threads – Gesprächsfaden oder GitLab-Diskussion. */
+  function fadenStatus(k) {
+    return statusTexte[(k.ziel === 'gitlab' ? 'gl_' : '') + k.status] || ['?', ''];
+  }
   const faeden = () => review.faeden || [],
     fragenEntwuerfe = () => review.g_ausstehend || 0,
     mitReview = !!App.kann.review; // Waggon mit Review (Kommentare nach außen)
   function fadenAktion(d) {
     return kommentarAktion(Object.assign({gespraech: 1}, d));
   } // Fragen an den Agenten: Fäden, nie ins Review
+  // Ein Thread, zwei Ziele: Fragen an den Agenten (Fäden) oder eine GitLab-Diskussion. ziel(k)(d) führt die Aktion d
+  // (antworten, erledigt, oeffnen, aendern/loeschen mit nid, loeschen ohne nid = ganzer Faden) am richtigen Ziel aus.
+  const GITLAB_AKTIONEN = {
+    antworten: (k, d) => ({aktion: 'antworten', diskussion: k.diskussion, text: d.text, sofort: sofort() ? 1 : ''}),
+    erledigt: k => ({aktion: 'erledigen', diskussion: k.diskussion}),
+    oeffnen: k => ({aktion: 'wiedereroeffnen', diskussion: k.diskussion}),
+    aendern: (k, d) => ({aktion: 'aendern', id: d.nid, text: d.text}), // Antwort-Entwurf = Review-Kommentar
+    loeschen: (k, d) => ({aktion: 'loeschen', id: d.nid})
+  };
+  function ziel(k) {
+    if (k.ziel === 'gitlab') return d => kommentarAktion(GITLAB_AKTIONEN[d.aktion](k, d));
+    return d => {
+      const p = fadenAktion(Object.assign({id: k.id}, d));
+      return d.aktion === 'antworten' ? p.then(sofortSenden) : p;
+    };
+  }
   // wen man fragen kann (lokal mindestens Claude)
   const agenten = () => (review.agenten && review.agenten.length ? review.agenten : mitReview ? [] : ['Claude']);
   function neuSpeichern(d) {
@@ -216,13 +238,19 @@
     });
   }
   /** Gespräch: Verlauf wie im Messenger, eigene Nachrichten rechts. */
+  /** Ein Thread – Gesprächsfaden mit dem Agenten oder GitLab-Diskussion (k.ziel), Aktionen über ziel(k). */
   function fadenBox(k, mitOrt) {
     const wer = k.an || 'Claude',
-      [st0, cl] = statusTexte[k.status] || ['?', ''],
+      senden = ziel(k),
+      [st0, cl] = fadenStatus(k),
       neuVomAgenten = k.vom_agenten && k.status === 'antwort' && k.nachrichten.length === 1,
       st = (neuVomAgenten ? 'neu von Claude' : st0).replace('Claude', wer),
       box = el('div', {
-        class: 'kbox km gs st-' + k.status + (k.status === 'erledigt' ? ' erledigt' : ''),
+        class:
+          'kbox km gs st-' +
+          k.status +
+          (k.status === 'erledigt' ? ' erledigt' : '') +
+          (k.ziel === 'gitlab' ? ' gl' : ''),
         'data-id': k.id
       }),
       kn = el('span', {class: 'knoepfe'}),
@@ -238,7 +266,7 @@
             bearbeiten(
               b,
               '',
-              t => fadenAktion({aktion: 'antworten', id: k.id, text: t}).then(sofortSenden),
+              t => senden({aktion: 'antworten', text: t}),
               () => b.remove(),
               undefined,
               true
@@ -247,24 +275,34 @@
         },
         '↩ antworten'
       );
-    if (offen) kn.append(antw(), ...fadenKnoepfe(k));
+    if (offen) kn.append(antw(), ...fadenKnoepfe(k, senden));
     const er = k.erledigt
       ? el(
           'span',
           {},
           '· erledigt von ' +
-            (k.erledigt.von === 'claude' ? k.erledigt.wer || wer : 'dir') +
+            (k.erledigt.von === 'ich' ? 'dir' : k.erledigt.wer || wer) +
             ' ' +
             uhrzeit(k.erledigt.zeit)
         )
       : null;
+    const gitlab = k.url
+      ? el(
+          'a',
+          {class: 'ortlink', href: k.url, target: '_blank', rel: 'noopener', title: 'in GitLab öffnen'},
+          'GitLab ↗'
+        )
+      : null;
+    const agent = k.finding ? el('span', {class: 'badge b-agent'}, 'aus Agent ' + k.finding) : null;
     const ort = !mitOrt
       ? null
       : k.fremd
         ? el('code', {title: 'Zeile im Stand von ' + k.fremd}, k.path ? k.path + (k.b ? ':' + k.b : '') : 'allgemein')
         : ortLink(k);
-    const branch = k.fremd ? el('span', {class: 'badge b-fremd', title: 'Gespräch aus einem anderen Branch'}, k.fremd) : null;
-    box.append(el('div', {class: 'kk'}, el('span', {class: 'badge ' + cl}, st), branch, er, ort, kn));
+    const branch = k.fremd
+      ? el('span', {class: 'badge b-fremd', title: 'Gespräch aus einem anderen Branch'}, k.fremd)
+      : null;
+    box.append(el('div', {class: 'kk'}, el('span', {class: 'badge ' + cl}, st), branch, agent, er, ort, gitlab, kn));
     if (k.zeile_text && k.problem)
       box.append(
         el(
@@ -273,45 +311,60 @@
           'damals: ' + k.zeile_text.trim()
         )
       );
-    k.nachrichten.forEach(m => verlauf.append(nachrichtBox(k, m, wer, offen)));
+    k.nachrichten.forEach(m => verlauf.append(nachrichtBox(k, m, wer, offen, senden)));
     box.append(verlauf);
     const sa = sieheAuch(k.see_also);
     if (sa) box.append(sa);
     if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten (lange Fäden)
     return box;
   }
-  /** Knöpfe eines offenen Fadens neben „antworten“: erledigt bzw. wieder öffnen, löschen. */
-  function fadenKnoepfe(k) {
+  /** Knöpfe eines offenen Threads neben „antworten“: erledigt bzw. wieder öffnen (GitLab: nur lösbare), löschen
+   *  (nur Fäden – eine GitLab-Diskussion löscht man in GitLab). */
+  function fadenKnoepfe(k, senden) {
+    const gitlab = k.ziel === 'gitlab';
     return [
-      k.status === 'erledigt'
-        ? el('button', {onclick: () => fadenAktion({aktion: 'oeffnen', id: k.id})}, 'wieder öffnen')
+      gitlab && !k.loesbar
+        ? null
+        : k.erledigt
+          ? el('button', {onclick: () => senden({aktion: 'oeffnen'})}, 'wieder öffnen')
+          : el(
+              'button',
+              {
+                title: gitlab ? 'in GitLab als erledigt markieren' : 'Gespräch als erledigt markieren',
+                onclick: () => senden({aktion: 'erledigt'})
+              },
+              '✓ erledigt'
+            ),
+      gitlab
+        ? null
         : el(
             'button',
-            {title: 'Gespräch als erledigt markieren', onclick: () => fadenAktion({aktion: 'erledigt', id: k.id})},
-            '✓ erledigt'
-          ),
-      el(
-        'button',
-        {
-          title: 'ganzes Gespräch löschen',
-          onclick: () => {
-            if (confirm('Ganzes Gespräch löschen?')) fadenAktion({aktion: 'loeschen', id: k.id});
-          }
-        },
-        '🗑'
-      )
+            {
+              title: 'ganzes Gespräch löschen',
+              onclick: () => {
+                if (confirm('Ganzes Gespräch löschen?')) senden({aktion: 'loeschen'});
+              }
+            },
+            '🗑'
+          )
     ];
   }
+  /** Für die Liste links (○ → erledigt). */
+  function fadenErledigen(k) {
+    return ziel(k)({aktion: 'erledigt'});
+  }
   /** Eine Nachricht im Verlauf: Kopf (wer, wann, ✓/✓✓ bzw. Entwurf mit ✎/🗑) und Text mit Code-Links. */
-  function nachrichtBox(k, m, wer, offen) {
+  function nachrichtBox(k, m, wer, offen, senden) {
     const ich = m.von === 'ich',
       entwurf = ich && !m.gesendet,
-      mb = el('div', {class: 'msg ' + (ich ? 'ich' : 'claude') + (entwurf ? ' entwurf' : '')});
+      mb = el('div', {class: 'msg ' + m.von + (entwurf ? ' entwurf' : '')});
     const haken = !ich
       ? null
       : entwurf
-        ? el('span', {}, 'Entwurf')
-        : el(
+        ? el('span', {}, m.stufe ? statusTexte[m.stufe][0] : 'Entwurf')
+        : k.ziel === 'gitlab'
+          ? null
+          : el(
             'span',
             {
               class: 'haken' + (m.abgeholt ? ' abgeholt' : ''),
@@ -322,7 +375,7 @@
     const mk = el(
       'div',
       {class: 'mk'},
-      el('b', {}, ich ? 'Du' : '🤖 ' + (m.wer || wer)),
+      el('b', {}, ich ? 'Du' : (m.von === 'claude' ? '🤖 ' : '') + (m.wer || wer)),
       el('span', {}, uhrzeit(m.gesendet || m.zeit)),
       haken
     );
@@ -330,10 +383,10 @@
       mk.append(
         el(
           'button',
-          {onclick: () => bearbeiten(mb, m.text, t => fadenAktion({aktion: 'aendern', id: k.id, nid: m.id, text: t}))},
+          {onclick: () => bearbeiten(mb, m.text, t => senden({aktion: 'aendern', nid: m.id, text: t}))},
           '✎'
         ),
-        el('button', {onclick: () => fadenAktion({aktion: 'loeschen', id: k.id, nid: m.id})}, '🗑')
+        el('button', {onclick: () => senden({aktion: 'loeschen', nid: m.id})}, '🗑')
       );
     mb.append(mk, el('div', {class: 'mt'}, ...verlinkt(m.text, k.links)));
     return mb;
@@ -388,11 +441,7 @@
   }
   function kommentarBox(k, mitOrt) {
     const [st, cl] = statusTexte[k.status] || ['?', ''],
-      gl = k.gitlab,
-      box = el('div', {
-        class: 'kbox km' + (k.status === 'loeschen' ? ' weg' : '') + (gl && gl.erledigt ? ' gl-erledigt' : ''),
-        'data-id': k.id
-      }),
+      box = el('div', {class: 'kbox km' + (k.status === 'loeschen' ? ' weg' : ''), 'data-id': k.id}),
       kn = el('span', {class: 'knoepfe'});
     if (nurLesen || k.lesen);
     else if (k.status === 'loeschen')
@@ -427,101 +476,15 @@
         {class: 'kk'},
         el('span', {class: 'badge ' + cl}, st),
         k.finding ? el('span', {class: 'badge b-agent'}, 'aus Agent ' + k.finding) : null,
-        gitlabStand(gl),
         mitOrt ? ortLink(k) : null,
         kn
       ),
       el('div', {class: 'kt'}, k.text)
     );
-    if (gl && gl.antworten.length) box.append(antwortenListe(gl.antworten));
-    if (gl) antwortTeil(box, gl.diskussion);
     const h = k.hinweis && review.hinweise.find(x => x.key === k.hinweis),
       sa = h && sieheAuch(h.see_also);
     if (sa) box.append(sa);
     return box;
-  }
-  function antwortenListe(antworten) {
-    return el(
-      'div',
-      {class: 'gl-antworten'},
-      ...antworten.map(a =>
-        el(
-          'div',
-          {class: 'gl-antwort'},
-          el('div', {class: 'mk'}, el('b', {}, a.wer), ' ', uhrzeit(a.zeit)),
-          el('div', {class: 'kt'}, a.text)
-        )
-      )
-    );
-  }
-  /** Diskussion aus GitLab, die nicht von hier kommt (andere Reviewer, Autor): nur lesen, Antworten darunter. */
-  function diskussionBox(d, mitOrt) {
-    const box = el('div', {class: 'kbox gl' + (d.erledigt ? ' gl-erledigt' : ''), 'data-id': d.id});
-    box.append(
-      el(
-        'div',
-        {class: 'kk'},
-        el('span', {class: 'badge b-gl'}, 'GitLab · ' + d.wer),
-        el('span', {class: 'sub'}, uhrzeit(d.zeit)),
-        d.loesbar || d.erledigt ? gitlabStand(d) : null,
-        mitOrt && d.path ? ortLink(d) : null
-      ),
-      el('div', {class: 'kt'}, d.text)
-    );
-    if (d.antworten.length) box.append(antwortenListe(d.antworten));
-    antwortTeil(box, d.diskussion);
-    return box;
-  }
-  /** Unter einer GitLab-Diskussion: eigene Antwort-Entwürfe (staged) und „↩ antworten“ – mit „sofort senden“ gleich
-   *  veröffentlicht, sonst als Entwurf, den „Review abschließen“ als Draft-Antwort überträgt. */
-  function antwortTeil(box, diskussion) {
-    if (!diskussion) return;
-    review.kommentare
-      .filter(k => k.antwort_auf === diskussion && k.status !== 'weg')
-      .forEach(k => box.append(kommentarBox(k, false)));
-    if (nurLesen) return;
-    const unten = el('div', {class: 'unten'});
-    unten.append(
-      el(
-        'button',
-        {
-          onclick: () => {
-            const b = el('div', {class: 'gl-antwort entwurf'});
-            unten.before(b);
-            bearbeiten(
-              b,
-              '',
-              t => kommentarAktion({aktion: 'antworten', diskussion, text: t, sofort: sofort() ? 1 : ''}),
-              () => b.remove(),
-              undefined,
-              true
-            );
-          }
-        },
-        '↩ antworten'
-      )
-    );
-    box.append(unten);
-  }
-  /** Stand des veröffentlichten Kommentars in GitLab (von „MR-Daten“): erledigt oder offen, Link auf die Diskussion. */
-  function gitlabStand(gl) {
-    if (!gl) return null;
-    const n = (gl.antworten || []).length,
-      text = gl.erledigt
-        ? '✓ in GitLab erledigt' + (gl.erledigt.wer ? ' von ' + gl.erledigt.wer : '')
-        : 'offen in GitLab' + (n ? ' · ' + n + ' Antwort' + (n > 1 ? 'en' : '') : ''),
-      titel = gl.erledigt && gl.erledigt.zeit ? 'erledigt ' + uhrzeit(gl.erledigt.zeit) + ' – ' : '';
-    return el(
-      'a',
-      {
-        class: 'badge ' + (gl.erledigt ? 'b-gl-erledigt' : 'b-gl-offen'),
-        href: gl.url,
-        target: '_blank',
-        rel: 'noopener',
-        title: titel + 'Diskussion in GitLab öffnen'
-      },
-      text
-    );
   }
   function hinweisBox(h, mitOrt) {
     const box = el('div', {class: 'kbox hw' + (h.status === 'verworfen' ? ' weg' : ''), 'data-id': h.key}),
@@ -686,9 +649,9 @@
         allgDazu(k, () => fadenBox(k, true));
     });
     if (review.zeigFremde) (review.faeden_fremd || []).forEach(k => allgDazu(k, () => fadenBox(k, true)));
-    (review.diskussionen || []).forEach(d => {
-      if (!platz(d, () => diskussionBox(d, false)) && !unter(d, () => diskussionBox(d, false)))
-        allgDazu(d, () => diskussionBox(d, true));
+    (review.diskussionen || []).forEach(k => {
+      if (!platz(k, () => fadenBox(k, false)) && !unter(k, () => fadenBox(k, false)))
+        allgDazu(k, () => fadenBox(k, true));
     });
     review.hinweise
       .filter(h => h.status === 'offen' || (review.zeigVerworfen && h.status === 'verworfen'))
@@ -824,7 +787,8 @@
             ? el(
                 'button',
                 {
-                  title: 'Gespräche, die zu einem anderen Branch als ' + (review.branch || '?') + ' gehören (nur lesen)',
+                  title:
+                    'Gespräche, die zu einem anderen Branch als ' + (review.branch || '?') + ' gehören (nur lesen)',
                   onclick: () => {
                     review.zeigFremde = zeigFremde(!review.zeigFremde);
                     zeichnen();
@@ -934,7 +898,8 @@
     if (!abschliessenKnopf || abschliessenKnopf.dataset.laeuft) return;
     abschliessenKnopf.disabled = !review.ausstehend;
     abschliessenKnopf.title = review.ausstehend
-      ? review.ausstehend + ' lokale Entwürfe als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab'
+      ? review.ausstehend +
+        ' lokale Entwürfe als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab'
       : 'keine lokalen Entwürfe – nichts zu übertragen';
   }
   if (abschliessenKnopf)
@@ -994,5 +959,5 @@
   setInterval(pruefen, 4000);
   setTimeout(pruefen, 300);
   laden();
-  Object.assign(App, {review, zeichnen, statusTexte, kommentarAktion, fadenAktion, reviewLaden: laden});
+  Object.assign(App, {review, zeichnen, statusTexte, fadenStatus, fadenErledigen, kommentarAktion, reviewLaden: laden});
 })();

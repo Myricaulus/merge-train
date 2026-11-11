@@ -49,50 +49,79 @@ def kommentare_fuer_seite(akte, struktur):
     """Review-Kommentare, wie die Seite sie braucht: Datei-Index, im Diff, Stufe."""
     out = []
     for k in review_kommentare(akte):
+        if k.get("gitlab_weg") and k.get("gitlab_diskussion"):
+            continue  # veröffentlicht: steht als Thread in diskussionen_fuer_seite
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
-                    "gitlab": diskussion_fuer_seite(akte, k), "antwort_auf": k.get("antwort_auf")})
+                    "antwort_auf": k.get("antwort_auf")})
     return out
-
-
-def diskussion_fuer_seite(akte, k):
-    """Antworten und Erledigt-Status in GitLab (nur veröffentlichte Kommentare), mit Link auf den Kommentar."""
-    d = k.get("gitlab_diskussion") if k.get("gitlab_weg") else None
-    if not d:
-        return None
-    web = akte["mr"].get("web_url") or ""
-    return {"diskussion": d["id"], "erledigt": d.get("erledigt"), "antworten": d.get("antworten") or [],
-            "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web}
 
 
 def diskussionen_fuer_seite(akte, struktur):
-    """GitLab-Diskussionen, die zu keinem eigenen Kommentar der Akte gehören (andere Reviewer, Autor, direkt in GitLab
-    Geschriebenes): Zeile vom Stand des Kommentars auf den der Seite umgerechnet, nur lesen."""
-    eigene = {(k.get("gitlab_diskussion") or {}).get("id") for k in review_kommentare(akte)}
+    """Alle GitLab-Diskussionen als Threads für die Seite, in der Form der Gesprächsfäden (gespraech_daten) mit
+    ziel "gitlab": eigene veröffentlichte Kommentare wie die anderer, Nachrichten (von ich | andere; eigene
+    Antwort-Entwürfe ungesendet mit ihrer Stufe), Stand (entwurf | wartet | antwort | erledigt), Ort auf den Stand der
+    Seite umgerechnet. Bei eigenen gilt der Ort des Kommentars (allgemein gesendete stehen so an ihrer Zeile)."""
+    eigene = {(k.get("gitlab_diskussion") or {}).get("id"): k for k in review_kommentare(akte) if k.get("gitlab_weg")}
     head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], akte["mr"].get("web_url") or ""
+    ich_id = akte.get("ich_id")
     out = []
     for d in akte.get("diskussionen") or []:
-        if d["id"] in eigene:
-            continue
-        b, unter = d.get("b"), None
-        if d.get("path") and b:
-            b = zeile_vorwaerts(ordner, d.get("head_sha") or head, head, d["path"], b)
+        k = eigene.get(d["id"])
+        ort = k if k else d
+        von = ((k.get("refs") or {}).get("head_sha") if k else d.get("head_sha")) or head
+        b, unter = ort.get("b"), None
+        if ort.get("path") and b:
+            b = zeile_vorwaerts(ordner, von, head, ort["path"], b)
             if b is None:
-                unter = f'Zeile {d["b"]} hat sich seit dem Kommentar geändert'
-        i = datei_index(struktur, d.get("path"))
+                unter = f'Zeile {ort["b"]} hat sich seit dem Kommentar geändert'
+        i = datei_index(struktur, ort.get("path"))
         f = struktur["dateien"][i] if i is not None else None
-        a = d.get("a") if not d.get("b") else (alt_zeile(f, b) if f and b else None)
+        a = ort.get("a") if not ort.get("b") else (alt_zeile(f, b) if f and b else None)
         drin = bool(f and (a or b) and im_diff(f, a, b))
         if f and b and not drin and not unter:
             unter = f"Zeile {b} liegt außerhalb der Änderungen"
-        out.append({"id": "gl:" + str(d["id"]), "diskussion": d["id"], "text": d["text"], "wer": d["wer"], "zeit": d["zeit"], "path": d.get("path"),
+        von = lambda wer_id: "ich" if wer_id == ich_id else "andere"
+        nachrichten = [{"id": d.get("note_id"), "von": "ich" if k else von(d.get("wer_id")), "wer": d["wer"],
+                        "text": k["text"] if k else d["text"], "zeit": d["zeit"], "gesendet": d["zeit"]}]
+        nachrichten += [{"id": x.get("id"), "von": von(x.get("wer_id")), "wer": x.get("wer"), "text": x.get("text"),
+                         "zeit": x.get("zeit"), "gesendet": x.get("zeit")} for x in d.get("antworten") or []]
+        entwuerfe = [{"id": e["id"], "von": "ich", "text": e["text"], "zeit": e.get("erstellt"), "gesendet": None,
+                      "stufe": kommentar_status(e)} for e in review_kommentare(akte)
+                     if e.get("antwort_auf") == d["id"] and kommentar_status(e) not in ("weg", "loeschen")]
+        erledigt = d.get("erledigt")
+        status = ("entwurf" if any(e["stufe"] in ("neu", "geaendert") for e in entwuerfe) else "erledigt" if erledigt
+                  else "wartet" if nachrichten[-1]["von"] == "ich" else "antwort")
+        out.append({"id": "gl:" + str(d["id"]), "ziel": "gitlab", "diskussion": d["id"], "kommentar": k["id"] if k else None,
+                    "finding": k.get("finding") if k else None, "text": nachrichten[0]["text"], "path": ort.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
-                    "erledigt": d.get("erledigt"), "loesbar": d.get("loesbar"), "antworten": d.get("antworten") or [],
-                    "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web, "lesen": True})
+                    "status": status, "loesbar": d.get("loesbar"), "nachrichten": nachrichten + entwuerfe, "links": [],
+                    "erledigt": dict(erledigt, von=von(erledigt.get("wer_id"))) if erledigt else None,
+                    "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web})
     return out
+
+
+def diskussion_aufloesen(mr, eingabe):
+    """✓ erledigt / wieder öffnen einer GitLab-Diskussion – gleich in GitLab (wie ein Faden gleich erledigt ist)."""
+    did, zu = eingabe.get("diskussion"), eingabe.get("aktion") == "erledigen"
+    if not diskussion_finden(akte_lesen(mr), did):
+        return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
+    roh = glab(mr.host, f"{mr_pfad(mr)}/discussions/{did}?resolved={'true' if zu else 'false'}", "PUT")  # ohne Sperre
+    neu = diskussion_kompakt(roh) if isinstance(roh, dict) else None
+    with akte_bearbeiten(mr) as akte:
+        d = diskussion_finden(akte, did)
+        if d is not None:
+            if neu:
+                d.update(neu)
+            else:
+                d["erledigt"] = {"wer": "", "zeit": datetime.now().astimezone().isoformat(timespec="seconds")} if zu else None
+            for k in review_kommentare(akte):
+                if (k.get("gitlab_diskussion") or {}).get("id") == did:
+                    k["gitlab_diskussion"]["erledigt"] = d["erledigt"]
+    return True, "in GitLab erledigt" if zu else "in GitLab wieder geöffnet"
 
 
 def sende_reihenfolge(mr, akte):
@@ -353,6 +382,8 @@ def kommentar_aktion(mr, eingabe):
         return False, NUR_LESEN
     if aktion == "antworten" and eingabe.get("sofort"):
         return antwort_senden(mr, eingabe)
+    if aktion in ("erledigen", "wiedereroeffnen"):
+        return diskussion_aufloesen(mr, eingabe)
     if aktion in KOMMENTAR_AKTIONEN:
         return aktion_ausfuehren(mr, lambda akte: KOMMENTAR_AKTIONEN[aktion](mr, akte, eingabe, ansicht))
     if aktion not in AM_KOMMENTAR:
@@ -468,7 +499,8 @@ def diskussion_auswerten(d):
     erledigt = None
     if loesbar and all(n.get("resolved") for n in loesbar):
         von = next((n for n in loesbar if n.get("resolved_by")), loesbar[-1])
-        erledigt = {"wer": (von.get("resolved_by") or {}).get("name") or "", "zeit": von.get("resolved_at")}
+        erledigt = {"wer": (von.get("resolved_by") or {}).get("name") or "", "wer_id": (von.get("resolved_by") or {}).get("id"),
+                    "zeit": von.get("resolved_at")}
     antworten = [{"id": n.get("id"), "wer": (n.get("author") or {}).get("name") or "",
                   "wer_id": (n.get("author") or {}).get("id"), "text": n.get("body") or "", "zeit": n.get("created_at")}
                  for n in notes[1:] if not n.get("system")]
