@@ -66,11 +66,15 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
   „alles aufklappen“), sonst den Dateiinhalt (mehr laden / ganze Datei).
 - **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „KI-Threads“ (Gespräche mit Agenten) und bei einem MR
   „GitLab-Kommentare“ und „GitLab-Diskussionen“ (siehe unten). Leere Listen sind ausgeblendet. Ein Klick springt zum
-  Eintrag und klappt dafür bei Bedarf Kontext oder Datei auf. Alle drei sind gleich gebaut: Jeder Eintrag zeigt seinen
-  Stand als Zeichen (○ steht aus, in der Farbe des Stands; ➜ an GitLab gesendet; ✓ erledigt bzw. veröffentlicht), ein
-  Klick auf das ○ eines Threads erledigt ihn. Neben dem Titel steht für jeden möglichen Stand ein kleiner Filterknopf mit
-  demselben Zeichen und der Anzahl, auch bei 0. Grüner Rahmen = angezeigt, Klick blendet den Stand aus (grau). Das merkt
-  sich der Browser je Waggon und Liste.
+  Eintrag und klappt dafür bei Bedarf Kontext oder Datei auf. Alle drei sind gleich gebaut, jeder Eintrag zeigt zwei
+  Dinge: **wer zuletzt gehandelt hat** (🤓 du, Symbol einstellbar mit `ich_symbol`; 🤖 ein Agent; das GitLab-Logo: von
+  außen) und **wer jetzt dran ist**:
+  orange ○ Entwurf, noch nicht gesendet · lila ● du bist dran · orange ➜ Entwurf in GitLab, dort abschicken ·
+  blauer ○ die anderen sind dran · grüner ✓ erledigt.
+  Ein Klick auf das Zeichen erledigt einen KI-Thread bzw. wartet bei einer Diskussion ab („☑ abwarten“). Neben dem
+  Titel steht für jeden Stand, der in der Liste vorkommen kann, ein kleiner Filterknopf mit Anzahl, auch bei 0. Grüner
+  Rahmen = angezeigt, Klick blendet den Stand aus (grau). Das merkt sich der Browser je Waggon und Liste. Die Regeln
+  dahinter: [Stände der Listen](docs/funktionen.md#stände-der-listen-wer-ist-dran).
 - **Stellwerk** (HUD) rechts im Güterbahnhof, auf Stelzen über dem Gleis: LED (grün: Server läuft, rot: nicht erreichbar,
   gelb: neuer Server, die Seite lädt gleich neu), Stand von merge-train (letzter Commit mit Zeit, `*` = Änderungen in
   `src/` noch nicht committet), wer zuhört, Zahl der Kommentare, Hinweise und KI-Threads (offen = nicht erledigt; in der
@@ -127,9 +131,8 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 
 - **Stand**: Lag GitLab beim letzten Holen auf einem anderen Stand als der Klon (`[repos]` oder Repo der Hinweis-Datei),
   sagt das ein Hinweis oben.
-- **GitLab-Kommentare** (Liste links): offene Agent-Hinweise 🤖, eigene bzw. übernommene Kommentare 💬. Stand: lila ○
-  Agent-Hinweis, blauer ○ Entwurf (lokal), blauer ➜ geändert (wird aktualisiert), grüner ➜ in GitLab (Entwurf), grüner ✓
-  in GitLab veröffentlicht. Die Reihenfolge
+- **GitLab-Kommentare** (Liste links): offene Agent-Hinweise (🤖 ●: du bist dran, übernehmen oder verwerfen) und
+  eigene bzw. übernommene Kommentare (🤓 ○ Entwurf, ➜ Entwurf in GitLab). Die Reihenfolge
   ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅“ (vor den Filterknöpfen) per Drag & Drop oder ⤒/⤓
   (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet an seiner Stelle nach Datei und Zeile,
   ein übernommener Hinweis behält seinen Platz.
@@ -142,30 +145,30 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **Kommentare** lassen sich bearbeiten und löschen. Das Etikett zeigt den Stand: *Entwurf (lokal)*, *in GitLab (Entwurf)*,
   *geändert* oder *wird in GitLab gelöscht*.
 - **Review abschließen → GitLab** legt neue Kommentare als Draft-Notes an, aktualisiert geänderte und löscht entfernte.
-  Nichts wird veröffentlicht: In GitLab steht dann „Pending comments“, dort prüfen und das Review abschicken.
+  Mit **„☑ direkt veröffentlichen“** (Standard, daneben, im Browser gemerkt) werden danach alle deine Entwürfe im MR
+  veröffentlicht, wie „Submit review“ in GitLab (eine Benachrichtigung), und die Diskussionen gleich geholt. Ohne
+  Haken bleiben sie „Pending comments“ in GitLab (➜), dort prüfen und das Review abschicken.
   Mehrfaches Abschließen erzeugt keine Duplikate. Einen in GitLab veröffentlichten Kommentar fasst das Tool nicht an.
 - **GitLab-Diskussionen als Threads**: „↻ MR-Daten“ holt alle Diskussionen des MR (ohne Systemnotizen wie „changed this
   line“). Veröffentlichte eigene Kommentare und die anderer (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab
   Geschriebenes) stehen als Threads an ihrer Zeile, genau wie die KI-Threads: Verlauf mit deinen Beiträgen rechts, Stand
-  (wartet auf Antwort, Antwort in GitLab, erledigt), „↩ antworten“ und „wieder öffnen“. Links stehen sie in der Liste
-  „GitLab-Diskussionen“ mit ○/✓. Der einzige Unterschied ist das Ziel: Erledigen und wieder öffnen gehen sofort an
-  GitLab. Die Liste „GitLab-Kommentare“ enthält nur noch, was „Review abschließen“ sendet.
-  Erledigt gibt es in zwei Stufen: **„☑ lokal erledigt“** (gesehen oder beantwortet, im Code aber noch offen) bleibt
-  in merge-train, die Diskussion in GitLab offen; grauer ✓ in der Liste, die Box wird grau. Schreibt danach jemand
-  anderes in die Diskussion, ist sie wieder offen. **„✓ in GitLab erledigt“** löst sie in GitLab auf; grüner ✓. Der ○ in
-  der Liste erledigt lokal.
-  Filterknöpfe wie bei allen Listen: ○ offen in der Farbe des Stands (Entwurf, Antwort, wartet), grauer ✓ lokal
-  erledigt, grüner ✓ in GitLab erledigt.
+  (z. B. „neue Nachricht – du bist dran“, „wartet auf die anderen“, „in GitLab erledigt“), „↩ antworten“ und „wieder
+  öffnen“. Links stehen sie in der Liste „GitLab-Diskussionen“. Der einzige Unterschied ist das Ziel: Erledigen und
+  wieder öffnen gehen sofort an GitLab. Die Liste „GitLab-Kommentare“ enthält nur noch, was „Review abschließen“ sendet.
+  Bist du dran, aber es gibt nichts zu sagen: **„☑ abwarten“** gibt den Ball ohne Antwort ab (nur in merge-train, in
+  GitLab bleibt die Diskussion offen; „↺ doch dran“ nimmt es zurück). Schreibt danach jemand, bist du wieder dran.
+  **„✓ in GitLab erledigt“** löst sie in GitLab auf; nur dann wird die Box grau.
 - **Antworten auf GitLab-Diskussionen**: Mit „sofort senden“
   geht die Antwort gleich als veröffentlichter Kommentar in die Diskussion, ohne lokalen und GitLab-Entwurf. Ohne wird sie
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine
   Einstellung des Browsers und gilt auch für Fragen an Agenten. Sie steht neben „Review abschließen“ und in jedem
-  Eingabefeld. „Review abschließen“ ist ausgegraut, solange es keine lokalen Entwürfe gibt.
+  Eingabefeld. „Review abschließen“ ist ausgegraut, solange es nichts zu senden gibt.
 - **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
-  anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (weder in GitLab noch lokal erledigte Diskussionen), sonst „✓ in GitLab“
-  (abgeschlossen) bzw. „✓ erledigt“ oder „● N Komm.“. Fertig (grüner Rahmen) ist der Waggon, sobald jede Diskussion
-  mindestens lokal erledigt ist und keine Entwürfe mehr warten; solange eine offen ist, nicht. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene
-  Kommentare und Fäden.
+  anderer in GitLab seit dem letzten Öffnen der Seite), „● N dran“ (Diskussionen, in denen du dran bist), sonst
+  „✓ in GitLab“ (abgeschlossen) bzw. „✓ erledigt“ oder „● N Komm.“. Fertig (grüner Rahmen) ist der Waggon, sobald
+  nichts mehr bei dir liegt: keine Diskussion, in der du dran bist, keine Entwürfe (lokal oder in GitLab). Wartet eine
+  Diskussion auf die anderen, hält das nicht auf. Der Tooltip nennt Rolle (Reviewer/Autor), Diskussionen je Stand,
+  Entwürfe in GitLab, neue Antworten, eigene Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
 
@@ -236,6 +239,7 @@ bleiben unangetastet, dann bricht es mit Meldung ab. GitLab fragt der Knopf nich
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
 | `port`, `leerlauf` | `8771`, `3600` | Port des Servers; nach so vielen Sekunden ohne Anfrage beendet er sich. Offene Seiten fragen alle 4 s, ein kurzer Leerlauf (z. B. `120`, Hintergrund-Tabs drosselt der Browser) beendet ihn also bald nach dem Schließen des Tabs |
+| `ich_symbol` | `🤓` | dein Symbol in den Listen links („zuletzt von dir“, siehe Kommentarlisten) |
 | `log_tage` | `7` | Log der Anfragen an die Quellen (lokales git, GitLab) mit Dauer und Anlass, eine Datei je Tag in `~/.cache/merge-train/aussen-<datum>.log`; so viele Tage aufbewahrt, `0` = aus |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.

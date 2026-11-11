@@ -27,8 +27,8 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
                    old_path, a, b, head_sha (Stand des Kommentars), loesbar, erledigt, antworten – nur MRs
   ich_id           meine GitLab-Benutzer-id (für „neu“: Beiträge anderer)
   diskussionen_gesehen  höchste note-id anderer beim letzten Öffnen der Seite; was danach kam, ist im Zug „neu“
-  diskussionen_abgehakt  {diskussion-id: zeit}: lokal erledigt (gesehen/beantwortet, in GitLab noch offen); gilt, bis
-                   ein anderer danach schreibt (diskussion_abgehakt)
+  diskussionen_abgehakt  {diskussion-id: zeit}: „☑ abwarten“ (Ball ohne Antwort abgegeben, in GitLab noch offen); gilt,
+                   bis ein anderer danach schreibt (diskussion_abgehakt)
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
@@ -201,6 +201,11 @@ def ausstehend(akte):
     return sum(1 for k in review_kommentare(akte) if ist_staged(k))
 
 
+def in_gitlab(akte):
+    """Kommentare, die als Entwurf (Draft-Note) in GitLab liegen und dort noch abzuschicken sind."""
+    return sum(1 for k in review_kommentare(akte) if kommentar_status(k) == "uebertragen")
+
+
 def datei_index(struktur, pfad):
     if struktur and pfad:
         for i, f in enumerate(struktur["dateien"]):
@@ -270,7 +275,7 @@ def zeitpunkt(iso):
 
 
 def diskussion_abgehakt(akte, d):
-    """Zeit, zu der die Diskussion lokal erledigt wurde – None, wenn nicht oder wenn ein anderer danach geschrieben hat."""
+    """Zeit von „☑ abwarten“ – None, wenn nicht oder wenn ein anderer danach geschrieben hat."""
     z = (akte.get("diskussionen_abgehakt") or {}).get(str(d.get("id")))
     t = zeitpunkt(z) if z else None
     if not t:
@@ -280,13 +285,62 @@ def diskussion_abgehakt(akte, d):
     return None if spaeter else z
 
 
+# ---- Stand eines Eintrags der Listen links (Konzept: docs/funktionen.md, „Stände der Listen“). Je Eintrag zwei Achsen:
+# stand = wer jetzt dran ist, wer = wer zuletzt gehandelt hat. Neue Listen und Eintragsarten bekommen hier eine Funktion.
+STAENDE = ("entwurf",         # von dir, noch nicht gesendet
+           "dran",            # du bist dran: dir wurde etwas hingelegt (Antwort, Hinweis, neue Nachricht)
+           "gitlab_entwurf",  # liegt als Entwurf in der Quelle (GitLab), dort abschicken
+           "wartet",          # die anderen sind dran
+           "erledigt")        # abgeschlossen
+WER = ("du", "agent", "extern")  # extern = aus der Quelle (GitLab …): wer dort schreibt, weiß man nicht sicher
+
+
+def faden_stand(k):
+    """(stand, wer) eines KI-Threads."""
+    st = faden_status(k)
+    if st == "erledigt":
+        return "erledigt", "agent" if (k.get("erledigt") or {}).get("von") == "claude" else "du"
+    return {"entwurf": ("entwurf", "du"), "wartet": ("wartet", "du"), "antwort": ("dran", "agent")}[st]
+
+
+def kommentar_stand(k):
+    """(stand, wer) eines Review-Kommentars: staged = entwurf, Draft-Note in GitLab = gitlab_entwurf, veröffentlicht =
+    wartet (bis „MR-Daten“ ihn als Diskussion holt)."""
+    st = kommentar_status(k)
+    return {"uebertragen": "gitlab_entwurf", "weg": "wartet"}.get(st, "entwurf"), "du"
+
+
+def hinweis_stand(h):
+    """(stand, wer) eines Agent-Hinweises (draft): offen = du bist dran, sonst übernommen bzw. verworfen."""
+    return ("dran", "agent") if h.get("status") == "offen" else ("erledigt", "du")
+
+
+def diskussion_stand(akte, d):
+    """(stand, wer) einer GitLab-Diskussion. „☑ abwarten“ (diskussion_abgehakt) gibt den Ball ohne Antwort ab."""
+    ich_id = akte.get("ich_id")
+    antworten = [k for k in review_kommentare(akte) if k.get("antwort_auf") == d.get("id")]
+    stufen = {kommentar_status(k) for k in antworten}
+    if stufen & {"neu", "geaendert"}:
+        return "entwurf", "du"
+    if "uebertragen" in stufen:
+        return "gitlab_entwurf", "du"
+    if d.get("erledigt"):
+        return "erledigt", "du" if d["erledigt"].get("wer_id") == ich_id else "extern"
+    letzte = ([d] + (d.get("antworten") or []))[-1]
+    if letzte.get("wer_id") == ich_id or diskussion_abgehakt(akte, d):
+        return "wartet", "du"
+    t = zeitpunkt(letzte.get("zeit"))  # eben veröffentlichte Antwort, noch nicht von „MR-Daten“ geholt
+    if t and any(kommentar_status(k) == "weg" and (zeitpunkt(k.get("erstellt")) or t) > t for k in antworten):
+        return "wartet", "du"
+    return "dran", "extern"
+
+
 def diskussionen_stand(akte):
-    """Für Waggon und Seite: offen (lösbar, weder in GitLab noch lokal erledigt), abgehakt (lösbar, nur lokal erledigt),
-    erledigt (in GitLab), neu (Beiträge anderer seit dem letzten Öffnen)."""
-    ds = akte.get("diskussionen") or []
+    """Für Waggon und Seite: Anzahl je Stand (STAENDE) über die Diskussionen, dazu neu (Beiträge anderer seit dem
+    letzten Öffnen)."""
+    zahl = dict.fromkeys(STAENDE, 0)
+    for d in akte.get("diskussionen") or []:
+        zahl[diskussion_stand(akte, d)[0]] += 1
     gesehen = akte.get("diskussionen_gesehen") or 0
-    nicht_zu = [d for d in ds if d.get("loesbar") and not d.get("erledigt")]
-    abgehakt = sum(1 for d in nicht_zu if diskussion_abgehakt(akte, d))
-    return {"offen": len(nicht_zu) - abgehakt, "abgehakt": abgehakt,
-            "erledigt": sum(1 for d in ds if d.get("erledigt")),
-            "neu": sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)}
+    zahl["neu"] = sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)
+    return zahl

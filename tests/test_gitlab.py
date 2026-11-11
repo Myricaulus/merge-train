@@ -699,7 +699,7 @@ def main():
         pruefe(r["ok"] and "1 neue Antwort(en)" in r["text"] and "1 in GitLab erledigt" in r["text"]
                and not any(x["text"] == "Insgesamt sehr gut." for x in rv["kommentare"])
                and [(m["von"], m["text"]) for m in gl.get("nachrichten", [])] == [("ich", "Insgesamt sehr gut."), ("andere", "Danke, erledigt")]
-               and gl.get("status") == "erledigt" and (gl.get("erledigt") or {}).get("wer") == "Autorin"
+               and gl.get("stand") == "erledigt" and gl.get("wer") == "extern" and (gl.get("erledigt") or {}).get("wer") == "Autorin"
                and gl.get("url", "").endswith("#note_900"),
                "MR-Daten: veröffentlichter Kommentar als GitLab-Thread mit Antworten und Erledigt-Status")
         # Diskussion eines anderen (z. B. Reviewer im eigenen MR): auf der Seite an der Zeile, im Zug „neu“
@@ -712,16 +712,16 @@ def main():
         fremd = [d for d in rv.get("diskussionen", []) if d["text"] == "Warum so?"]
         zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
         pruefe(r["ok"] and fremd and fremd[0]["b"] == 11 and fremd[0]["nachrichten"][0]["wer"] == "Reviewerin"
-               and fremd[0]["nachrichten"][0]["von"] == "andere" and fremd[0]["status"] == "antwort"
+               and fremd[0]["nachrichten"][0]["von"] == "andere" and fremd[0]["stand"] == "dran" and fremd[0]["wer"] == "extern"
                and zw["marke"] == "↩ 1 neu" and "Reviewer, Autor" in zw["titel"],
                "MRs: holt Diskussionen; fremde an der Zeile, im Zug neu, Rollen im Titel")
         get(f"/mr/{mr}")
         zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
-        pruefe(zw["marke"] == "● 1 offen", "nach dem Öffnen der Seite: nicht mehr neu, noch offen")
+        pruefe(zw["marke"] == "● 1 dran" and zw["status"] == "offen", "nach dem Öffnen der Seite: nicht mehr neu, du bist dran")
         # Antwort auf die Diskussion: sofort → gleich veröffentlicht; sonst lokaler Entwurf → Abschließen als Draft-Antwort
         r = post("/api/kommentar", dict(basis, aktion="antworten", diskussion="d950", text="Darum.", sofort=1))
         fremd = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
-        pruefe(r["ok"] and [m["text"] for m in fremd["nachrichten"]] == ["Warum so?", "Darum."] and fremd["status"] == "wartet"
+        pruefe(r["ok"] and [m["text"] for m in fremd["nachrichten"]] == ["Warum so?", "Darum."] and fremd["stand"] == "wartet"
                and "Darum." in [x["body"] for x in json.load(open(f"{T}/glab/discussions.json"))["d950"]]
                and not any(k.get("antwort_auf") for k in r["review"]["kommentare"]),
                "Antwort mit sofort senden: gleich in GitLab, kein Entwurf")
@@ -729,26 +729,29 @@ def main():
         ent = [k for k in r["review"]["kommentare"] if k.get("antwort_auf") == "d950"]
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
         pruefe(r["ok"] and len(ent) == 1 and ent[0]["status"] == "neu" and r["review"]["ausstehend"] == 1
-               and faden["status"] == "entwurf" and faden["nachrichten"][-1] == dict(faden["nachrichten"][-1], von="ich", gesendet=None, stufe="neu"),
+               and faden["stand"] == "entwurf" and faden["wer"] == "du" and faden["nachrichten"][-1] == dict(faden["nachrichten"][-1], von="ich", gesendet=None, stufe="neu"),
                "Antwort ohne sofort: lokaler Entwurf (staged)")
         r = post("/api/abschliessen", basis)
-        pruefe(r["ok"] and any(x.get("in_reply_to_discussion_id") == "d950" and x["note"] == "Noch was." for x in drafts()),
-               "Abschließen: Antwort als Draft-Note in der Diskussion")
+        faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and any(x.get("in_reply_to_discussion_id") == "d950" and x["note"] == "Noch was." for x in drafts())
+               and faden["stand"] == "gitlab_entwurf" and r["review"]["in_gitlab"] >= 1,
+               "Abschließen: Antwort als Draft-Note in der Diskussion (Stand: Entwurf in GitLab)")
         r = post("/api/kommentar", dict(basis, aktion="erledigen", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
-        pruefe(r["ok"] and faden["status"] == "erledigt" and faden["erledigt"]["von"] == "ich",
+        # Stand bleibt gitlab_entwurf: die Antwort „Noch was.“ liegt noch als Entwurf in GitLab, das geht vor
+        pruefe(r["ok"] and faden["erledigt"]["von"] == "ich" and faden["stand"] == "gitlab_entwurf",
                "✓ erledigt: Diskussion gleich in GitLab aufgelöst, von mir")
         r = post("/api/kommentar", dict(basis, aktion="wiedereroeffnen", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
-        pruefe(r["ok"] and not faden["erledigt"] and faden["status"] != "erledigt", "wieder öffnen: in GitLab wieder offen")
+        pruefe(r["ok"] and not faden["erledigt"] and faden["stand"] != "erledigt", "wieder öffnen: in GitLab wieder offen")
         aufgeloest = lambda: json.load(open(f"{T}/glab/resolved.json")).get("d950")
         r = post("/api/kommentar", dict(basis, aktion="abhaken", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
-        pruefe(r["ok"] and faden["status"] == "abgehakt" and faden["abgehakt"] and not faden["erledigt"] and not aufgeloest(),
-               "☑ lokal erledigt: nur in merge-train, in GitLab offen")
+        pruefe(r["ok"] and faden["abgehakt"] and not faden["erledigt"] and not aufgeloest(),
+               "☑ abwarten: nur in merge-train, in GitLab offen")
         r = post("/api/kommentar", dict(basis, aktion="aufhaken", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
-        pruefe(r["ok"] and faden["status"] != "abgehakt" and not faden["abgehakt"], "lokal wieder offen")
+        pruefe(r["ok"] and not faden["abgehakt"], "↺ doch dran: Abwarten zurückgenommen")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
         rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]
@@ -843,6 +846,16 @@ def main():
                and "-seit" not in st2["struktur"] and "-commit" not in st2["struktur"], "Ansichten ändern die Struktur des MR nicht")
         pruefe("gehört nicht zu diesem MR" in get(f"/mr/{mr}?commit={start}") and "ungültig" in get(f"/mr/{mr}?seit=xyz"),
                "fremder Commit / ungültige sha abgelehnt")
+        # „direkt veröffentlichen“: anlegen, dann alle Entwürfe veröffentlichen (bulk_publish), Diskussionen gleich holen
+        r = post("/api/abschliessen", dict(basis2, direkt=1))
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        d950 = next(d for d in rv["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and r["text"].startswith("In GitLab veröffentlicht") and not drafts() and rv["in_gitlab"] == 0
+               and any("bulk_publish" in z for z in open(f"{T}/glab/aufrufe.log"))
+               and not any(x["stand"] in ("entwurf", "gitlab_entwurf") for x in rv["kommentare"])
+               and any("Eingefügt?" in x["text"] for x in rv["diskussionen"])
+               and d950["stand"] == "wartet" and d950["nachrichten"][-1]["text"] == "Noch was.",
+               "direkt veröffentlichen: alles in GitLab veröffentlicht und gleich als Diskussionen geholt")
         # Übersicht, Zug, lokal=false
         pruefe("Güterbahnhof" in get("/") and "Demo-Änderung" not in get("/"), "Startseite ohne MR-Liste (lokal = false)")
         r = post("/api/gitlab", dict(k=k, aktion="mrliste"))

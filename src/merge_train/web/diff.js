@@ -1,7 +1,7 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
 // Dateivergleich, Kommentarliste links (sortierbar). Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
-// dateiFesthalten; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, statusTexte,
-// fadenStatus, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
+// dateiFesthalten; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
+// direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
   const {el, waggon, dateien} = App;
@@ -218,24 +218,24 @@
       [
         ...App.review.kommentare
           .filter(x => x.status !== 'loeschen')
-          .map(x => ({art: 'km', id: x.id, x, f: x.finding, st: x.status})),
+          .map(x => ({art: 'km', id: x.id, x, f: x.finding, st: x.stand})),
         ...App.review.hinweise
           .filter(h => h.status === 'offen')
-          .map(h => ({art: 'hw', id: h.key, x: h, f: h.finding, st: 'hinweis'}))
+          .map(h => ({art: 'hw', id: h.key, x: h, f: h.finding, st: h.stand}))
       ].sort((p, q) => (pos[p.id] ?? 1e9) - (pos[q.id] ?? 1e9) || nach(p, q)),
       mitReview && !nurLesen && !waggon.ansicht
     );
     kasten(
       'kliste-gl',
       'GitLab-Diskussionen',
-      (App.review.diskussionen || []).map(x => ({art: 'km gl', id: x.id, x, st: x.status})).sort(nach),
+      (App.review.diskussionen || []).map(x => ({art: 'km gl', id: x.id, x, st: x.stand})).sort(nach),
       false
     );
     kasten(
       'kliste-ki',
       'KI-Threads',
       [...(App.review.faeden || []), ...(App.review.zeigFremde ? App.review.faeden_fremd || [] : [])]
-        .map(x => ({art: 'km', id: x.id, x, st: x.status}))
+        .map(x => ({art: 'km', id: x.id, x, st: x.stand}))
         .sort(nach)
     );
   }
@@ -255,25 +255,20 @@
     }
     reihenfolge(ids);
   }
-  /** Gemeinsame Basis der drei Listen: ihre Stände in Anzeige-Reihenfolge (je ein Filterknopf, auch bei 0). */
+  /** Gemeinsame Basis der drei Listen: die Stände, die dort vorkommen können, in Anzeige-Reihenfolge (je ein
+   *  Filterknopf, auch bei 0). Bedeutung und Zeichen: App.STAENDE (Konzept: docs/funktionen.md, „Stände der Listen“).
+   *  „Entwurf in GitLab“ gibt es nur ohne „direkt veröffentlichen“ (oder wenn noch einer da ist). */
   const LISTEN_STATI = {
-    kliste: ['hinweis', 'neu', 'geaendert', 'uebertragen', 'weg'],
-    'kliste-gl': ['entwurf', 'antwort', 'wartet', 'abgehakt', 'erledigt'],
-    'kliste-ki': ['entwurf', 'antwort', 'wartet', 'erledigt']
+    kliste: ['entwurf', 'dran', 'gitlab_entwurf', 'wartet'],
+    'kliste-gl': ['entwurf', 'dran', 'gitlab_entwurf', 'wartet', 'erledigt'],
+    'kliste-ki': ['entwurf', 'dran', 'wartet', 'erledigt']
   };
-  /** [Zeichen, Klasse, Titel] eines Stands, in der Liste und an den Filterknöpfen gleich: ○ steht aus (Farbe des
-   *  Stands, bei Threads Klick = erledigen), ➜ an GitLab gesendet, ✓ grau lokal erledigt bzw. erledigt (KI-Thread),
-   *  ✓ grün in GitLab erledigt bzw. veröffentlicht. „fest“ = nicht anklickbar. */
-  function standZeichen(id, st) {
-    if (id === 'kliste') {
-      const [titel, kl] = st === 'hinweis' ? ['Agent-Hinweis – noch nicht übernommen', 'b-agent'] : App.statusTexte[st];
-      return [{uebertragen: '➜', geaendert: '➜', weg: '✓'}[st] || '○', 'zu fest ' + kl, titel];
-    }
-    const gl = id === 'kliste-gl',
-      [titel, kl] = App.fadenStatus({ziel: gl ? 'gitlab' : '', status: st});
-    if (st === 'erledigt' || st === 'abgehakt')
-      return ['✓', 'zu fest erledigt' + (gl && st === 'erledigt' ? ' gl' : ''), titel];
-    return ['○', 'zu ' + kl, titel];
+  const listenStati = (id, items) =>
+    LISTEN_STATI[id].filter(st => st !== 'gitlab_entwurf' || !App.direkt() || items.some(i => i.st === st));
+  /** [Zeichen, Klasse, Titel] eines Stands – in der Liste und an den Filterknöpfen gleich. */
+  function standZeichen(st) {
+    const [zeichen, titel] = App.STAENDE[st] || ['?', st];
+    return [zeichen, 'zu s-' + st, titel];
   }
   function ausgeblendet(id, neu) {
     const schl = 'filter:' + id + ':' + waggon.id;
@@ -285,8 +280,8 @@
     }
   }
   function filterKnoepfe(id, items, aus) {
-    return LISTEN_STATI[id].map(st => {
-      const [zeichen, klasse, titel] = standZeichen(id, st);
+    return listenStati(id, items).map(st => {
+      const [zeichen, klasse, titel] = standZeichen(st);
       return el(
         'button',
         {
@@ -344,7 +339,7 @@
   }
   const eintragTitel = x =>
     x.title || (x.hinweis && (App.review.hinweise.find(h => h.key === x.hinweis) || {}).title) || null;
-  /** Zeile der Liste: Symbol, Stand (standKnopf), Ort, Text; beim Sortieren Griff und Pfeile. */
+  /** Zeile der Liste: wer zuletzt gehandelt hat, Stand (standKnopf), Ort, Text; beim Sortieren Griff und Pfeile. */
   function listenEintrag(id, i, s) {
     const t = String(i.x.text || ((i.x.nachrichten && i.x.nachrichten[0]) || {}).text || '').replace(/\*\*|`/g, ''),
       f = eintragTitel(i.x) || (i.f && t.startsWith(i.f) ? t.slice(i.f.length).trim() : t);
@@ -352,7 +347,7 @@
       'div',
       {class: 'ke ' + i.art + (s ? ' sort' : ''), title: f, onclick: s ? null : () => springen(i)},
       s ? el('span', {class: 'griff', title: 'ziehen zum Umsortieren'}, '⠿') : null,
-      el('span', {class: 'ki'}, i.art === 'hw' ? '🤖' : '💬'),
+      App.werZeichen(i.x.wer),
       standKnopf(id, i),
       i.f ? el('b', {}, i.f) : null,
       el('span', {class: 'kt2'}, f),
@@ -366,16 +361,16 @@
         : null
     );
   }
-  /** Stand eines Eintrags; ein offener Thread wird per Klick erledigt (GitLab: lokal, GitLab bleibt offen). */
+  /** Stand eines Eintrags; Klick, wo App.fadenErledigen es erlaubt (KI-Thread erledigen, Diskussion abwarten). */
   function standKnopf(id, i) {
-    const [zeichen, klasse, titel] = standZeichen(id, i.st);
-    if (klasse.includes('fest')) return el('span', {class: klasse, title: titel}, zeichen);
+    const [zeichen, klasse, titel] = standZeichen(i.st),
+      klick = id !== 'kliste' && App.fadenErledigen(i.x, true);
+    if (!klick) return el('span', {class: klasse + ' fest', title: titel}, zeichen);
     return el(
       'span',
       {
         class: klasse,
-        title:
-          titel + ' – Klick: ' + (id === 'kliste-gl' ? 'lokal erledigt (GitLab bleibt offen)' : 'als erledigt markieren'),
+        title: titel + ' – Klick: ' + klick,
         onclick: e => {
           e.stopPropagation();
           App.fadenErledigen(i.x);

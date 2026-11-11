@@ -16,5 +16,10 @@ JS_START_DATEIEN = ("app.js", "zeichnungen.js", "zug.js", "bahnhof.js")
 JS = "".join(_text(n) for n in JS_DATEIEN)
 JS_START = "".join(_text(n) for n in JS_START_DATEIEN)
 FAVICON = _text("favicon.svg")
+
+
+def bild(name):
+    """Bild aus web/ als Text (SVG), z. B. das Logo einer Quelle."""
+    return _text(name).strip()
 ICON = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
 BAHNHOF_BILD = base64.b64encode(pkgutil.get_data(__package__, "web/bahnhof.webp")).decode()  # für eine data:-URL

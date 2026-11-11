@@ -2,7 +2,8 @@
 """Nachgebautes „glab api“ für Tests ohne GitLab.
 
 Ein lokales Git-Repo spielt das GitLab-Projekt: MR !1 = Branch FAKE_MR_BRANCH (Standard: feature)
-gegen FAKE_MR_ZIEL (Standard: main). Draft-Notes landen in $FAKE_GLAB_STATE/drafts.json,
+gegen FAKE_MR_ZIEL (Standard: main). Draft-Notes landen in $FAKE_GLAB_STATE/drafts.json (bulk_publish verschiebt sie nach notes.json bzw. als Antwort
+nach discussions.json),
 jeder Aufruf wird in $FAKE_GLAB_STATE/aufrufe.log protokolliert.
 
 Umgebung: FAKE_GLAB_REPO (Pfad), FAKE_GLAB_STATE (Ordner), FAKE_GLAB_PROJEKT (Standard: gruppe/demo),
@@ -100,11 +101,8 @@ def main():
                 h, kurz, s, b, t = c.strip("\n").split("\x1f")
                 out.append({"id": h, "short_id": kurz, "title": s, "message": b, "authored_date": t})
         return raus(out)
-    if rest == "/notes":  # veröffentlichte Kommentare (Test legt sie in notes.json ab)
-        try:
-            n = json.load(open(os.path.join(STATE, "notes.json")))
-        except FileNotFoundError:
-            n = []
+    if rest == "/notes":  # veröffentlichte Kommentare (notes.json) samt Antworten (discussions.json)
+        n = zustand("notes.json", []) + [x for a in zustand("discussions.json", {}).values() for x in a]
         return raus(n if seite == 1 else [])
     if rest == "/discussions":  # je veröffentlichtem Kommentar eine Diskussion, Antworten aus discussions.json
         try:
@@ -146,6 +144,18 @@ def main():
         antworten.setdefault(m.group(1), []).append(neu)
         json.dump(antworten, open(os.path.join(STATE, "discussions.json"), "w"))
         return raus(neu)
+    if rest == "/draft_notes/bulk_publish" and methode == "POST":  # alle Entwürfe veröffentlichen
+        notes, antworten = zustand("notes.json", []), zustand("discussions.json", {})
+        for x in drafts():
+            n = {"id": 7000 + x["id"], "body": x["note"], "author": {"id": 1, "name": "Test Er"}, "system": False,
+                 "created_at": "2026-11-11T12:00:00Z"}
+            if x.get("in_reply_to_discussion_id"):
+                antworten.setdefault(x["in_reply_to_discussion_id"], []).append(n)
+            else:
+                notes.append(dict(n, position=x.get("position"), resolvable=True, resolved=False))
+        json.dump(notes, open(os.path.join(STATE, "notes.json"), "w"))
+        json.dump(antworten, open(os.path.join(STATE, "discussions.json"), "w"))
+        drafts_speichern([]); return
     m = re.fullmatch(r"/draft_notes/(\d+)", rest)
     if m:
         d = drafts(); n = int(m.group(1))

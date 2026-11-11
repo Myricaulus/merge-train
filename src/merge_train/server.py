@@ -5,13 +5,13 @@ from datetime import datetime
 from .einstellungen import BIS, KONF, SKRIPT, VON, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
 from .git import ANLASS, anlass, branch_aktualisieren, finde_repos, git, statistik
-from .web import CSS, FAVICON, ICON
+from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
 from .beobachter import neue_zeilen, veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
-from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
+from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, diskussionen_gesehen, hinweis_aktion, kommentar_aktion, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -177,6 +177,13 @@ def favicon(anfrage):
     return Antwort(200, FAVICON.strip(), "image/svg+xml")
 
 
+@route("GET", re.compile(r"logo/(\w+)\.svg"), mit_schluessel=False)
+def logo(anfrage, name):
+    """Logo einer Quelle (wer = extern in den Listen)."""
+    q = next((q for q in QUELLEN if q.name == name and q.logo), None)
+    return Antwort(200, bild(q.logo), "image/svg+xml") if q else NICHT_GEFUNDEN
+
+
 @route("GET", "", mit_schluessel=False)
 def start(anfrage):
     """Start: erster offener lokaler Waggon, sonst Zug (mit MR-Feld)."""
@@ -323,7 +330,7 @@ def api_abschliessen(anfrage, waggon):
     ansicht = anfrage.ansicht
     if ansicht and ansicht[0] == "commit":
         return {"ok": False, "text": NUR_LESEN}
-    ok, text, web = abschliessen(waggon)
+    ok, text, web = abschliessen(waggon, direkt=bool(anfrage.daten.get("direkt")))
     return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht)}
 
 

@@ -4,7 +4,8 @@ from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich
 from .git import arbeitsstand, branch_von, finde_repos, git, projekt_wurzel, statistik
-from .akte import akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden
+from .akte import (akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
+                   review_kommentare, struktur_laden)
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
 
@@ -75,16 +76,21 @@ def mr_wagen(akt=None):
         n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
         gs, gs_neu = faeden_zaehlen(mr, akte["mr"].get("source_branch") or None)
         ds = diskussionen_stand(akte)
-        # fertig: abgeschlossen oder Diskussionen da, keine ungesendeten Entwürfe, jede Diskussion mindestens lokal erledigt
-        fertig = bool(akte.get("abgeschlossen") or akte.get("diskussionen")) and not ausstehend(akte) and not ds["offen"]
+        gesendet = in_gitlab(akte)
+        # fertig: abgeschlossen oder Diskussionen da und nichts mehr bei mir – kein Entwurf (lokal oder in GitLab),
+        # keine Diskussion, in der ich dran bin (Stände: docs/funktionen.md)
+        fertig = (bool(akte.get("abgeschlossen") or akte.get("diskussionen")) and not ausstehend(akte) and not gesendet
+                  and not (ds["dran"] or ds["entwurf"] or ds["gitlab_entwurf"]))
         kurz = mr.projekt.rsplit("/", 1)[-1]
         marke = (f"💬 {gs_neu} neu" if gs_neu else f"↩ {ds['neu']} neu" if ds["neu"] else
-                 f"● {ds['offen']} offen" if ds["offen"] else ("✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt")
+                 f"● {ds['dran']} dran" if ds["dran"] else ("✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt")
                  if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
             ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
-            f"{ds['offen']} offen in GitLab" if ds["offen"] else "", f"{ds['abgehakt']} lokal erledigt" if ds["abgehakt"] else "",
+            f"{ds['dran']} Diskussion(en): du bist dran" if ds["dran"] else "",
+            f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
             f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
+            f"{gesendet} Entwurf/Entwürfe in GitLab" if gesendet else "",
             f"{ds['neu']} neue Antwort(en)" if ds["neu"] else "", f"{n} eigene Kommentare" if n else "",
             f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
         return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
@@ -111,10 +117,12 @@ def mr_wagen(akt=None):
 # Quellen der Waggons: die lokalen Branches (BIS gegen VON in jedem Repo unter „projekte“) und GitLab-MRs; eine
 # GitHub-Quelle wäre eine weitere Klasse. Der Zug mischt die Waggons aller eingeschalteten Quellen. Eine Quelle weiß,
 # wo der Klon und Stand eines Waggons liegt (ort), baut seine Seite (seite), zählt ihre Waggons auf (wagen) und sagt
-# dem Agenten, was zu tun ist (prompt). Was ein Waggon kann, steht am Waggon selbst (waggon.py).
+# dem Agenten, was zu tun ist (prompt). Bringt sie Einträge von außen (Diskussionen), dann mit titel und logo: das
+# Symbol für „zuletzt von extern“ in den Listen (Stände: docs/funktionen.md). Was ein Waggon kann, steht am Waggon selbst (waggon.py).
 
 class Lokal:
-    name = "lokal"
+    name, titel = "lokal", "lokal"
+    logo = None  # Logo (Datei in web/) für Einträge von außen („wer“ = extern); lokal gibt es kein außen
 
     def an(self):
         return bool(KONF["lokal"])
@@ -154,7 +162,8 @@ class Lokal:
 
 
 class GitLab:
-    name = "gitlab"
+    name, titel = "gitlab", "GitLab"
+    logo = "gitlab.svg"
     def an(self):
         return bool(KONF["gitlab"])
 
@@ -192,6 +201,12 @@ QUELLEN = (LOKAL, GITLAB)
 
 def quelle(waggon):
     return LOKAL if waggon.lokal else GITLAB
+
+
+def extern_von(waggon):
+    """Für die Seite: Titel und Logo-URL der Quelle (wer = extern), None ohne Logo."""
+    q = quelle(waggon)
+    return {"titel": q.titel, "logo": f"/logo/{q.name}.svg"} if q.logo else None
 
 
 def schluessel_von(sid):

@@ -13,13 +13,17 @@ Beim Ändern mitpflegen: Eine neue Funktion bekommt hier einen Eintrag, eine neu
 - **Quelle**: woher Waggons kommen. `quellen.py`
 - **Akte**: die JSON-Datei je Waggon mit Kommentaren, Fäden und Hinweis-Status. `akte.py`
 - **draft / staged / sent**: Stufen eines GitLab-Kommentars, siehe AGENTS.md.
+- **Stand / wer**: wer bei einem Eintrag der Listen jetzt dran ist und wer zuletzt gehandelt hat, siehe
+  [Stände der Listen](#stände-der-listen-wer-ist-dran).
 
 ## Funktionen
 
 ### 1. Mehrere Quellen für Waggons
 Lokale Branches (`bis` gegen `von` in jedem Repo unter `projekte`) und GitLab-MRs. Einzeln an- und abschaltbar, beide
 zusammen in einem Zug.
-- Achsen: Quelle (lokal, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`.
+- Achsen: Quelle (lokal, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`, dazu
+  `titel` und `logo` (Datei in `web/`, Route `logo/<name>.svg`): das Symbol für „wer = extern“, Pflicht für jede
+  Quelle mit Einträgen von außen.
 - Ort: `quellen.py` (Klassen `Lokal`, `GitLab`), `gitlab.py` (glab), `cli.py` (MR-Verweise).
 - Erweitern: eine neue Quelle ist eine neue Klasse in `quellen.py` plus eine Waggon-Art, keine eigene Seite.
 
@@ -86,8 +90,11 @@ der Startbefehl aus `[agenten]`. Zeigt „🎧 … hört zu“ und den Kontext-F
 
 ### 10. GitLab-Review
 Eigene Kommentare an Zeilen oder allgemein, bearbeiten, löschen, Reihenfolge (sortieren, ⤒/⤓). „Review abschließen“
-gleicht mit GitLab ab und legt Draft-Notes an, aktualisiert oder löscht sie, ohne Duplikate; nichts wird
-veröffentlicht. Zeilen außerhalb des Diffs: erst Zeilen-Kommentar, sonst allgemeiner mit Link.
+gleicht mit GitLab ab und legt Draft-Notes an, aktualisiert oder löscht sie, ohne Duplikate. Mit „☑ direkt
+veröffentlichen“ (Standard, im Browser gemerkt) danach `draft_notes/bulk_publish` und gleich `mr_gitlab_holen`: die
+Kommentare stehen dann als Diskussionen da. Ohne: sie bleiben Entwürfe in GitLab (Stand `gitlab_entwurf`). Zeilen
+außerhalb des Diffs: erst Zeilen-Kommentar, sonst allgemeiner mit Link.
+- Achsen: Senden (direkt veröffentlichen, nur Entwürfe).
 - Ort: `review.py` (planen: `abschluss_planen`, ausführen: `schritt_ausfuehren`), Routen `api/kommentar`,
   `api/abschliessen`.
 - Erweitern: neue Arten von Übertragung als weiterer `Schritt`, nicht als eigener Ablauf.
@@ -102,9 +109,8 @@ Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt d
 ### 12. GitLab-Diskussionen lesen und beantworten
 Holt Diskussionen zu MRs: Antworten und Erledigt-Status an eigenen Kommentaren, fremde Diskussionen nur lesend an der
 Zeile und in einer Liste. „↩ antworten“: sofort senden oder als lokaler Entwurf, den „Review abschließen“ als
-Draft-Antwort anlegt. Erledigt in zwei Stufen: lokal (`abhaken`, nur in der Akte, bis ein anderer danach schreibt)
-und in GitLab (`erledigen`).
-- Achsen: Erledigt-Stufe (lokal, GitLab).
+Draft-Antwort anlegt. „☑ abwarten“ (`abhaken`, nur in der Akte) gibt den Ball ohne Antwort ab, bis ein anderer
+danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion in GitLab auf. Stand: `diskussion_stand`.
 - Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
   (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
 - Liste links: siehe Baustein „Liste links über den Dateien“.
@@ -118,7 +124,7 @@ origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktual
 
 ### 14. Zug und Güterbahnhof
 Kopf jeder Seite: ein Wagen je Waggon (gemischt aus allen Quellen), Füllstand, Marken („💬 n neu“, „↩ n neu“,
-„● n offen“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
+„● n dran“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
 Welche MRs: `mr_liste` (reviewer, author, assignee).
 - Achsen: Quelle, Marke am Wagen, Knopf im Leitstand.
 - Ort: `alle_wagen`/`wagen_fuer` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
@@ -160,6 +166,56 @@ Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für 
 - Erweitern: neue Schalter in `einstellungen.py` mit Standard, dazu Zeile in der README-Tabelle und in
   `config.example.toml`.
 
+## Stände der Listen (wer ist dran)
+
+Gilt für jeden Eintrag, der einen Gesprächs- oder Sendestand hat: die drei Listen links („GitLab-Kommentare“,
+„GitLab-Diskussionen“, „KI-Threads“), das Badge der Thread-Box, die Marke am Waggon. Eine neue Liste, Eintragsart oder
+Quelle (z. B. GitHub) ordnet sich hier ein, statt eigene Zustände und Zeichen zu erfinden.
+
+Jeder Eintrag hat zwei Achsen, beide vom Server berechnet:
+
+**`stand`: wer jetzt dran ist.** Bestimmt Zeichen und Farbe (Klasse `s-<stand>`), Filter, Waggon „fertig“.
+
+| id | Zeichen | Bedeutung |
+|---|---|---|
+| `entwurf` | orange ○ | von dir, noch nicht gesendet |
+| `dran` | lila ● | du bist dran: dir wurde etwas hingelegt (Antwort, Hinweis, neue Nachricht) |
+| `gitlab_entwurf` | orange ➜ | liegt als Entwurf in der Quelle, dort abschicken (nur ohne „direkt veröffentlichen“) |
+| `wartet` | blauer ○ | die anderen sind dran |
+| `erledigt` | grüner ✓ | abgeschlossen (nur dann wird die Thread-Box grau) |
+
+**`wer`: wer zuletzt gehandelt hat.** Das Symbol links vom Stand.
+
+| id | Symbol | Bedeutung |
+|---|---|---|
+| `du` | Einstellung `ich_symbol` (Standard 🤓) | du |
+| `agent` | 🤖 | ein Agent (Claude-Antwort, Agent-Hinweis, Thread mit `--erledigt` geschlossen) |
+| `extern` | Logo der Quelle (`Quelle.logo`) | von außen aus der Quelle; ob ein Mensch schrieb, weiß man nicht sicher |
+
+**Gültige Kombinationen**
+
+| Eintrag | entwurf | dran | gitlab_entwurf | wartet | erledigt |
+|---|---|---|---|---|---|
+| KI-Thread (`faden_stand`) | du: Frage nicht gesendet | agent: hat geantwortet bzw. Thread eröffnet | – | du: gesendet | du / agent |
+| GitLab-Diskussion (`diskussion_stand`) | du: Antwort lokal | extern: zuletzt geschrieben | du: Antwort als Entwurf in GitLab | du: zuletzt geschrieben oder „☑ abwarten“ | du / extern: in GitLab aufgelöst |
+| Review-Kommentar (`kommentar_stand`) | du: neu oder geändert | – | du: Draft-Note in GitLab | du: veröffentlicht, bis „MR-Daten“ ihn als Diskussion holt | – |
+| Agent-Hinweis (`hinweis_stand`) | – | agent: noch nicht übernommen | – | – | du: übernommen/verworfen (nicht in der Liste) |
+
+**Regeln**
+- Vorrang bei einer Diskussion: eigener Entwurf (lokal, dann in GitLab) vor erledigt, vor wartet, vor dran.
+- Aus `dran` kommt man durch Antworten, „☑ abwarten“ (Ball ohne Antwort abgeben) oder Erledigen. Schreibt danach
+  jemand von außen, ist man wieder `dran`.
+- Waggon „fertig“ (grüner Rahmen): kein `entwurf`, kein `dran`, kein `gitlab_entwurf` mehr. `wartet` hält nicht auf.
+  Die Marke „● n dran“ zählt die Diskussionen, in denen du dran bist.
+- Klick auf das Zeichen in der Liste nur, wo es eine Aktion gibt: KI-Thread erledigen, Diskussion in `dran` abwarten.
+- Filterknöpfe je Liste nur für die Stände, die dort vorkommen können (`LISTEN_STATI`), auch bei 0.
+
+**Ort**: `STAENDE`, `WER`, `faden_stand`, `diskussion_stand`, `kommentar_stand`, `hinweis_stand`, `diskussionen_stand`
+(Zählung für den Waggon) in `akte.py`; Zeichen und Texte `App.STAENDE`, `App.werZeichen` (`web/review.js`); Listen
+`LISTEN_STATI`, `standZeichen`, `standKnopf` (`web/diff.js`); Quelle-Logo `extern_von` (`quellen.py`).
+- Erweitern: eine neue Eintragsart bekommt eine `*_stand`-Funktion in `akte.py`, die nur diese ids liefert; eine neue
+  Quelle ein `logo`. Ein neuer Stand nur, wenn „wer ist dran“ ihn nicht ausdrücken kann.
+
 ## Querschnitt: Bausteine, die man wiederverwendet statt neu schreibt
 
 | Bedarf | Baustein |
@@ -169,7 +225,8 @@ Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für 
 | GitLab aufrufen | `gitlab.py` (glab), nur auf Knopfdruck |
 | Zeile zwischen Ständen zuordnen | `zeilen.py` |
 | Code-Stelle verlinken | `pfad:zeile` im Text bzw. `see_also`, Popup aus `web/diff.js` |
-| Liste links über den Dateien | `kommentarListe`, `kasten` (`web/diff.js`); Stände je Liste in `LISTEN_STATI`, Zeichen aus `standZeichen` (Liste und Filterknöpfe), Filter je Waggon im Browser (`ausgeblendet`). Neue Liste = neuer Eintrag in `LISTEN_STATI` |
+| Liste links über den Dateien | `kommentarListe`, `kasten` (`web/diff.js`); Stände nach [Stände der Listen](#stände-der-listen-wer-ist-dran), je Liste in `LISTEN_STATI`, Filter je Waggon im Browser (`ausgeblendet`). Neue Liste = neuer Eintrag in `LISTEN_STATI` |
+| Stand eines Eintrags anzeigen | `stand`/`wer` vom Server, `App.STAENDE`, `App.werZeichen` – nie eigene Zustände |
 | Meldung an den Nutzer | `App.melden` (Toasts), auf Python-Seite `Fehler` |
 | Langer Ablauf mit GitLab | planen und ausführen getrennt (wie `abschluss_planen`/`schritt_ausfuehren`) |
 | Agent soll etwas tun | `Quelle.prompt` und `benachrichtigen` (`zuhoerer.py`) |

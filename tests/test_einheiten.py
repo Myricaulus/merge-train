@@ -462,15 +462,50 @@ class DiskussionenTest(unittest.TestCase):
                 {"id": "s", "notes": [n(31, 5, "added 1 commit", system=True)]}]  # Systemnotiz: keine Diskussion
         review.diskussionen_abgleichen(akte, disk, 1)
         self.assertEqual([d["id"] for d in akte["diskussionen"]], ["x"])
-        self.assertEqual(diskussionen_stand(akte), {"offen": 1, "abgehakt": 0, "erledigt": 0, "neu": 1})
+        self.assertEqual(diskussionen_stand(akte), self.zahl(dran=1, neu=1))
         akte["diskussionen_gesehen"] = 30  # Seite geöffnet
         self.assertEqual(diskussionen_stand(akte)["neu"], 0)
         disk[0]["notes"] = [n(30, 5, "Frage vom Reviewer", resolved=True, von="R"), n(32, 1, "meine Antwort", resolved=True),
                             n(33, 5, "danke", resolved=True)]
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (1, 1))  # nur Beiträge anderer zählen
-        self.assertEqual(diskussionen_stand(akte), {"offen": 0, "abgehakt": 0, "erledigt": 1, "neu": 1})
+        self.assertEqual(diskussionen_stand(akte), self.zahl(erledigt=1, neu=1))
 
-    def test_lokal_erledigt(self):
+    @staticmethod
+    def zahl(**k):
+        return dict(dict.fromkeys(("entwurf", "dran", "gitlab_entwurf", "wartet", "erledigt", "neu"), 0), **k)
+
+    def test_staende(self):
+        """(stand, wer) je Eintragsart – das Konzept „Stände der Listen“ (docs/funktionen.md)."""
+        from merge_train.akte import diskussion_stand, faden_stand, hinweis_stand, kommentar_stand
+        n = self.note
+        akte = {"mr": {}, "kommentare": []}
+        disk = [{"id": "x", "notes": [n(60, 5, "Frage", resolved=False)]},
+                {"id": "m", "notes": [n(61, 1, "meine Frage", resolved=False)]},
+                {"id": "z", "notes": [n(62, 5, "zu", resolved=True, von="R")]},
+                {"id": "i", "notes": [n(63, 5, "von mir zu", resolved=True, von="ich")]}]
+        review.diskussionen_abgleichen(akte, disk, 1)
+        akte["diskussionen"][3]["erledigt"]["wer_id"] = 1
+        st = {d["id"]: diskussion_stand(akte, d) for d in akte["diskussionen"]}
+        self.assertEqual(st, {"x": ("dran", "extern"), "m": ("wartet", "du"), "z": ("erledigt", "extern"),
+                              "i": ("erledigt", "du")})
+        akte["kommentare"].append({"id": "a", "text": "Antwort", "antwort_auf": "x"})
+        self.assertEqual(diskussion_stand(akte, akte["diskussionen"][0]), ("entwurf", "du"))
+        akte["kommentare"][0].update(gitlab_id=7, gitlab_text="Antwort")
+        self.assertEqual(diskussion_stand(akte, akte["diskussionen"][0]), ("gitlab_entwurf", "du"))
+        self.assertEqual([kommentar_stand(k) for k in ({"text": "t"}, {"text": "t", "gitlab_id": 1, "gitlab_text": "t"},
+                                                       {"text": "t2", "gitlab_id": 1, "gitlab_text": "t"},
+                                                       {"text": "t", "gitlab_id": 1, "gitlab_weg": True})],
+                         [("entwurf", "du"), ("gitlab_entwurf", "du"), ("entwurf", "du"), ("wartet", "du")])
+        self.assertEqual((hinweis_stand({"status": "offen"}), hinweis_stand({"status": "verworfen"})),
+                         (("dran", "agent"), ("erledigt", "du")))
+        m = lambda von, gesendet=True: {"von": von, "text": "t", "gesendet": "z" if gesendet else None}
+        self.assertEqual([faden_stand(k) for k in ({"nachrichten": [m("ich", False)]}, {"nachrichten": [m("ich")]},
+                                                   {"nachrichten": [m("ich"), m("claude")]},
+                                                   {"nachrichten": [m("ich")], "erledigt": {"von": "claude"}},
+                                                   {"nachrichten": [m("ich")], "erledigt": {"von": "ich"}})],
+                         [("entwurf", "du"), ("wartet", "du"), ("dran", "agent"), ("erledigt", "agent"), ("erledigt", "du")])
+
+    def test_abwarten(self):
         from merge_train.akte import diskussion_abgehakt, diskussionen_stand
         n = self.note
         akte = {"mr": {}, "kommentare": []}
@@ -479,21 +514,21 @@ class DiskussionenTest(unittest.TestCase):
         d = akte["diskussionen"][0]
         self.assertEqual(review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "x"}), (True, ""))
         self.assertTrue(diskussion_abgehakt(akte, d))
-        self.assertEqual(diskussionen_stand(akte)["offen"], 0)  # lokal erledigt zählt im Zug nicht als offen
+        self.assertEqual(diskussionen_stand(akte)["wartet"], 1)  # abwarten: Ball abgegeben, die anderen sind dran
         self.assertFalse(d.get("erledigt"))  # in GitLab bleibt sie offen
         akte["diskussionen_abgehakt"]["x"] = "2026-11-11T08:30:00+00:00"
         disk[0]["notes"].append(dict(n(41, 1, "meine Antwort", resolved=False), created_at="2026-11-11T09:00:00Z"))
         review.diskussionen_abgleichen(akte, disk, 1)
-        self.assertTrue(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # eigene Antwort: bleibt erledigt
+        self.assertTrue(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # eigene Antwort: wartet weiter
         disk[0]["notes"].append(dict(n(42, 5, "doch noch was", resolved=False), created_at="2026-11-11T09:10:00Z"))
         review.diskussionen_abgleichen(akte, disk, 1)
-        self.assertIsNone(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # anderer schreibt danach: wieder offen
-        self.assertEqual(diskussionen_stand(akte)["offen"], 1)
+        self.assertIsNone(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # anderer schreibt danach: wieder dran
+        self.assertEqual(diskussionen_stand(akte)["dran"], 1)
         review.diskussion_abhaken(akte, {"aktion": "aufhaken", "diskussion": "x"})
         self.assertEqual(akte["diskussionen_abgehakt"], {})
 
     def test_waggon_fertig(self):
-        """Waggon fertig (grüner Rahmen), sobald jede Diskussion mindestens lokal erledigt ist; vorher „● n offen“."""
+        """Waggon fertig (grüner Rahmen), sobald in keiner Diskussion mehr du dran bist; vorher „● n dran“."""
         from merge_train.quellen import mr_wagen
         n = self.note
         mr = Waggon(host="gitlab.example", projekt="g/fertig", iid=3)
@@ -502,11 +537,11 @@ class DiskussionenTest(unittest.TestCase):
             review.diskussionen_abgleichen(akte, [{"id": "x", "notes": [n(50, 5, "Frage", resolved=False)]},
                                                   {"id": "y", "notes": [n(51, 5, "Noch eine", resolved=False)]}], 1)
             akte["diskussionen_gesehen"] = 51
-        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 2 offen"))
+        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 2 dran"))
         with akte_bearbeiten(mr) as akte:
             review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "x"})
-        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 1 offen"))
-        self.assertIn("1 lokal erledigt", wagen()["titel"])
+        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 1 dran"))
+        self.assertIn("1 wartet auf andere", wagen()["titel"])
         with akte_bearbeiten(mr) as akte:
             review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "y"})
         self.assertEqual((wagen()["status"], wagen()["marke"]), ("fertig", "✓ erledigt"))

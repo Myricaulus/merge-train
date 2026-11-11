@@ -3,7 +3,7 @@
 // el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js waggonAbfrage, nurLesen,
 // seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
 // hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js). Stellt bereit: review (Daten der Seite),
-// zeichnen, statusTexte, fadenStatus, fadenErledigen, kommentarAktion, reviewLaden.
+// zeichnen, STAENDE, werZeichen, direkt, fadenErledigen, kommentarAktion, reviewLaden.
 (() => {
   const {
     el,
@@ -81,22 +81,35 @@
     uebertragen: ['in GitLab (Entwurf)', 'b-ok'],
     geaendert: ['geändert – wird aktualisiert', 'b-geaendert'],
     loeschen: ['wird in GitLab gelöscht', 'b-loeschen'],
-    weg: ['in GitLab veröffentlicht', 'b-ok'],
-    // Gespräch (lokales Projekt)
-    entwurf: ['Entwurf – noch nicht gesendet', 'b-entwurf'],
-    wartet: ['wartet auf Claude', 'b-wartet'],
-    antwort: ['Claude hat geantwortet', 'b-antwort'],
-    erledigt: ['erledigt', 'b-erledigt'],
-    // GitLab-Diskussion als Thread (fadenStatus)
-    gl_entwurf: ['Antwort-Entwurf (lokal)', 'b-entwurf'],
-    gl_wartet: ['wartet auf Antwort', 'b-wartet'],
-    gl_antwort: ['Antwort in GitLab', 'b-antwort'],
-    gl_erledigt: ['in GitLab erledigt', 'b-erledigt'],
-    gl_abgehakt: ['lokal erledigt – in GitLab offen', 'b-abgehakt']
+    weg: ['in GitLab veröffentlicht', 'b-ok']
   };
-  /** [Text, Klasse] des Stands eines Threads – Gesprächsfaden oder GitLab-Diskussion. */
-  function fadenStatus(k) {
-    return statusTexte[(k.ziel === 'gitlab' ? 'gl_' : '') + k.status] || ['?', ''];
+  /** Stände der Listen und Threads (Konzept: docs/funktionen.md, „Stände der Listen“), vom Server je Eintrag als
+   *  stand (wer jetzt dran ist: [Zeichen, Text], Farbe über die Klasse s-<stand>) und wer (wer zuletzt gehandelt hat). */
+  const STAENDE = {
+    entwurf: ['○', 'Entwurf – noch nicht gesendet'],
+    dran: ['●', 'du bist dran'],
+    gitlab_entwurf: ['➜', 'Entwurf in GitLab – dort abschicken'],
+    wartet: ['○', 'wartet auf die anderen'],
+    erledigt: ['✓', 'erledigt']
+  };
+  const extern = waggon.extern || {titel: 'extern'},
+    WER = {du: 'dir', agent: 'einem Agenten', extern: extern.titel};
+  /** Symbol für wer: du = eigenes Emoji (Einstellung ich_symbol), agent = 🤖, extern = Logo der Quelle. */
+  function werZeichen(wer) {
+    const title = 'zuletzt von ' + (WER[wer] || '?');
+    if (wer === 'extern' && extern.logo) return el('img', {class: 'wer', src: extern.logo, alt: extern.titel, title});
+    return el('span', {class: 'wer', title}, wer === 'agent' ? '🤖' : wer === 'du' ? waggon.ich || '🤓' : '?');
+  }
+  /** Text des Stands eines Threads (Badge der Box). */
+  function standText(k) {
+    const an = k.an || 'Claude';
+    if (k.stand === 'dran')
+      return k.ziel === 'gitlab'
+        ? 'neue Nachricht – du bist dran'
+        : (k.vom_agenten && k.nachrichten.length === 1 ? 'neu von ' + an : an + ' hat geantwortet') + ' – du bist dran';
+    if (k.stand === 'wartet') return k.ziel === 'gitlab' ? 'wartet auf die anderen' : 'wartet auf ' + an;
+    if (k.stand === 'erledigt' && k.ziel === 'gitlab') return 'in GitLab erledigt';
+    return (STAENDE[k.stand] || ['', '?'])[1];
   }
   const faeden = () => review.faeden || [],
     fragenEntwuerfe = () => review.g_ausstehend || 0,
@@ -139,6 +152,17 @@
       return false;
     }
   } // „sofort senden“, bleibt gespeichert
+  function direkt(w) {
+    try {
+      if (w !== undefined) localStorage.direkt = w ? 1 : 0;
+      return localStorage.direkt !== '0';
+    } catch (_) {
+      return true;
+    }
+  } // „direkt veröffentlichen“ (Standard an), bleibt gespeichert
+  const DIREKT_TITEL =
+    '„Review abschließen“ veröffentlicht die Kommentare gleich in GitLab (eine Benachrichtigung wie „Submit review“, ' +
+    'auch für deine übrigen Entwürfe in diesem MR); aus: nur als Entwürfe übertragen, abschicken in GitLab';
   function zeigFremde(w) {
     try {
       if (w !== undefined) localStorage.fremdeFaeden = w ? 1 : '';
@@ -246,17 +270,7 @@
   function fadenBox(k, mitOrt) {
     const wer = k.an || 'Claude',
       senden = ziel(k),
-      [st0, cl] = fadenStatus(k),
-      neuVomAgenten = k.vom_agenten && k.status === 'antwort' && k.nachrichten.length === 1,
-      st = (neuVomAgenten ? 'neu von Claude' : st0).replace('Claude', wer),
-      box = el('div', {
-        class:
-          'kbox km gs st-' +
-          k.status +
-          (k.status === 'erledigt' || k.status === 'abgehakt' ? ' erledigt' : '') +
-          (k.ziel === 'gitlab' ? ' gl' : ''),
-        'data-id': k.id
-      }),
+      box = el('div', {class: 'kbox km gs gs-' + k.stand + (k.ziel === 'gitlab' ? ' gl' : ''), 'data-id': k.id}),
       kn = el('span', {class: 'knoepfe'}),
       offen = !nurLesen && !k.lesen,
       verlauf = el('div', {class: 'verlauf'});
@@ -290,7 +304,7 @@
             uhrzeit(k.erledigt.zeit)
         )
       : k.abgehakt
-        ? el('span', {}, '· lokal erledigt ' + uhrzeit(k.abgehakt))
+        ? el('span', {}, '· abgewartet ' + uhrzeit(k.abgehakt))
         : null;
     const gitlab = k.url
       ? el(
@@ -308,7 +322,8 @@
     const branch = k.fremd
       ? el('span', {class: 'badge b-fremd', title: 'Gespräch aus einem anderen Branch'}, k.fremd)
       : null;
-    box.append(el('div', {class: 'kk'}, el('span', {class: 'badge ' + cl}, st), branch, agent, er, ort, gitlab, kn));
+    const badge = el('span', {class: 'badge s-' + k.stand}, werZeichen(k.wer), ' ' + standText(k));
+    box.append(el('div', {class: 'kk'}, badge, branch, agent, er, ort, gitlab, kn));
     if (k.zeile_text && k.problem)
       box.append(
         el(
@@ -344,18 +359,27 @@
           '🗑'
         )
       ];
-    // GitLab: lokal erledigt (gesehen/beantwortet, Code noch offen) und in GitLab erledigt sind zwei Stufen
+    // GitLab: „☑ abwarten“ gibt den Ball ohne Antwort ab (nur lokal), erledigt wird in GitLab
     if (k.erledigt) return k.loesbar ? [knopf('oeffnen', 'wieder öffnen', 'in GitLab wieder öffnen')] : [];
     return [
       k.abgehakt
-        ? knopf('aufhaken', 'lokal wieder offen', 'lokal erledigt zurücknehmen')
-        : knopf('abhaken', '☑ lokal erledigt', 'für mich erledigt, in GitLab bleibt die Diskussion offen'),
+        ? knopf('aufhaken', '↺ doch dran', 'Abwarten zurücknehmen')
+        : k.stand === 'dran'
+          ? knopf('abhaken', '☑ abwarten', ABWARTEN_TITEL)
+          : null,
       k.loesbar ? knopf('erledigt', '✓ in GitLab erledigt', 'in GitLab als erledigt markieren') : null
     ].filter(Boolean); // append() schriebe null als Text
   }
-  /** Für die Liste links (○ → erledigt; GitLab: lokal erledigt, geschlossen wird in GitLab nur per Knopf). */
-  function fadenErledigen(k) {
-    return ziel(k)({aktion: k.ziel === 'gitlab' ? 'abhaken' : 'erledigt'});
+  const ABWARTEN_TITEL =
+    'nichts zu tun: Ball abgeben, ohne zu antworten – schreibt danach jemand, bist du wieder dran; ' +
+    'in GitLab bleibt die Diskussion offen';
+  /** Klick auf das Zeichen in der Liste links: KI-Thread erledigen, GitLab-Diskussion abwarten (geschlossen wird in
+   *  GitLab nur per Knopf). Rückgabe null: in diesem Stand kein Klick. */
+  function fadenErledigen(k, nurPruefen) {
+    const aktion =
+      k.ziel === 'gitlab' ? (k.stand === 'dran' ? 'abhaken' : null) : k.stand !== 'erledigt' ? 'erledigt' : null;
+    if (!aktion || nurPruefen) return aktion && (aktion === 'abhaken' ? '☑ abwarten' : 'als erledigt markieren');
+    return ziel(k)({aktion});
   }
   /** Eine Nachricht im Verlauf: Kopf (wer, wann, ✓/✓✓ bzw. Entwurf mit ✎/🗑) und Text mit Code-Links. */
   function nachrichtBox(k, m, wer, offen, senden) {
@@ -895,23 +919,39 @@
     );
   });
   const abschliessenKnopf = document.getElementById('abschliessen');
-  if (abschliessenKnopf)
-    abschliessenKnopf.after(el('label', {class: 'sofort', title: SOFORT_TITEL}, sofortHaken(), ' sofort senden'));
+  if (abschliessenKnopf) {
+    const d = el('input', {type: 'checkbox'});
+    d.checked = direkt();
+    d.addEventListener('change', () => {
+      direkt(d.checked);
+      abschliessenStand();
+      kommentarListe(); // Filter „Entwurf in GitLab“ nur ohne direkt
+    });
+    abschliessenKnopf.after(
+      el('label', {class: 'sofort', title: DIREKT_TITEL}, d, ' direkt veröffentlichen'),
+      el('label', {class: 'sofort', title: SOFORT_TITEL}, sofortHaken(), ' sofort senden')
+    );
+  }
   /** „Review abschließen“ nur, wenn es lokale Entwürfe (staged) gibt. */
   function abschliessenStand() {
     if (!abschliessenKnopf || abschliessenKnopf.dataset.laeuft) return;
-    abschliessenKnopf.disabled = !review.ausstehend;
-    abschliessenKnopf.title = review.ausstehend
-      ? review.ausstehend +
-        ' lokale Entwürfe als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab'
-      : 'keine lokalen Entwürfe – nichts zu übertragen';
+    const inGitlab = direkt() ? review.in_gitlab || 0 : 0;
+    abschliessenKnopf.disabled = !review.ausstehend && !inGitlab;
+    abschliessenKnopf.title =
+      review.ausstehend || inGitlab
+        ? (review.ausstehend ? review.ausstehend + ' lokale Entwürfe ' : '') +
+          (inGitlab ? (review.ausstehend ? 'und ' : '') + inGitlab + ' Entwürfe in GitLab ' : '') +
+          (direkt()
+            ? 'in GitLab veröffentlichen (eine Benachrichtigung)'
+            : 'als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab')
+        : 'keine lokalen Entwürfe – nichts zu übertragen';
   }
   if (abschliessenKnopf)
     abschliessenKnopf.addEventListener('click', () => {
       abschliessenKnopf.dataset.laeuft = 1;
       abschliessenKnopf.disabled = true;
-      App.melden('überträgt Entwürfe nach GitLab …');
-      post('/api/abschliessen', {}).then(d => {
+      App.melden(direkt() ? 'veröffentlicht in GitLab …' : 'überträgt Entwürfe nach GitLab …');
+      post('/api/abschliessen', {direkt: direkt() ? 1 : ''}).then(d => {
         delete abschliessenKnopf.dataset.laeuft;
         abschliessenKnopf.disabled = false;
         abschliessenStand();
@@ -963,5 +1003,14 @@
   setInterval(pruefen, 4000);
   setTimeout(pruefen, 300);
   laden();
-  Object.assign(App, {review, zeichnen, statusTexte, fadenStatus, fadenErledigen, kommentarAktion, reviewLaden: laden});
+  Object.assign(App, {
+    review,
+    zeichnen,
+    STAENDE,
+    werZeichen,
+    direkt,
+    fadenErledigen,
+    kommentarAktion,
+    reviewLaden: laden
+  });
 })();
