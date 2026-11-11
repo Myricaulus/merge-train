@@ -462,13 +462,13 @@ class DiskussionenTest(unittest.TestCase):
                 {"id": "s", "notes": [n(31, 5, "added 1 commit", system=True)]}]  # Systemnotiz: keine Diskussion
         review.diskussionen_abgleichen(akte, disk, 1)
         self.assertEqual([d["id"] for d in akte["diskussionen"]], ["x"])
-        self.assertEqual(diskussionen_stand(akte), {"offen": 1, "erledigt": 0, "neu": 1})
+        self.assertEqual(diskussionen_stand(akte), {"offen": 1, "abgehakt": 0, "erledigt": 0, "neu": 1})
         akte["diskussionen_gesehen"] = 30  # Seite geöffnet
         self.assertEqual(diskussionen_stand(akte)["neu"], 0)
         disk[0]["notes"] = [n(30, 5, "Frage vom Reviewer", resolved=True, von="R"), n(32, 1, "meine Antwort", resolved=True),
                             n(33, 5, "danke", resolved=True)]
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (1, 1))  # nur Beiträge anderer zählen
-        self.assertEqual(diskussionen_stand(akte), {"offen": 0, "erledigt": 1, "neu": 1})
+        self.assertEqual(diskussionen_stand(akte), {"offen": 0, "abgehakt": 0, "erledigt": 1, "neu": 1})
 
     def test_lokal_erledigt(self):
         from merge_train.akte import diskussion_abgehakt, diskussionen_stand
@@ -491,6 +491,25 @@ class DiskussionenTest(unittest.TestCase):
         self.assertEqual(diskussionen_stand(akte)["offen"], 1)
         review.diskussion_abhaken(akte, {"aktion": "aufhaken", "diskussion": "x"})
         self.assertEqual(akte["diskussionen_abgehakt"], {})
+
+    def test_waggon_fertig(self):
+        """Waggon fertig (grüner Rahmen), sobald jede Diskussion mindestens lokal erledigt ist; vorher „● n offen“."""
+        from merge_train.quellen import mr_wagen
+        n = self.note
+        mr = Waggon(host="gitlab.example", projekt="g/fertig", iid=3)
+        wagen = lambda: next(w for w in mr_wagen(mr.id) if w["p"] == mr.id)
+        with akte_bearbeiten(mr) as akte:
+            review.diskussionen_abgleichen(akte, [{"id": "x", "notes": [n(50, 5, "Frage", resolved=False)]},
+                                                  {"id": "y", "notes": [n(51, 5, "Noch eine", resolved=False)]}], 1)
+            akte["diskussionen_gesehen"] = 51
+        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 2 offen"))
+        with akte_bearbeiten(mr) as akte:
+            review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "x"})
+        self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 1 offen"))
+        self.assertIn("1 lokal erledigt", wagen()["titel"])
+        with akte_bearbeiten(mr) as akte:
+            review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "y"})
+        self.assertEqual((wagen()["status"], wagen()["marke"]), ("fertig", "✓ erledigt"))
 
 
 # ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
@@ -642,7 +661,7 @@ class AktualisierenTest(unittest.TestCase):
 
     def test_aktion(self):
         neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
-        mr = Waggon("gitlab.example", "g/akt", 7)
+        mr = Waggon(host="gitlab.example", projekt="g/akt", iid=7)
         with akte_bearbeiten(mr) as akte:
             akte.update(klon=self.klon, meta={"source_branch": "mr", "target_branch": "mr"})
         from merge_train.server import aktualisieren_aktion

@@ -281,10 +281,12 @@ def diskussion_abgehakt(akte, d):
 
 
 def diskussionen_stand(akte):
-    """Für Waggon und Seite: offen (lösbar, weder in GitLab noch lokal erledigt), erledigt (in GitLab), neu (Beiträge
-    anderer seit dem letzten Öffnen)."""
+    """Für Waggon und Seite: offen (lösbar, weder in GitLab noch lokal erledigt), abgehakt (lösbar, nur lokal erledigt),
+    erledigt (in GitLab), neu (Beiträge anderer seit dem letzten Öffnen)."""
     ds = akte.get("diskussionen") or []
     gesehen = akte.get("diskussionen_gesehen") or 0
-    return {"offen": sum(1 for d in ds if d.get("loesbar") and not d.get("erledigt") and not diskussion_abgehakt(akte, d)),
+    nicht_zu = [d for d in ds if d.get("loesbar") and not d.get("erledigt")]
+    abgehakt = sum(1 for d in nicht_zu if diskussion_abgehakt(akte, d))
+    return {"offen": len(nicht_zu) - abgehakt, "abgehakt": abgehakt,
             "erledigt": sum(1 for d in ds if d.get("erledigt")),
             "neu": sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)}

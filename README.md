@@ -155,7 +155,8 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   Eingabefeld. „Review abschließen“ ist ausgegraut, solange es keine lokalen Entwürfe gibt.
 - **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
   anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (weder in GitLab noch lokal erledigte Diskussionen), sonst „✓ in GitLab“
-  bzw. „● N Komm.“. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene
+  (abgeschlossen) bzw. „✓ erledigt“ oder „● N Komm.“. Fertig (grüner Rahmen) ist der Waggon, sobald jede Diskussion
+  mindestens lokal erledigt ist und keine Entwürfe mehr warten; solange eine offen ist, nicht. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene
   Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.

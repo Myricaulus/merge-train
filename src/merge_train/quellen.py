@@ -73,15 +73,18 @@ def mr_wagen(akt=None):
     def wagen_fuer(mr, titel, aenderungen, rollen=()):
         akte = akte_lesen(mr)
         n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
-        fertig = bool(akte.get("abgeschlossen")) and not ausstehend(akte)
         gs, gs_neu = faeden_zaehlen(mr, akte["mr"].get("source_branch") or None)
         ds = diskussionen_stand(akte)
+        # fertig: abgeschlossen oder Diskussionen da, keine ungesendeten Entwürfe, jede Diskussion mindestens lokal erledigt
+        fertig = bool(akte.get("abgeschlossen") or akte.get("diskussionen")) and not ausstehend(akte) and not ds["offen"]
         kurz = mr.projekt.rsplit("/", 1)[-1]
         marke = (f"💬 {gs_neu} neu" if gs_neu else f"↩ {ds['neu']} neu" if ds["neu"] else
-                 f"● {ds['offen']} offen" if ds["offen"] else "✓ in GitLab" if fertig else f"● {n} Komm." if n else "● offen")
+                 f"● {ds['offen']} offen" if ds["offen"] else ("✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt")
+                 if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
             ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
-            f"{ds['offen']} offen in GitLab" if ds["offen"] else "", f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
+            f"{ds['offen']} offen in GitLab" if ds["offen"] else "", f"{ds['abgehakt']} lokal erledigt" if ds["abgehakt"] else "",
+            f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
             f"{ds['neu']} neue Antwort(en)" if ds["neu"] else "", f"{n} eigene Kommentare" if n else "",
             f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
         return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
