@@ -722,6 +722,17 @@ class AktualisierenTest(unittest.TestCase):
         self.assertEqual(self.g("rev-parse", "--abbrev-ref", "HEAD", ort=self.klon), "mr")
         self.assertEqual(branch_auschecken(self.klon, "mr"), (True, ""))  # schon ausgecheckt
 
+    def test_fehlender_branch_holt(self):
+        """mr_lokal: Quell-Branch noch nicht geholt → einmal git fetch, dann geht es."""
+        from merge_train.gitlab import mr_lokal
+        self.g("switch", "-q", "-c", "spaet", ort=self.oben); neu = self.commit(self.oben, "s")
+        self.g("push", "-q", "origin", "spaet", ort=self.oben)
+        mr = Waggon(host="gitlab.example", projekt="g/spaet", iid=9)
+        with akte_bearbeiten(mr) as akte:
+            akte.update(klon=self.klon)
+        _, refs = mr_lokal(mr, {"source_branch": "spaet", "target_branch": "mr"})
+        self.assertEqual(refs["head_sha"], neu)
+
     def test_schuetzt_eigenes(self):
         self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
         schreiben(f"{self.klon}/f", "lokal\n")

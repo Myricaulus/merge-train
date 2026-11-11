@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime
 from .einstellungen import KONF, ORDNER, ersetzen
 from .waggon import Fehler, Waggon
-from .git import aussen_log, git, kurzpfad, ref_sha
+from .git import aussen_log, git, git_oder_fehler, kurzpfad, ref_sha
 from .akte import akte_bearbeiten, akte_lesen
 
 class GitLabFehler(Fehler):
@@ -151,16 +151,27 @@ def mr_meta_holen(mr):
     return mr, meta
 
 
+_GEHOLT = set()  # (klon, quelle, ziel), für die mr_lokal schon einmal origin geholt hat (je Serverlauf)
+
+
 def mr_lokal(mr, meta):
     """Lokaler Klon und Stand: Kopf = Quell-Branch (lokal, sonst origin), Basis = merge-base mit dem Ziel-Branch
-    (bzw. die Basis aus GitLab, wenn GitLab beim letzten Holen auf demselben Stand war). Rückgabe (ordner, refs)."""
+    (bzw. die Basis aus GitLab, wenn GitLab beim letzten Holen auf demselben Stand war). Fehlt ein Branch, wird origin
+    einmal geholt (git fetch, ändert nichts am Arbeitsverzeichnis). Rückgabe (ordner, refs)."""
     quelle, ziel = meta.get("source_branch") or "", meta.get("target_branch") or ""
     gl = meta.get("diff_refs") or {}
     gruende = []
     for o in dict.fromkeys(os.path.realpath(k) for k in lokale_klone(mr)):
         head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
+        if (not head or not tgt) and (o, quelle, ziel) not in _GEHOLT:
+            _GEHOLT.add((o, quelle, ziel))
+            try:
+                git_oder_fehler(o, "fetch", "-q", "origin")
+            except Fehler as e:
+                gruende.append(str(e)); continue
+            head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
         if not head or not tgt:
-            gruende.append(f"{kurzpfad(o)}: Branch {quelle if not head else ziel} fehlt (git fetch)"); continue
+            gruende.append(f"{kurzpfad(o)}: Branch {quelle if not head else ziel} fehlt (auch nach git fetch)"); continue
         if gl.get("head_sha") == head and gl.get("base_sha") and \
            git(o, "cat-file", "-e", gl["base_sha"] + "^{commit}", check=False) is not None:
             return o, {"base_sha": gl["base_sha"], "start_sha": gl.get("start_sha") or tgt, "head_sha": head}
