@@ -226,7 +226,9 @@
     kasten(
       'kliste-ki',
       'KI-Threads',
-      (App.review.faeden || []).map(x => ({art: 'km', id: x.id, x, st: x.status})).sort(nach)
+      [...(App.review.faeden || []), ...(App.review.zeigFremde ? App.review.faeden_fremd || [] : [])]
+        .map(x => ({art: 'km', id: x.id, x, st: x.status}))
+        .sort(nach)
     );
   }
   function reihenfolge(ids) {

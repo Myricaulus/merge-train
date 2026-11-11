@@ -94,6 +94,14 @@ def projekt_ordner(name):
     return os.path.join(PROJEKTE, name)
 
 
+def branch_von(wurzel):
+    """Branch, zu dem die Fäden eines lokalen Projekts gehören: BIS, bei bis = "arbeitsstand" der ausgecheckte Branch
+    (losgelöster HEAD: "HEAD")."""
+    if BIS != ARBEITSSTAND:
+        return BIS
+    return (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "HEAD"
+
+
 _ARBEIT = {}
 
 

@@ -395,6 +395,35 @@ class FadenAktionenTest(unittest.TestCase):
         self.assertIsNone(faden())
 
 
+class FadenBranchTest(unittest.TestCase):
+    """Fäden gehören zum Branch, auf dem sie entstanden; andere Branches sehen sie nur (lesend)."""
+    def test_lokal(self):
+        from unittest import mock
+        from merge_train.quellen import LOKAL
+        w = frische_akte("branches")
+        with mock.patch.object(LOKAL, "branch", lambda waggon: "feature/a"):
+            self.assertTrue(gespraech_aktion(w, {"aktion": "neu", "text": "auf a"})[0])
+        k = faeden_von(akte_lesen(w))[0]
+        self.assertEqual(k["branch"], "feature/a")
+        self.assertEqual([x["id"] for x in faeden_von(akte_lesen(w), "feature/a")], [k["id"]])
+        self.assertEqual(faeden_von(akte_lesen(w), "feature/b"), [])
+        with mock.patch.object(LOKAL, "branch", lambda waggon: "feature/b"):
+            ok, text = gespraech_aktion(w, {"aktion": "erledigt", "id": k["id"]})
+        self.assertFalse(ok)
+        self.assertIn("feature/a", text)
+        self.assertIsNone(faeden_von(akte_lesen(w))[0]["erledigt"])
+
+    def test_mr_alte_faeden_zum_quell_branch(self):
+        w = Waggon(host="h", projekt="g/p", iid=7)
+        with akte_bearbeiten(w) as akte:
+            akte["mr"]["source_branch"] = "feature/x"
+            akte["kommentare"].append({"id": "alt", "nachrichten": []})
+            akte["kommentare"].append({"id": "kom", "text": "Review"})
+        akte = akte_lesen(w)
+        self.assertEqual([k["id"] for k in faeden_von(akte, "feature/x")], ["alt"])
+        self.assertNotIn("branch", akte["kommentare"][1])  # Review-Kommentare bleiben ohne
+
+
 # ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
 
 class GitLabFake:

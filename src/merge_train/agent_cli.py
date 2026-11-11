@@ -103,19 +103,21 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None):
 
 
 def faeden_abholen(ziele, alle=False, markieren=True):
-    """Text mit allen Fäden, die auf den Agenten warten (alle: auch beantwortete). Markiert Nachrichten als abgeholt."""
+    """Text mit allen Fäden des aktuellen Branches, die auf den Agenten warten (alle: auch beantwortete). Markiert
+    Nachrichten als abgeholt."""
     teile, gesamt = [], 0
     for waggon in ziele:
         wurzel, head = quelle(waggon).ort(waggon)
+        branch = quelle(waggon).branch(waggon)
         with akte_bearbeiten(waggon, speichern=markieren) as akte:
-            faeden = [k for k in faeden_von(akte) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
+            faeden = [k for k in faeden_von(akte, branch) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
             zeigen = [k for k in faeden if alle or faden_status(k) == "wartet" or faden_ungelesen(k)]
             if markieren:
                 for k in zeigen:
                     for m in k["nachrichten"]:
                         if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt"):
                             m["abgeholt"] = jetzt()
-        wo = f"{BIS} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
+        wo = f"{branch}{' · Arbeitsstand' if BIS == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
         kopf = (f'merge-train · {waggon.name} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
@@ -230,7 +232,8 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
         ziele = lokal[:1]
     waggon = ziele[0]
     wurzel, head = quelle(waggon).ort(waggon)
-    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": {"head_sha": head}, "erstellt": jetzt(),
+    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "branch": quelle(waggon).branch(waggon),
+         "refs": {"head_sha": head}, "erstellt": jetzt(),
          "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True}
     if als:
         k["an"] = als
@@ -312,7 +315,7 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
             k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=wer))
         if erledigt:
             k["erledigt"] = {"von": "claude", "zeit": jetzt(), "wer": wer}
-        rest = sum(1 for x in faeden_von(akte) if faden_status(x) == "wartet")
+        rest = sum(1 for x in faeden_von(akte, quelle(waggon).branch(waggon)) if faden_status(x) == "wartet")
         tid = akte.get("todo_id")
     melden(f"{waggon.name}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
     if not rest and todo_offen(tid):
@@ -366,7 +369,7 @@ def faeden_horchen(ziele, timeout=0, als=None):
             for waggon in ziele:
                 akte = akte_lesen(waggon)
                 if any(n["von"] == "ich" and n.get("gesendet") and not n.get("abgeholt")
-                       for k in faeden_von(akte) for n in k["nachrichten"]):
+                       for k in faeden_von(akte, quelle(waggon).branch(waggon)) for n in k["nachrichten"]):
                     neu.append(waggon)
             if neu:
                 return faeden_abholen(neu)

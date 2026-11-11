@@ -29,7 +29,8 @@ def wagen_daten(waggon, ansicht=None):
     review = review_daten(waggon, ansicht) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     akte = akte_lesen(waggon)
-    return dict(review, faeden=gespraech["kommentare"], g_ausstehend=gespraech["ausstehend"], horcht=gespraech["horcht"], kontext=gespraech["kontext"], todo=gespraech["todo"],
+    return dict(review, faeden=gespraech["kommentare"], faeden_fremd=gespraech["fremd"], branch=gespraech["branch"],
+                g_ausstehend=gespraech["ausstehend"], horcht=gespraech["horcht"], kontext=gespraech["kontext"], todo=gespraech["todo"],
                 agenten=gespraech["agenten"], kann=waggon.kann, stand=stand(waggon, akte), ausserhalb=review["ausserhalb"] + gespraech["ausserhalb"])
 
 
@@ -43,7 +44,8 @@ def gespraech_agenten(waggon):
 
 
 def gespraech_daten(waggon, ansicht=None):
-    """Wie review_daten, für ein Gespräch: Fäden auf den Stand der Seite umgerechnet."""
+    """Wie review_daten, für ein Gespräch: Fäden des aktuellen Branches auf den Stand der Seite umgerechnet, dazu (fremd)
+    die Fäden anderer Branches – nur zum Lesen, ohne Ort im Diff."""
     akte = akte_lesen(waggon)
     struktur = struktur_laden(akte)
     if struktur is None:
@@ -52,8 +54,9 @@ def gespraech_daten(waggon, ansicht=None):
         except Fehler as e:
             return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
+    branch = quelle(waggon).branch(waggon)
     kommentare = []
-    for k in faeden_von(akte):
+    for k in faeden_von(akte, branch):
         von = (k.get("refs") or {}).get("head_sha") or head
         b, unter = k.get("b"), None
         if k.get("path") and b:
@@ -81,11 +84,21 @@ def gespraech_daten(waggon, ansicht=None):
         vorher = len(kommentare)
         kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
         ausserhalb = vorher - len(kommentare)
-    entwuerfe = sum(1 for k in faeden_von(akte) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
-    return {"ok": True, "kommentare": kommentare, "stand": stand(waggon, akte),
+    fremd = [faden_fremd(k) for k in faeden_von(akte) if k.get("branch") != branch]
+    entwuerfe = sum(1 for k in faeden_von(akte, branch) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
+    return {"ok": True, "kommentare": kommentare, "fremd": fremd, "branch": branch, "stand": stand(waggon, akte),
             "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(waggon), "kontext": kontext(waggon),
             "agenten": gespraech_agenten(waggon),
             "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
+
+
+def faden_fremd(k):
+    """Faden eines anderen Branches für die Seite: Ort nur als Text (Zeilen gehören zu jenem Stand), nur lesen."""
+    return {"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
+            "a": k.get("a"), "b": k.get("b"), "datei": None, "im_diff": False, "unter": None, "problem": None,
+            "zeile_text": k.get("zeile_text"), "status": faden_status(k), "nachrichten": k["nachrichten"],
+            "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude", "vom_agenten": bool(k.get("vom_agenten")),
+            "see_also": [], "links": [], "lesen": True, "fremd": k.get("branch") or "ohne Branch"}
 
 
 def neue_nachricht(von, text, gesendet=False, wer=None):
@@ -103,8 +116,8 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
     if not text:
         return False, "leerer Kommentar"
     struktur = struktur_laden(akte)
-    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
-         "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
+    k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "branch": quelle(waggon).branch(waggon),
+         "refs": (struktur or {}).get("refs"), "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
          "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}
     if eingabe.get("an"):
         k["an"] = str(eingabe["an"])[:40]
@@ -178,11 +191,14 @@ def gespraech_aktion(waggon, eingabe):
         k = faden_finden(akte, eingabe.get("id"))
         if not k:
             return False, "Gespräch nicht gefunden – Seite neu laden"
+        if k.get("branch") != branch:
+            return False, f'Das Gespräch gehört zu {k.get("branch") or "keinem Branch"} – hier nur zum Lesen'
         nid = eingabe.get("nid")
         m = next((m for m in k["nachrichten"] if m["id"] == nid), None) if nid else None
         if nid and (not m or m["von"] != "ich" or m.get("gesendet")):
             return False, "Nur eigene, noch nicht gesendete Nachrichten lassen sich ändern"
         return AM_FADEN[aktion](akte, k, m, text)
+    branch = quelle(waggon).branch(waggon)
     return aktion_ausfuehren(waggon, am_faden)
 
 

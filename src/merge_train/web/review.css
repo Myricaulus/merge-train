@@ -94,7 +94,7 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .gs .haken{color:var(--tn)} .gs .haken.abgeholt{color:var(--p)}
 .gs .alt{font:12px ui-monospace,monospace;color:var(--muted);white-space:pre;overflow:hidden;text-overflow:ellipsis}
 .kbox.gs.erledigt:not(:has(textarea)){opacity:.6} .kbox.gs.st-antwort{border-left-color:var(--tf)}
-.b-wartet{color:var(--tn)} .b-antwort{color:var(--tf);font-weight:600} .b-erledigt{color:var(--p)} .b-entwurf{color:var(--tb)}
+.b-wartet{color:var(--tn)} .b-antwort{color:var(--tf);font-weight:600} .b-erledigt{color:var(--p)} .b-entwurf{color:var(--tb)} .b-fremd{color:var(--p);border-style:dashed}
 #feedback,#starten{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
 #feedback:not(:disabled){background:var(--tn);color:var(--bg)} #feedback:disabled{opacity:.45;cursor:default;border-color:var(--rand);color:var(--muted)}
 .gs .msg:has(textarea){width:100%;max-width:none}

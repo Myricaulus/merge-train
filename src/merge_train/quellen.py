@@ -3,7 +3,7 @@ import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich
-from .git import arbeitsstand, finde_repos, git, projekt_wurzel, statistik
+from .git import arbeitsstand, branch_von, finde_repos, git, projekt_wurzel, statistik
 from .akte import akte_lesen, ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
@@ -17,15 +17,18 @@ def runde_laden():
     return {p: w for p, w in r.items() if w.get("tag") == heute}
 
 
-def lokal_wagen(stats):
-    """Lokale Waggons: offene Projekte + heute fertig gewordene (sofern seitdem nichts Neues kam), absteigend nach Umfang."""
+def lokal_wagen(stats, wurzeln=None):
+    """Lokale Waggons: offene Projekte + heute fertig gewordene (sofern seitdem nichts Neues kam), absteigend nach Umfang.
+    wurzeln: {projekt: Klon} für den Branch der Fäden."""
+    wurzeln = wurzeln or {}
     fertig = runde_laden()
     wagen = [w for w in stats if w["dateien"]]  # offen ist, was jetzt noch Unterschiede hat
     offen = {w["p"] for w in wagen}
     wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
     for w in wagen:  # Gespräch: offene Fäden / neue Antworten des Agenten
-        w["gs"], w["gs_neu"] = faeden_zaehlen(Waggon(lokal=w["p"]))
+        wurzel = wurzeln.get(w["p"])
+        w["gs"], w["gs_neu"] = faeden_zaehlen(Waggon(lokal=w["p"]), branch_von(wurzel) if wurzel else None)
         w["datei"] = "/" + dateiname(w["p"])
     return wagen
 
@@ -46,7 +49,7 @@ def fertig(projekt, sha):
     log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", VON, sha)
-    faeden_archivieren(Waggon(lokal=projekt))
+    faeden_archivieren(Waggon(lokal=projekt), branch_von(wurzel))
     with SPERRE:
         r = runde_laden()
         r[projekt] = dict(akte, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
@@ -117,10 +120,18 @@ class Lokal:
     def seite(self, waggon, ansicht=None):
         return projekt_seite(projekt_wurzel(waggon.lokal), ansicht=ansicht)
 
+    def branch(self, waggon):
+        """Branch der Fäden (branch_von); None, wenn es das Projekt nicht (mehr) gibt."""
+        try:
+            return branch_von(projekt_wurzel(waggon.lokal))
+        except Fehler:
+            return None
+
     def wagen(self, akt=None):
         from concurrent.futures import ThreadPoolExecutor
+        repos = finde_repos()
         with ThreadPoolExecutor(8) as ex:
-            return lokal_wagen(list(ex.map(statistik, finde_repos())))
+            return lokal_wagen(list(ex.map(statistik, repos)), {projektname(r): r for r in repos})
 
     def prompt(self, waggon, wurzel):
         wo = ("im Arbeitsverzeichnis umsetzen (nicht committen)" if BIS == ARBEITSSTAND else f"auf {BIS} umsetzen und committen")
@@ -145,6 +156,10 @@ class GitLab:
     def seite(self, waggon, ansicht=None):
         pfad, struktur, _ = mr_seite(waggon, ansicht=ansicht)
         return pfad, struktur
+
+    def branch(self, waggon):
+        """Branch der Fäden: der Quell-Branch des MR."""
+        return akte_lesen(waggon)["mr"].get("source_branch") or None
 
     def wagen(self, akt=None):
         return mr_wagen(akt)

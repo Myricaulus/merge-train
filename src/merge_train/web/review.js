@@ -30,7 +30,8 @@
     hinweise: [],
     quellen: [],
     stand: null,
-    zeigVerworfen: false
+    zeigVerworfen: false,
+    zeigFremde: zeigFremde()
   };
   let zeichnenWartet = false;
   function post(pfad, d) {
@@ -108,6 +109,14 @@
       return false;
     }
   } // „sofort senden“, bleibt gespeichert
+  function zeigFremde(w) {
+    try {
+      if (w !== undefined) localStorage.fremdeFaeden = w ? 1 : '';
+      return !!localStorage.fremdeFaeden;
+    } catch (_) {
+      return false;
+    }
+  } // „Fäden anderer Branches zeigen“, bleibt gespeichert
   function sofortSenden(d) {
     if (d && d.ok && sofort()) senden();
     return d;
@@ -242,7 +251,13 @@
             uhrzeit(k.erledigt.zeit)
         )
       : null;
-    box.append(el('div', {class: 'kk'}, el('span', {class: 'badge ' + cl}, st), er, mitOrt ? ortLink(k) : null, kn));
+    const ort = !mitOrt
+      ? null
+      : k.fremd
+        ? el('code', {title: 'Zeile im Stand von ' + k.fremd}, k.path ? k.path + (k.b ? ':' + k.b : '') : 'allgemein')
+        : ortLink(k);
+    const branch = k.fremd ? el('span', {class: 'badge b-fremd', title: 'Gespräch aus einem anderen Branch'}, k.fremd) : null;
+    box.append(el('div', {class: 'kk'}, el('span', {class: 'badge ' + cl}, st), branch, er, ort, kn));
     if (k.zeile_text && k.problem)
       box.append(
         el(
@@ -571,6 +586,7 @@
       if (!platz(k, () => fadenBox(k, false)) && !unter(k, () => fadenBox(k, false)))
         allgDazu(k, () => fadenBox(k, true));
     });
+    if (review.zeigFremde) (review.faeden_fremd || []).forEach(k => allgDazu(k, () => fadenBox(k, true)));
     review.hinweise
       .filter(h => h.status === 'offen' || (review.zeigVerworfen && h.status === 'verworfen'))
       .forEach(h => {
@@ -673,6 +689,7 @@
       document.querySelector('main').prepend(s);
     }
     const verw = review.hinweise.filter(h => h.status === 'verworfen').length,
+      fremde = (review.faeden_fremd || []).length,
       offen = [...s.children].filter(e => e.classList.contains('kbox') && e.querySelector('textarea'));
     s.replaceChildren(
       el(
@@ -697,6 +714,19 @@
                   }
                 },
                 review.zeigVerworfen ? 'verworfene ausblenden' : verw + ' verworfene Hinweise zeigen'
+              )
+            : null,
+          fremde
+            ? el(
+                'button',
+                {
+                  title: 'Gespräche, die zu einem anderen Branch als ' + (review.branch || '?') + ' gehören (nur lesen)',
+                  onclick: () => {
+                    review.zeigFremde = zeigFremde(!review.zeigFremde);
+                    zeichnen();
+                  }
+                },
+                review.zeigFremde ? 'Fäden anderer Branches ausblenden' : fremde + ' Fäden aus anderen Branches zeigen'
               )
             : null,
           nurLesen

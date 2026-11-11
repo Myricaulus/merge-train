@@ -97,6 +97,12 @@ Nach neuen Commits wandern die Fäden mit ihrer Zeile mit. Wurde die Zeile selbs
 Dateinamen, mit dem damaligen Zeilentext. „fertig“ warnt bei offenen Fäden oder ungesendeten Entwürfen und räumt
 erledigte Fäden weg. Offene bleiben für den nächsten Stand.
 
+**Fäden gehören zum Branch**, auf dem sie entstanden sind: zu `bis`, bei `bis = "arbeitsstand"` zum ausgecheckten
+Branch (bei einem MR zu dessen Quell-Branch). Seite, Zähler im Zug, „Feedback senden“, `agent feedback`/`horchen` und
+„fertig“ sehen nur die Fäden des aktuellen Branches. Nach einem Wechsel zurück sind die alten wieder da. Oben im
+Gespräch blendet „N Fäden aus anderen Branches zeigen“ die übrigen ein, nur zum Lesen und ohne Ort im Diff.
+Der Knopf merkt sich die Wahl.
+
 **Wer bekommt das Feedback?**
 
 - **Eine Claude-Session hört zu**: Läuft in einer Session `merge-train agent horchen` (im Hintergrund), geht das

@@ -218,14 +218,15 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
 
 
 def feedback_senden(waggon):
-    """Alle Entwürfe abschicken. Rückgabe (ok, text, todo_id)."""
+    """Alle Entwürfe (des aktuellen Branches) abschicken. Rückgabe (ok, text, todo_id)."""
     try:
         wurzel, _ = quelle(waggon).ort(waggon)
     except Fehler as e:
         return False, str(e), None
+    branch = quelle(waggon).branch(waggon)
     with akte_bearbeiten(waggon) as akte:
         n, namen = 0, []
-        for k in faeden_von(akte):
+        for k in faeden_von(akte, branch):
             for m in k["nachrichten"]:
                 if m["von"] == "ich" and not m.get("gesendet"):
                     m["gesendet"] = jetzt(); n += 1

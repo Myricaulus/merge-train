@@ -21,9 +21,12 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
   b (neue Zeile), text, finding/hinweis (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
   (position | allgemein | mr), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen).
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
-Gesprächsfaden: id, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
+Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
   archiv (nach „fertig“ aus der Ansicht genommen). Stufe: faden_status.
+  branch: zu welchem Branch der Faden gehört (lokal: branch_von, MR: source_branch) – Seite, Zug, „Feedback senden“
+  und der Agent sehen nur die Fäden des aktuellen Branches (faeden_von(akte, branch)); fehlt er (alte lokale Akten),
+  gehört der Faden zu keinem Branch.
 """
 import fcntl, json, os, sys, threading
 from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
@@ -50,6 +53,11 @@ def akte_laden(waggon, kaputte_beiseite=False):
         akte = {}
     akte.setdefault("mr", waggon.als_dict())
     akte.setdefault("kommentare", []); akte.setdefault("hinweise", {}); akte.setdefault("hinweis_dateien", [])
+    quell_branch = akte["mr"].get("source_branch")  # MR: alte Fäden gehören zum Quell-Branch des MR
+    if quell_branch:
+        for k in akte["kommentare"]:
+            if k.get("nachrichten") is not None and "branch" not in k:
+                k["branch"] = quell_branch
     return akte
 
 
@@ -205,23 +213,28 @@ def faden_status(k):
     return "antwort" if gesendet and gesendet[-1]["von"] == "claude" else "wartet"
 
 
-def faeden_von(akte):
-    return [k for k in akte["kommentare"] if k.get("nachrichten") is not None and not k.get("archiv")]
+ALLE = object()  # faeden_von: Fäden aller Branches
 
 
-def faeden_archivieren(waggon):
-    """Nach „fertig“: erledigte Fäden aus der Ansicht nehmen (bleiben in der Datei)."""
+def faeden_von(akte, branch=ALLE):
+    """Fäden (ohne archivierte) – nur die des Branches, wenn einer angegeben ist."""
+    return [k for k in akte["kommentare"] if k.get("nachrichten") is not None and not k.get("archiv")
+            and (branch is ALLE or k.get("branch") == branch)]
+
+
+def faeden_archivieren(waggon, branch):
+    """Nach „fertig“: erledigte Fäden des Branches aus der Ansicht nehmen (bleiben in der Datei)."""
     with akte_bearbeiten(waggon) as akte:
-        for k in faeden_von(akte):
+        for k in faeden_von(akte, branch):
             if faden_status(k) == "erledigt":
                 k["archiv"] = jetzt()
 
 
-def faeden_zaehlen(waggon):
-    """Für den Zug: (offene Fäden, Fäden mit neuer Antwort)."""
+def faeden_zaehlen(waggon, branch):
+    """Für den Zug: (offene Fäden, Fäden mit neuer Antwort) des Branches."""
     try:
         akte = akte_lesen(waggon)
     except Exception:
         return 0, 0
-    f = faeden_von(akte)
+    f = faeden_von(akte, branch)
     return sum(1 for k in f if faden_status(k) != "erledigt"), sum(1 for k in f if faden_status(k) == "antwort")
