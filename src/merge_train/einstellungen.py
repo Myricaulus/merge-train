@@ -21,7 +21,7 @@ STANDARD = {
     "gitlab": True,           # GitLab-MRs über glab
     "gitlab_host": "",        # leer: Host aus MR-URL bzw. git-Remote, sonst glab-Standard
     "glab": "glab",
-    "mr_liste": "reviewer",   # Zug im GitLab-Modus: reviewer | assignee | author | keine
+    "mr_liste": "reviewer,author",  # Zug im GitLab-Modus: reviewer, assignee, author (mehrere mit Komma) | keine
     "hinweise": [],           # Globs für Agent-Hinweis-Dateien, z. B. "~/src/*/tasks/*-review-markers.json"
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
     "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"

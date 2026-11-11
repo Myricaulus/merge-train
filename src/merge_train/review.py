@@ -4,9 +4,10 @@ from datetime import datetime
 from .waggon import Fehler, Waggon
 from .git import ANLASS, anlass, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
-from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zurueck_diffs
+from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_vorwaerts, zurueck_diffs
 from .diff_html import datei_tabelle
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, eintrag_entfernen, kommentar_anhaengen,
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, diskussionen_stand,
+    eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import alle, glab, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
@@ -67,6 +68,33 @@ def diskussion_fuer_seite(akte, k):
             "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web}
 
 
+def diskussionen_fuer_seite(akte, struktur):
+    """GitLab-Diskussionen, die zu keinem eigenen Kommentar der Akte gehören (andere Reviewer, Autor, direkt in GitLab
+    Geschriebenes): Zeile vom Stand des Kommentars auf den der Seite umgerechnet, nur lesen."""
+    eigene = {(k.get("gitlab_diskussion") or {}).get("id") for k in review_kommentare(akte)}
+    head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], akte["mr"].get("web_url") or ""
+    out = []
+    for d in akte.get("diskussionen") or []:
+        if d["id"] in eigene:
+            continue
+        b, unter = d.get("b"), None
+        if d.get("path") and b:
+            b = zeile_vorwaerts(ordner, d.get("head_sha") or head, head, d["path"], b)
+            if b is None:
+                unter = f'Zeile {d["b"]} hat sich seit dem Kommentar geändert'
+        i = datei_index(struktur, d.get("path"))
+        f = struktur["dateien"][i] if i is not None else None
+        a = d.get("a") if not d.get("b") else (alt_zeile(f, b) if f and b else None)
+        drin = bool(f and (a or b) and im_diff(f, a, b))
+        if f and b and not drin and not unter:
+            unter = f"Zeile {b} liegt außerhalb der Änderungen"
+        out.append({"id": "gl:" + str(d["id"]), "text": d["text"], "wer": d["wer"], "zeit": d["zeit"], "path": d.get("path"),
+                    "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
+                    "erledigt": d.get("erledigt"), "loesbar": d.get("loesbar"), "antworten": d.get("antworten") or [],
+                    "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web, "lesen": True})
+    return out
+
+
 def sende_reihenfolge(mr, akte):
     """id → Platz in der Box „GitLab-Kommentare“ (= Reihenfolge beim Senden). Ohne Struktur: leer."""
     struktur = struktur_laden(akte)
@@ -84,6 +112,7 @@ def review_daten(mr, ansicht=None):
         akte = akte_lesen(mr)
     hinweise, quellen = hinweise_aufloesen(mr, akte, struktur)
     kommentare = kommentare_fuer_seite(akte, struktur)
+    diskussionen = diskussionen_fuer_seite(akte, struktur)
     reihenfolge = gitlab_reihenfolge(akte, kommentare, hinweise)  # im ganzen MR, vor dem Übertragen in eine Ansicht
     ausserhalb = 0
     if ansicht:  # Zeilen in die Ansicht übertragen; Einträge in anderen Dateien zählen nur
@@ -91,8 +120,10 @@ def review_daten(mr, ansicht=None):
         vorher = len(kommentare) + sum(1 for h in hinweise if h["status"] == "offen")
         kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
         hinweise = ansicht_zuordnen(struktur, ansicht_seite, hinweise)
+        diskussionen = ansicht_zuordnen(struktur, ansicht_seite, diskussionen)
         ausserhalb = vorher - len(kommentare) - sum(1 for h in hinweise if h["status"] == "offen")
-    return {"ok": True, "kommentare": kommentare, "hinweise": hinweise, "quellen": quellen, "stand": stand(mr, akte),
+    return {"ok": True, "kommentare": kommentare, "hinweise": hinweise, "diskussionen": diskussionen,
+            "diskussionen_stand": diskussionen_stand(akte), "quellen": quellen, "stand": stand(mr, akte),
             "web_url": akte["mr"].get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
             "reihenfolge": reihenfolge}
 
@@ -393,15 +424,35 @@ def diskussion_auswerten(d):
     if loesbar and all(n.get("resolved") for n in loesbar):
         von = next((n for n in loesbar if n.get("resolved_by")), loesbar[-1])
         erledigt = {"wer": (von.get("resolved_by") or {}).get("name") or "", "zeit": von.get("resolved_at")}
-    antworten = [{"id": n.get("id"), "wer": (n.get("author") or {}).get("name") or "", "text": n.get("body") or "",
-                  "zeit": n.get("created_at")} for n in notes[1:] if not n.get("system")]
+    antworten = [{"id": n.get("id"), "wer": (n.get("author") or {}).get("name") or "",
+                  "wer_id": (n.get("author") or {}).get("id"), "text": n.get("body") or "", "zeit": n.get("created_at")}
+                 for n in notes[1:] if not n.get("system")]
     return erste.get("id"), erledigt, antworten
 
 
+def diskussion_kompakt(d):
+    """GitLab-Diskussion → Eintrag für akte["diskussionen"] (None bei Systemnotizen wie „added 1 commit“)."""
+    notes = d.get("notes") or []
+    if not notes or notes[0].get("system"):
+        return None
+    erste, pos = notes[0], notes[0].get("position") or {}
+    note_id, erledigt, antworten = diskussion_auswerten(d)
+    return {"id": d.get("id"), "note_id": note_id, "wer": (erste.get("author") or {}).get("name") or "",
+            "wer_id": (erste.get("author") or {}).get("id"), "text": erste.get("body") or "", "zeit": erste.get("created_at"),
+            "path": pos.get("new_path") or pos.get("old_path"), "old_path": pos.get("old_path"),
+            "a": pos.get("old_line"), "b": pos.get("new_line"), "head_sha": pos.get("head_sha"),
+            "loesbar": any(n.get("resolvable") for n in notes), "erledigt": erledigt, "antworten": antworten}
+
+
 def diskussionen_abgleichen(akte, diskussionen, ich_id):
-    """Reine Funktion. Veröffentlichte Kommentare mit ihrer GitLab-Diskussion verbinden (gemerkte id, sonst: erster
-    Kommentar von mir mit dem gesendeten Text) und Antworten und Erledigt-Status eintragen.
-    Rückgabe (neue Antworten, neu erledigt)."""
+    """Reine Funktion. Alle Diskussionen des MR merken (akte["diskussionen"], auch die anderer) und veröffentlichte
+    Kommentare mit ihrer verbinden (gemerkte id, sonst: erster Kommentar von mir mit dem gesendeten Text), dort Antworten
+    und Erledigt-Status eintragen. Rückgabe (neue Beiträge anderer, neu erledigte Diskussionen) seit dem letzten Abruf."""
+    vorher = akte.get("diskussionen")
+    bekannt_ids = {i for i, _ in notizen_von_anderen(akte, ich_id)} if vorher is not None else None
+    vorher_erledigt = {d["id"] for d in vorher or [] if d.get("erledigt")}
+    akte["diskussionen"] = [x for x in map(diskussion_kompakt, diskussionen) if x]
+    akte["ich_id"] = ich_id
     nach_id = {d.get("id"): d for d in diskussionen}
     vergeben = {k["gitlab_diskussion"]["id"] for k in review_kommentare(akte) if k.get("gitlab_diskussion")}
     neu_antworten = neu_erledigt = 0
@@ -419,10 +470,14 @@ def diskussionen_abgleichen(akte, diskussionen, ich_id):
             continue
         vergeben.add(d["id"])
         note_id, erledigt, antworten = diskussion_auswerten(d)
-        bekannt = {a["id"] for a in alt.get("antworten") or []}
-        neu_antworten += sum(1 for a in antworten if a["id"] not in bekannt)
-        neu_erledigt += bool(erledigt and not alt.get("erledigt"))
+        if bekannt_ids is None:  # erster Abruf aller Diskussionen: neu ist, was am Kommentar noch nicht stand
+            bekannt = {a["id"] for a in alt.get("antworten") or []}
+            neu_antworten += sum(1 for a in antworten if a["id"] not in bekannt)
+            neu_erledigt += bool(erledigt and not alt.get("erledigt"))
         k["gitlab_diskussion"] = {"id": d["id"], "note_id": note_id, "erledigt": erledigt, "antworten": antworten}
+    if bekannt_ids is not None:
+        neu_antworten = sum(1 for i, _ in notizen_von_anderen(akte, ich_id) if i not in bekannt_ids)
+        neu_erledigt = sum(1 for d in akte["diskussionen"] if d.get("erledigt") and d["id"] not in vorher_erledigt)
     return neu_antworten, neu_erledigt
 
 
@@ -454,40 +509,51 @@ def mit_gitlab_abgleichen(mr, vorhanden, danach=None):
         return veroeffentlicht, verworfen, danach(akte) if danach else None
 
 
-def mr_daten_holen(mr):
-    """Güterbahnhof „MR-Daten“: MR-Daten und Entwürfe aus GitLab, gesendete Kommentare abgleichen, Seite gleich bauen."""
-    vorher = akte_lesen(mr).get("struktur")
+def mr_gitlab_holen(mr):
+    """Alles aus GitLab für einen MR, ohne die Seite zu bauen: MR-Daten, Entwürfe (gesendete Kommentare abgleichen) und
+    Diskussionen. Rückgabe: Meldungsteile (Liste), leer, wenn nichts Neues."""
     _, vorhanden = meta_und_entwuerfe(mr)
     if isinstance(vorhanden, Fehler):
         raise vorhanden
     veroeffentlicht, verworfen, _ = mit_gitlab_abgleichen(mr, vorhanden)
-    neu_antworten = neu_erledigt = 0
-    diskussionen_fehler = None
-    if any(k.get("gitlab_weg") for k in review_kommentare(akte_lesen(mr))):
-        try:  # GitLab, ohne Sperre
-            diskussionen, ich_id = alle(mr.host, f"{mr_pfad(mr)}/discussions"), ich(mr.host)
-        except Fehler as e:
-            diskussionen_fehler = e
-        else:
-            with akte_bearbeiten(mr) as akte:
-                neu_antworten, neu_erledigt = diskussionen_abgleichen(
-                    akte, diskussionen if isinstance(diskussionen, list) else [], ich_id)
+    teile = []
+    if verworfen:
+        teile.append(f"{verworfen} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, „Review abschließen“ sendet sie neu")
+    if veroeffentlicht:
+        teile.append(f"{veroeffentlicht} in GitLab veröffentlicht")
+    try:  # GitLab, ohne Sperre
+        diskussionen, ich_id = alle(mr.host, f"{mr_pfad(mr)}/discussions"), ich(mr.host)
+    except Fehler as e:
+        return teile + [f"Diskussionen nicht abrufbar: {e}"]
+    with akte_bearbeiten(mr) as akte:
+        neu_antworten, neu_erledigt = diskussionen_abgleichen(akte, diskussionen if isinstance(diskussionen, list) else [], ich_id)
+    if neu_antworten:
+        teile.append(f"{neu_antworten} neue Antwort(en)")
+    if neu_erledigt:
+        teile.append(f"{neu_erledigt} in GitLab erledigt")
+    return teile
+
+
+def diskussionen_gesehen(mr):
+    """Die Seite des MR wurde geöffnet: Beiträge anderer bis jetzt gelten im Zug nicht mehr als neu."""
+    akte = akte_lesen(mr)
+    ids = [i for i, _ in notizen_von_anderen(akte, akte.get("ich_id"))]
+    if ids and max(ids) > (akte.get("diskussionen_gesehen") or 0):
+        with akte_bearbeiten(mr) as akte:
+            akte["diskussionen_gesehen"] = max(ids)
+
+
+def mr_daten_holen(mr):
+    """Güterbahnhof „MR-Daten“ (auf der Seite des MR): mr_gitlab_holen, Seite gleich bauen."""
+    vorher = akte_lesen(mr).get("struktur")
+    teile = mr_gitlab_holen(mr)
+    diskussionen_gesehen(mr)  # die Seite ist offen und zeigt sie gleich
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
         mr_seite(mr)
         neu_laden = akte_lesen(mr).get("struktur") != vorher
     except Fehler:
         neu_laden = True
-    text = "MR-Daten geholt"
-    if verworfen:
-        text += f" · {verworfen} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, „Review abschließen“ sendet sie neu"
-    if veroeffentlicht:
-        text += f" · {veroeffentlicht} in GitLab veröffentlicht"
-    if neu_antworten:
-        text += f" · {neu_antworten} neue Antwort(en)"
-    if neu_erledigt:
-        text += f" · {neu_erledigt} in GitLab erledigt"
-    if diskussionen_fehler:
-        text += f" · Antworten nicht abrufbar: {diskussionen_fehler}"
+    text = " · ".join(["MR-Daten geholt"] + teile)
     return {"ok": True, "text": text, "neu_laden": neu_laden}
 
 

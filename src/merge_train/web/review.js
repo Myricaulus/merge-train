@@ -25,6 +25,7 @@
   } = App;
   const review = {
     kommentare: [],
+    diskussionen: [],
     faeden: [],
     agenten: [],
     hinweise: [],
@@ -84,7 +85,10 @@
     entwurf: ['Entwurf – noch nicht gesendet', 'b-entwurf'],
     wartet: ['wartet auf Claude', 'b-wartet'],
     antwort: ['Claude hat geantwortet', 'b-antwort'],
-    erledigt: ['erledigt', 'b-erledigt']
+    erledigt: ['erledigt', 'b-erledigt'],
+    // Diskussion aus GitLab (nur lesen)
+    gl_offen: ['GitLab-Diskussion', 'b-wartet'],
+    gl_erledigt: ['in GitLab erledigt', 'b-erledigt']
   };
   const faeden = () => review.faeden || [],
     fragenEntwuerfe = () => review.g_ausstehend || 0,
@@ -426,30 +430,47 @@
       ),
       el('div', {class: 'kt'}, k.text)
     );
-    if (gl && gl.antworten.length)
-      box.append(
-        el(
-          'div',
-          {class: 'gl-antworten'},
-          ...gl.antworten.map(a =>
-            el(
-              'div',
-              {class: 'gl-antwort'},
-              el('div', {class: 'mk'}, el('b', {}, a.wer), ' ', uhrzeit(a.zeit)),
-              el('div', {class: 'kt'}, a.text)
-            )
-          )
-        )
-      );
+    if (gl && gl.antworten.length) box.append(antwortenListe(gl.antworten));
     const h = k.hinweis && review.hinweise.find(x => x.key === k.hinweis),
       sa = h && sieheAuch(h.see_also);
     if (sa) box.append(sa);
     return box;
   }
+  function antwortenListe(antworten) {
+    return el(
+      'div',
+      {class: 'gl-antworten'},
+      ...antworten.map(a =>
+        el(
+          'div',
+          {class: 'gl-antwort'},
+          el('div', {class: 'mk'}, el('b', {}, a.wer), ' ', uhrzeit(a.zeit)),
+          el('div', {class: 'kt'}, a.text)
+        )
+      )
+    );
+  }
+  /** Diskussion aus GitLab, die nicht von hier kommt (andere Reviewer, Autor): nur lesen, Antworten darunter. */
+  function diskussionBox(d, mitOrt) {
+    const box = el('div', {class: 'kbox gl' + (d.erledigt ? ' gl-erledigt' : ''), 'data-id': d.id});
+    box.append(
+      el(
+        'div',
+        {class: 'kk'},
+        el('span', {class: 'badge b-gl'}, 'GitLab · ' + d.wer),
+        el('span', {class: 'sub'}, uhrzeit(d.zeit)),
+        d.loesbar || d.erledigt ? gitlabStand(d) : null,
+        mitOrt && d.path ? ortLink(d) : null
+      ),
+      el('div', {class: 'kt'}, d.text)
+    );
+    if (d.antworten.length) box.append(antwortenListe(d.antworten));
+    return box;
+  }
   /** Stand des veröffentlichten Kommentars in GitLab (von „MR-Daten“): erledigt oder offen, Link auf die Diskussion. */
   function gitlabStand(gl) {
     if (!gl) return null;
-    const n = gl.antworten.length,
+    const n = (gl.antworten || []).length,
       text = gl.erledigt
         ? '✓ in GitLab erledigt' + (gl.erledigt.wer ? ' von ' + gl.erledigt.wer : '')
         : 'offen in GitLab' + (n ? ' · ' + n + ' Antwort' + (n > 1 ? 'en' : '') : ''),
@@ -627,6 +648,10 @@
         allgDazu(k, () => fadenBox(k, true));
     });
     if (review.zeigFremde) (review.faeden_fremd || []).forEach(k => allgDazu(k, () => fadenBox(k, true)));
+    (review.diskussionen || []).forEach(d => {
+      if (!platz(d, () => diskussionBox(d, false)) && !unter(d, () => diskussionBox(d, false)))
+        allgDazu(d, () => diskussionBox(d, true));
+    });
     review.hinweise
       .filter(h => h.status === 'offen' || (review.zeigVerworfen && h.status === 'verworfen'))
       .forEach(h => {

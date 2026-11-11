@@ -4,7 +4,7 @@ from datetime import datetime
 from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich
 from .git import arbeitsstand, branch_von, finde_repos, git, projekt_wurzel, statistik
-from .akte import akte_lesen, ausstehend, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden
+from .akte import akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, review_kommentare, struktur_laden
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
 
@@ -70,22 +70,31 @@ def fertig(projekt, sha):
 def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
-    def wagen_fuer(mr, titel, aenderungen):
+    def wagen_fuer(mr, titel, aenderungen, rollen=()):
         akte = akte_lesen(mr)
         n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
         fertig = bool(akte.get("abgeschlossen")) and not ausstehend(akte)
+        gs, gs_neu = faeden_zaehlen(mr, akte["mr"].get("source_branch") or None)
+        ds = diskussionen_stand(akte)
         kurz = mr.projekt.rsplit("/", 1)[-1]
-        return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}',
+        marke = (f"💬 {gs_neu} neu" if gs_neu else f"↩ {ds['neu']} neu" if ds["neu"] else
+                 f"● {ds['offen']} offen" if ds["offen"] else "✓ in GitLab" if fertig else f"● {n} Komm." if n else "● offen")
+        stand = " · ".join(t for t in (
+            ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
+            f"{ds['offen']} offen in GitLab" if ds["offen"] else "", f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
+            f"{ds['neu']} neue Antwort(en)" if ds["neu"] else "", f"{n} eigene Kommentare" if n else "",
+            f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
+        return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
                 "zeile2": titel, "datei": mr.url, "plus": 0, "minus": 0, "dateien": aenderungen or 0,
-                "commits": 0, "todos": [], "status": "fertig" if fertig else "offen",
-                "marke": "✓ in GitLab" if fertig else (f"● {n} Komm." if n else "● offen")}
+                "commits": 0, "todos": [], "status": "fertig" if fertig and not (gs_neu or ds["neu"]) else "offen",
+                "marke": marke}
     for it in items:
         try:
             mr = mr_ref(it.get("web_url", ""))
         except Fehler:
             continue
         gesehen.add(mr.id)
-        wagen.append(wagen_fuer(mr, it.get("title", ""), it.get("changes_count")))
+        wagen.append(wagen_fuer(mr, it.get("title", ""), it.get("changes_count"), it.get("rollen") or ()))
     if akt and akt not in gesehen:
         try:
             mr = Waggon.aus_id(akt)

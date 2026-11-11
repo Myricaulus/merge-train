@@ -141,6 +141,12 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **Antworten aus GitLab**: „↻ MR-Daten“ holt zu veröffentlichten Kommentaren die Diskussion. Am Kommentar stehen dann
   die Antworten (ohne Systemnotizen wie „changed this line“) und „✓ in GitLab erledigt von …“ bzw. „offen in GitLab“.
   Das Etikett führt zur Diskussion in GitLab. Antworten und Erledigen geht weiter nur in GitLab.
+- **Diskussionen anderer** (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab Geschriebenes) stehen nur zum
+  Lesen an ihrer Zeile, umgerechnet auf den Stand der Seite, und links in der Liste „GitLab-Diskussionen“.
+- **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
+  anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (nicht erledigte Diskussionen), sonst „✓ in GitLab“
+  bzw. „● N Komm.“. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene
+  Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
 
@@ -183,7 +189,8 @@ Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten 
 GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 
 - von `merge-train agent pruefen|zeigen` (macht der jira-review-Skill, wenn er den Branch aktualisiert hat) und `merge-train <MR>`,
-- im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer bin) und „↻ MR-Daten“ (dieser MR,
+- im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer oder Autor bin, dazu je MR MR-Daten,
+  Entwürfe und Diskussionen, parallel, ohne die Seiten zu bauen) und „↻ MR-Daten“ (dieser MR,
   mit Antworten und Erledigt-Status der veröffentlichten Kommentare),
 - beim **Review abschließen**: aktueller GitLab-Stand (steht GitLab woanders als die Seite, wird nichts übertragen),
   dann die Draft-Notes.
@@ -199,7 +206,7 @@ GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 | `von`, `bis` | `reviewed`, `claude` | „lokal“ vergleicht `bis` gegen `von`. `bis = "arbeitsstand"`: das Arbeitsverzeichnis samt nicht Committetem (z. B. was ein Agent gerade baut) gegen `von = "origin/main"`; Index und Branch bleiben unberührt, „fertig“ gibt es dann nicht |
 | `gitlab` | `true` | Quelle „GitLab“ (MRs) an/aus |
 | `gitlab_host` | leer | Host, wenn ihn weder URL noch Remote liefern |
-| `mr_liste` | `reviewer` | welche MRs der Zug zeigt |
+| `mr_liste` | `reviewer,author` | welche MRs der Zug zeigt: `reviewer`, `author`, `assignee` (mehrere mit Komma) oder `keine` |
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |

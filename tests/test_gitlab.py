@@ -698,6 +698,21 @@ def main():
                and [a["text"] for a in gl.get("antworten", [])] == ["Danke, erledigt"]
                and (gl.get("erledigt") or {}).get("wer") == "Autorin" and gl.get("url", "").endswith("#note_900"),
                "MR-Daten: Antworten und Erledigt-Status aus GitLab am veröffentlichten Kommentar")
+        # Diskussion eines anderen (z. B. Reviewer im eigenen MR): auf der Seite an der Zeile, im Zug „neu“
+        notes = json.load(open(f"{T}/glab/notes.json"))
+        notes.append({"id": 950, "body": "Warum so?", "author": {"id": 2, "name": "Reviewerin"}, "system": False,
+                      "resolvable": True, "resolved": False, "position": {"new_path": "App.cs", "new_line": 11}})
+        json.dump(notes, open(f"{T}/glab/notes.json", "w"))
+        r = post("/api/gitlab", dict(basis, aktion="mrliste"))
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        fremd = [d for d in rv.get("diskussionen", []) if d["text"] == "Warum so?"]
+        zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
+        pruefe(r["ok"] and fremd and fremd[0]["b"] == 11 and fremd[0]["wer"] == "Reviewerin" and fremd[0]["lesen"]
+               and zw["marke"] == "↩ 1 neu" and "Reviewer, Autor" in zw["titel"],
+               "MRs: holt Diskussionen; fremde an der Zeile, im Zug neu, Rollen im Titel")
+        get(f"/mr/{mr}")
+        zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
+        pruefe(zw["marke"] == "● 1 offen", "nach dem Öffnen der Seite: nicht mehr neu, noch offen")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
         rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]

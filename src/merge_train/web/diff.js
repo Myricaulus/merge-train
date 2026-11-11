@@ -224,6 +224,13 @@
       mitReview && !nurLesen && !waggon.ansicht
     );
     kasten(
+      'kliste-gl',
+      'GitLab-Diskussionen',
+      (App.review.diskussionen || [])
+        .map(x => ({art: 'gl', id: x.id, x, st: x.erledigt ? 'gl_erledigt' : 'gl_offen'}))
+        .sort(nach)
+    );
+    kasten(
       'kliste-ki',
       'KI-Threads',
       [...(App.review.faeden || []), ...(App.review.zeigFremde ? App.review.faeden_fremd || [] : [])]

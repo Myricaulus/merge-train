@@ -185,17 +185,27 @@ def mr_liste():
         return [], None
 
 
+ROLLEN = {"reviewer": "reviewer_username", "assignee": "assignee_username", "author": "author_username"}
+
+
 def mr_liste_holen():
-    """Offene MRs, bei denen ich Reviewer bin (bzw. mr_liste), aus GitLab holen und merken."""
-    art = KONF["mr_liste"]
-    if art == "keine":
+    """Offene MRs, bei denen ich Reviewer bzw. Autor bin (mr_liste, mehrere mit Komma), aus GitLab holen und merken.
+    Jeder MR einmal, mit seinen Rollen."""
+    arten = [a.strip() for a in str(KONF["mr_liste"]).split(",") if a.strip() in ROLLEN]
+    if not arten:
         return [], None
     host = KONF["gitlab_host"]
     ich = glab(host, "user")["username"]
-    param = {"reviewer": "reviewer_username", "assignee": "assignee_username", "author": "author_username"}.get(art, "reviewer_username")
-    roh = glab(host, f"merge_requests?scope=all&state=opened&{param}={enc(ich)}&per_page=50") or []
-    items = [{"web_url": it.get("web_url", ""), "title": it.get("title", ""), "changes_count": it.get("changes_count")}
-             for it in roh if URL_MR.search(it.get("web_url", ""))]
+    items = {}
+    for art in arten:
+        roh = glab(host, f"merge_requests?scope=all&state=opened&{ROLLEN[art]}={enc(ich)}&per_page=50") or []
+        for it in roh:
+            url = it.get("web_url", "")
+            if URL_MR.search(url):
+                x = items.setdefault(url, {"web_url": url, "title": it.get("title", ""),
+                                           "changes_count": it.get("changes_count"), "rollen": []})
+                x["rollen"].append(art)
+    items = list(items.values())
     zeit = datetime.now().strftime("%d.%m. %H:%M")
     ersetzen(MR_LISTE, json.dumps({"items": items, "zeit": zeit}, ensure_ascii=False))
     return items, zeit

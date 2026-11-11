@@ -280,7 +280,7 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
 <span class="kopfknoepfe">{knoepfe}</span></div>
 <details id="commits"><summary>{commits_titel}</summary><div class="liste">{commits_liste}</div>{unter_commits}</details>{nach_commits}</header>
-<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" class="kliste" open hidden><summary>GitLab-Kommentare</summary><div></div></details><details id="kliste-ki" class="kliste" open hidden><summary>KI-Threads</summary><div></div></details></div>
+<div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" class="kliste" open hidden><summary>GitLab-Kommentare</summary><div></div></details><details id="kliste-gl" class="kliste" open hidden><summary>GitLab-Diskussionen</summary><div></div></details><details id="kliste-ki" class="kliste" open hidden><summary>KI-Threads</summary><div></div></details></div>
 <nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
 <main>{leer}{dateien_html(dateien, texte)}</main></div>
 <script>const MR={daten};{JS}</script></body></html>"""

@@ -455,6 +455,22 @@ class DiskussionenTest(unittest.TestCase):
         self.assertEqual(a["gitlab_diskussion"]["id"], "d1")
         self.assertEqual(review.diskussion_fuer_seite({"mr": {"web_url": "https://g/mr/1"}}, a)["url"], "https://g/mr/1#note_10")
 
+    def test_neu_und_stand(self):
+        from merge_train.akte import diskussionen_stand
+        n = self.note
+        akte = {"mr": {}, "kommentare": []}
+        disk = [{"id": "x", "notes": [n(30, 5, "Frage vom Reviewer", resolved=False)]},
+                {"id": "s", "notes": [n(31, 5, "added 1 commit", system=True)]}]  # Systemnotiz: keine Diskussion
+        review.diskussionen_abgleichen(akte, disk, 1)
+        self.assertEqual([d["id"] for d in akte["diskussionen"]], ["x"])
+        self.assertEqual(diskussionen_stand(akte), {"offen": 1, "erledigt": 0, "neu": 1})
+        akte["diskussionen_gesehen"] = 30  # Seite geöffnet
+        self.assertEqual(diskussionen_stand(akte)["neu"], 0)
+        disk[0]["notes"] = [n(30, 5, "Frage vom Reviewer", resolved=True, von="R"), n(32, 1, "meine Antwort", resolved=True),
+                            n(33, 5, "danke", resolved=True)]
+        self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (1, 1))  # nur Beiträge anderer zählen
+        self.assertEqual(diskussionen_stand(akte), {"offen": 0, "erledigt": 1, "neu": 1})
+
 
 # ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
 

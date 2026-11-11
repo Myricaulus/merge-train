@@ -21,7 +21,11 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
   b (neue Zeile), text, finding/hinweis (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
   (position | allgemein | mr), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen),
   gitlab_diskussion (veröffentlicht, von „MR-Daten“: id, note_id, erledigt {wer, zeit} oder None,
-  antworten [{id, wer, text, zeit}]).
+  antworten [{id, wer, wer_id, text, zeit}]).
+  diskussionen     alle Diskussionen des MR aus GitLab („MR-Daten“, „MRs“): id, note_id, wer, wer_id, text, zeit, path,
+                   old_path, a, b, head_sha (Stand des Kommentars), loesbar, erledigt, antworten – nur MRs
+  ich_id           meine GitLab-Benutzer-id (für „neu“: Beiträge anderer)
+  diskussionen_gesehen  höchste note-id anderer beim letzten Öffnen der Seite; was danach kam, ist im Zug „neu“
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
@@ -240,3 +244,22 @@ def faeden_zaehlen(waggon, branch):
         return 0, 0
     f = faeden_von(akte, branch)
     return sum(1 for k in f if faden_status(k) != "erledigt"), sum(1 for k in f if faden_status(k) == "antwort")
+
+
+def notizen_von_anderen(akte, ich_id):
+    """(id, Diskussion) aller Beiträge anderer in den Diskussionen des MR – für „neu“ im Zug."""
+    out = []
+    for d in akte.get("diskussionen") or []:
+        if d.get("wer_id") != ich_id:
+            out.append((d.get("note_id") or 0, d))
+        out += [(a.get("id") or 0, d) for a in d.get("antworten") or [] if a.get("wer_id") != ich_id]
+    return out
+
+
+def diskussionen_stand(akte):
+    """Für Waggon und Seite: offen (lösbar, nicht erledigt), erledigt, neu (Beiträge anderer seit dem letzten Öffnen)."""
+    ds = akte.get("diskussionen") or []
+    gesehen = akte.get("diskussionen_gesehen") or 0
+    return {"offen": sum(1 for d in ds if d.get("loesbar") and not d.get("erledigt")),
+            "erledigt": sum(1 for d in ds if d.get("erledigt")),
+            "neu": sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)}

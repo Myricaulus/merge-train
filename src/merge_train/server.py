@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime
 from .einstellungen import BIS, KONF, SKRIPT, VON, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
-from .git import ANLASS, finde_repos, git, statistik
+from .git import ANLASS, anlass, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON
 from .akte import akte_lesen
 from .beobachter import neue_zeilen, veraltet
@@ -13,7 +13,7 @@ from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
-from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_daten_holen, seiten_struktur, stand,
+from .review import (NUR_LESEN, abschliessen, datei_nachladen, diskussionen_gesehen, hinweis_aktion, kommentar_aktion, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
 from http.server import BaseHTTPRequestHandler
@@ -207,6 +207,7 @@ def mr_seite_liefern(anfrage, kennung):
         return Antwort(200, startseite(str(e), kennung))
     if mr.id != kennung:  # Kennung kanonisch machen
         return weiterleitung("/mr/" + mr.id + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
+    diskussionen_gesehen(mr)
     return Antwort(200, open(datei, "rb").read())
 
 
@@ -337,8 +338,29 @@ def api_fertig(anfrage):
 
 
 def mr_liste_aktion(anfrage):
+    """„↻ MRs“: die Liste, dann je MR MR-Daten, Entwürfe und Diskussionen (parallel, ohne die Seiten zu bauen)."""
+    from concurrent.futures import ThreadPoolExecutor
     items, _ = mr_liste_holen()
-    return {"ok": True, "text": f"{len(items)} MR(s) aus GitLab geholt"}
+    mrs = []
+    for it in items:
+        try:
+            mrs.append(mr_ref(it.get("web_url", "")))
+        except Fehler:
+            pass
+    name = anlass()
+    def holen(mr):
+        ANLASS.name = name
+        try:
+            return mr, mr_gitlab_holen(mr), None
+        except Fehler as e:
+            return mr, [], e
+    with ThreadPoolExecutor(4) as ex:
+        ergebnisse = list(ex.map(holen, mrs))
+    text = f"{len(items)} MR(s) aus GitLab geholt"
+    for mr, teile, fehler in ergebnisse:
+        if fehler or teile:
+            text += f"\n!{mr.iid}: " + (f"Fehler: {fehler}" if fehler else " · ".join(teile))
+    return {"ok": True, "text": text}
 
 
 def mr_daten_aktion(anfrage):
