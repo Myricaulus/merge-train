@@ -1,5 +1,24 @@
 # merge-train
 
+> **TL;DR:** Müde vom Reviewen riesiger KI-MRs, aber du willst kein Meat Proxy sein, der nur noch Kommentare zwischen
+> Agent und GitLab hin- und herkopiert? Dann steig in den merge-train: Du fragst direkt an der Zeile, dein Agent
+> antwortet genau dort, und du entscheidest, was rausgeht.
+
+merge-train ist dein Code-Review im Browser, so schnell wie lokales Git, weil es auch genau das ist: Der Diff kommt aus
+deinem Klon, nicht aus einer trägen API, und selbst riesige Änderungen öffnen sich sofort. Woher die Reviews kommen, ist
+egal: Eigene Branches, GitLab-Merge-Requests und bald GitHub-Pull-Requests stehen als **Quellen** gemeinsam in einem Zug,
+und alles, was ansteht, siehst du auf einen Blick. Durch den Code bewegst du dich wie in einer IDE: Jede Datei- oder
+Zeilenangabe in Kommentaren, Agent-Findings und Antworten ist ein Link, und Siehe-auch-Verweise und Dateivergleiche
+öffnen die Stelle im Popup, samt Diff und aufklappbarem Kontext. Der eigentliche Clou ist die Arbeit mit KI-Agenten: Du
+schreibst Fragen oder Änderungswünsche direkt an die Codezeile, dein Lieblings-Harness hört mit, antwortet genau dort
+oder setzt es auf seinem Branch um. Findings eines Review-Agenten erscheinen als Vorschläge an der richtigen Zeile, die
+du übernimmst, anpasst oder verwirfst. Nach außen geht nur, was du selbst freigibst. Du behältst also die Kontrolle, und
+die KI erledigt die Fleißarbeit. Und weil merge-train ein einziges Skript ohne Abhängigkeiten ist, passt du es leicht
+an: Jede Änderung an Server oder Seite ist nach `./bauen` sofort im Browser zu sehen, ohne Neustart von Hand.
+Obendrauf gibt es einen Güterbahnhof im Seitenkopf, bei dem man jedem fertigen Review buchstäblich beim Beladen zusieht.
+
+## Überblick
+
 Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nur schneller. Jeder Waggon im Zug ist ein
 Vergleich Quelle → Ziel in einem lokalen Klon. Die Waggons kommen aus zwei **Quellen** (einzeln an- und abschaltbar,
 sind beide an, fahren sie im selben Zug):
