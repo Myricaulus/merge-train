@@ -130,7 +130,7 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **GitLab-Kommentare** (Liste links): offene Agent-Hinweise 🤖, eigene bzw. übernommene Kommentare 💬. Stand: lila ○
   Agent-Hinweis, blauer ○ Entwurf (lokal), blauer ➜ geändert (wird aktualisiert), grüner ➜ in GitLab (Entwurf), grüner ✓
   in GitLab veröffentlicht. Die Reihenfolge
-  ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅“ (am Ende der Filterknöpfe) per Drag & Drop oder ⤒/⤓
+  ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅“ (vor den Filterknöpfen) per Drag & Drop oder ⤒/⤓
   (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet an seiner Stelle nach Datei und Zeile,
   ein übernommener Hinweis behält seinen Platz.
 - **Kommentar schreiben**: Auf eine Zeilennummer klicken (links = alte Zeile, rechts = neue). Speichern mit Strg+Enter, abbrechen mit Esc.

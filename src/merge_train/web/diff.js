@@ -304,7 +304,7 @@
     });
   }
   /** Eine der drei Listen (id: Schlüssel in LISTEN_STATI) füllen: Titel, Filterknöpfe je Stand (die Zahlen stehen an
-   *  den Knöpfen), Einträge; sortierbar: Knopf „⇅“ (Sende-Reihenfolge, nur „GitLab-Kommentare“). */
+   *  den Knöpfen), Einträge; sortierbar: Knopf „⇅“ vor den Filterknöpfen (Sende-Reihenfolge, nur „GitLab-Kommentare“). */
   function kasten(id, name, alle, sortierbar) {
     const k = document.getElementById(id);
     if (!k) return;
@@ -314,7 +314,7 @@
       s = sortierbar && sortieren && items.length > 1;
     k.querySelector('summary').replaceChildren(
       name,
-      el('span', {class: 'stfilter'}, ...filterKnoepfe(id, alle, aus), sortierbar && items.length > 1 ? sortKnopf(k) : '')
+      el('span', {class: 'stfilter'}, sortierbar && items.length > 1 ? sortKnopf(k) : '', ...filterKnoepfe(id, alle, aus))
     );
     k.querySelector('div').replaceChildren(
       ...items.map(i => {
