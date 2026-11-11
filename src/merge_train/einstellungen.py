@@ -151,7 +151,11 @@ def oeffnen(ziel):
             print(f"merge-train: kein Browser-Befehl gefunden – {ziel} bitte selbst öffnen (browser = … in der Einstellung)")
             return
         argv = [prog]
-    subprocess.Popen(argv + [ziel], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.Popen(argv + [ziel], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        # z. B. Errno 8 bei explorer.exe, wenn die WSL-Interop (binfmt WSLInterop) weg ist
+        print(f"merge-train: {argv[0]} ließ sich nicht starten ({e.strerror}) – {ziel} bitte selbst öffnen")
 
 
 def melden(text):
