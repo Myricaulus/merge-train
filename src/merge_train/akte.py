@@ -25,8 +25,7 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
   antworten [{id, wer, wer_id, text, zeit}]).
   diskussionen     alle Diskussionen des MR aus GitLab („MR-Daten“, „MRs“): id, note_id, wer, wer_id, text, zeit, path,
                    old_path, a, b, head_sha (Stand des Kommentars), loesbar, erledigt, antworten – nur MRs
-  ich_id           meine GitLab-Benutzer-id (für „neu“: Beiträge anderer)
-  diskussionen_gesehen  höchste note-id anderer beim letzten Öffnen der Seite; was danach kam, ist im Zug „neu“
+  ich_id           meine GitLab-Benutzer-id (wer: du oder extern)
   diskussionen_abgehakt  {diskussion-id: zeit}: „☑ abwarten“ (Ball ohne Antwort abgegeben, in GitLab noch offen); gilt,
                    bis ein anderer danach schreibt (diskussion_abgehakt)
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
@@ -256,7 +255,7 @@ def faeden_zaehlen(waggon, branch):
 
 
 def notizen_von_anderen(akte, ich_id):
-    """(id, Diskussion) aller Beiträge anderer in den Diskussionen des MR – für „neu“ im Zug."""
+    """(id, Diskussion) aller Beiträge anderer in den Diskussionen des MR – für die Meldung „n neue Antwort(en)“ beim Holen."""
     out = []
     for d in akte.get("diskussionen") or []:
         if d.get("wer_id") != ich_id:
@@ -336,11 +335,8 @@ def diskussion_stand(akte, d):
 
 
 def diskussionen_stand(akte):
-    """Für Waggon und Seite: Anzahl je Stand (STAENDE) über die Diskussionen, dazu neu (Beiträge anderer seit dem
-    letzten Öffnen)."""
+    """Für Waggon und Seite: Anzahl je Stand (STAENDE) über die Diskussionen."""
     zahl = dict.fromkeys(STAENDE, 0)
     for d in akte.get("diskussionen") or []:
         zahl[diskussion_stand(akte, d)[0]] += 1
-    gesehen = akte.get("diskussionen_gesehen") or 0
-    zahl["neu"] = sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)
     return zahl

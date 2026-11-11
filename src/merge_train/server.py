@@ -13,7 +13,7 @@ from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
-from .review import (NUR_LESEN, abschliessen, datei_nachladen, diskussionen_gesehen, hinweis_aktion, kommentar_aktion, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
+from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
 from http.server import BaseHTTPRequestHandler
@@ -214,7 +214,6 @@ def mr_seite_liefern(anfrage, kennung):
         return Antwort(200, startseite(str(e), kennung))
     if mr.id != kennung:  # Kennung kanonisch machen
         return weiterleitung("/mr/" + mr.id + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
-    diskussionen_gesehen(mr)
     return Antwort(200, open(datei, "rb").read())
 
 

@@ -632,20 +632,10 @@ def mr_gitlab_holen(mr):
     return teile
 
 
-def diskussionen_gesehen(mr):
-    """Die Seite des MR wurde geöffnet: Beiträge anderer bis jetzt gelten im Zug nicht mehr als neu."""
-    akte = akte_lesen(mr)
-    ids = [i for i, _ in notizen_von_anderen(akte, akte.get("ich_id"))]
-    if ids and max(ids) > (akte.get("diskussionen_gesehen") or 0):
-        with akte_bearbeiten(mr) as akte:
-            akte["diskussionen_gesehen"] = max(ids)
-
-
 def mr_daten_holen(mr):
     """Güterbahnhof „MR-Daten“ (auf der Seite des MR): mr_gitlab_holen, Seite gleich bauen."""
     vorher = akte_lesen(mr).get("struktur")
     teile = mr_gitlab_holen(mr)
-    diskussionen_gesehen(mr)  # die Seite ist offen und zeigt sie gleich
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
         mr_seite(mr)
         neu_laden = akte_lesen(mr).get("struktur") != vorher

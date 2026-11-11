@@ -82,7 +82,7 @@ def mr_wagen(akt=None):
         fertig = (bool(akte.get("abgeschlossen") or akte.get("diskussionen")) and not ausstehend(akte) and not gesendet
                   and not (ds["dran"] or ds["entwurf"] or ds["gitlab_entwurf"]))
         kurz = mr.projekt.rsplit("/", 1)[-1]
-        marke = (f"💬 {gs_neu} neu" if gs_neu else f"↩ {ds['neu']} neu" if ds["neu"] else
+        marke = (f"💬 {gs_neu} neu" if gs_neu else
                  f"● {ds['dran']} dran" if ds["dran"] else ("✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt")
                  if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
@@ -91,11 +91,11 @@ def mr_wagen(akt=None):
             f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
             f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
             f"{gesendet} Entwurf/Entwürfe in GitLab" if gesendet else "",
-            f"{ds['neu']} neue Antwort(en)" if ds["neu"] else "", f"{n} eigene Kommentare" if n else "",
+            f"{n} eigene Kommentare" if n else "",
             f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
         return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
                 "zeile2": titel, "datei": mr.url, "plus": 0, "minus": 0, "dateien": aenderungen or 0,
-                "commits": 0, "todos": [], "status": "fertig" if fertig and not (gs_neu or ds["neu"]) else "offen",
+                "commits": 0, "todos": [], "status": "fertig" if fertig and not gs_neu else "offen",
                 "marke": marke}
     for it in items:
         try:

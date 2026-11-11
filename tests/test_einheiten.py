@@ -454,7 +454,7 @@ class DiskussionenTest(unittest.TestCase):
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (0, 0))
         self.assertEqual(a["gitlab_diskussion"]["id"], "d1")
 
-    def test_neu_und_stand(self):
+    def test_stand_und_neue_antworten(self):
         from merge_train.akte import diskussionen_stand
         n = self.note
         akte = {"mr": {}, "kommentare": []}
@@ -462,17 +462,15 @@ class DiskussionenTest(unittest.TestCase):
                 {"id": "s", "notes": [n(31, 5, "added 1 commit", system=True)]}]  # Systemnotiz: keine Diskussion
         review.diskussionen_abgleichen(akte, disk, 1)
         self.assertEqual([d["id"] for d in akte["diskussionen"]], ["x"])
-        self.assertEqual(diskussionen_stand(akte), self.zahl(dran=1, neu=1))
-        akte["diskussionen_gesehen"] = 30  # Seite geöffnet
-        self.assertEqual(diskussionen_stand(akte)["neu"], 0)
+        self.assertEqual(diskussionen_stand(akte), self.zahl(dran=1))
         disk[0]["notes"] = [n(30, 5, "Frage vom Reviewer", resolved=True, von="R"), n(32, 1, "meine Antwort", resolved=True),
                             n(33, 5, "danke", resolved=True)]
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (1, 1))  # nur Beiträge anderer zählen
-        self.assertEqual(diskussionen_stand(akte), self.zahl(erledigt=1, neu=1))
+        self.assertEqual(diskussionen_stand(akte), self.zahl(erledigt=1))
 
     @staticmethod
     def zahl(**k):
-        return dict(dict.fromkeys(("entwurf", "dran", "gitlab_entwurf", "wartet", "erledigt", "neu"), 0), **k)
+        return dict(dict.fromkeys(("entwurf", "dran", "gitlab_entwurf", "wartet", "erledigt"), 0), **k)
 
     def test_staende(self):
         """(stand, wer) je Eintragsart – das Konzept „Stände der Listen“ (docs/funktionen.md)."""
@@ -536,7 +534,6 @@ class DiskussionenTest(unittest.TestCase):
         with akte_bearbeiten(mr) as akte:
             review.diskussionen_abgleichen(akte, [{"id": "x", "notes": [n(50, 5, "Frage", resolved=False)]},
                                                   {"id": "y", "notes": [n(51, 5, "Noch eine", resolved=False)]}], 1)
-            akte["diskussionen_gesehen"] = 51
         self.assertEqual((wagen()["status"], wagen()["marke"]), ("offen", "● 2 dran"))
         with akte_bearbeiten(mr) as akte:
             review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "x"})

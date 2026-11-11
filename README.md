@@ -182,8 +182,7 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine
   Einstellung des Browsers und gilt auch für Fragen an Agenten. Sie steht neben „Review abschließen“ und in jedem
   Eingabefeld. „Review abschließen“ ist ausgegraut, solange es nichts zu senden gibt.
-- **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
-  anderer in GitLab seit dem letzten Öffnen der Seite), „● N dran“ (Diskussionen, in denen du dran bist), sonst
+- **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „● N dran“ (Diskussionen, in denen du dran bist), sonst
   „✓ in GitLab“ (abgeschlossen) bzw. „✓ erledigt“ oder „● N Komm.“. Fertig (grüner Rahmen) ist der Waggon, sobald
   nichts mehr bei dir liegt: keine Diskussion, in der du dran bist, keine Entwürfe (lokal oder in GitLab). Wartet eine
   Diskussion auf die anderen, hält das nicht auf. Der Tooltip nennt Rolle (Reviewer/Autor), Diskussionen je Stand,

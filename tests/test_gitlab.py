@@ -702,7 +702,7 @@ def main():
                and gl.get("stand") == "erledigt" and gl.get("wer") == "extern" and (gl.get("erledigt") or {}).get("wer") == "Autorin"
                and gl.get("url", "").endswith("#note_900"),
                "MR-Daten: veröffentlichter Kommentar als GitLab-Thread mit Antworten und Erledigt-Status")
-        # Diskussion eines anderen (z. B. Reviewer im eigenen MR): auf der Seite an der Zeile, im Zug „neu“
+        # Diskussion eines anderen (z. B. Reviewer im eigenen MR): auf der Seite an der Zeile, im Zug „● 1 dran“
         notes = json.load(open(f"{T}/glab/notes.json"))
         notes.append({"id": 950, "body": "Warum so?", "author": {"id": 2, "name": "Reviewerin"}, "system": False,
                       "resolvable": True, "resolved": False, "position": {"new_path": "App.cs", "new_line": 11}})
@@ -713,11 +713,8 @@ def main():
         zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
         pruefe(r["ok"] and fremd and fremd[0]["b"] == 11 and fremd[0]["nachrichten"][0]["wer"] == "Reviewerin"
                and fremd[0]["nachrichten"][0]["von"] == "andere" and fremd[0]["stand"] == "dran" and fremd[0]["wer"] == "extern"
-               and zw["marke"] == "↩ 1 neu" and "Reviewer, Autor" in zw["titel"],
-               "MRs: holt Diskussionen; fremde an der Zeile, im Zug neu, Rollen im Titel")
-        get(f"/mr/{mr}")
-        zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
-        pruefe(zw["marke"] == "● 1 dran" and zw["status"] == "offen", "nach dem Öffnen der Seite: nicht mehr neu, du bist dran")
+               and zw["marke"] == "● 1 dran" and zw["status"] == "offen" and "Reviewer, Autor" in zw["titel"],
+               "MRs: holt Diskussionen; fremde an der Zeile, im Zug „● 1 dran“, Rollen im Titel")
         # Antwort auf die Diskussion: sofort → gleich veröffentlicht; sonst lokaler Entwurf → Abschließen als Draft-Antwort
         r = post("/api/kommentar", dict(basis, aktion="antworten", diskussion="d950", text="Darum.", sofort=1))
         fremd = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")

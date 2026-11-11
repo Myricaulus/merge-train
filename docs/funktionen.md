@@ -123,8 +123,8 @@ origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktual
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen eigenen Abruf beim Laden der Seite.
 
 ### 14. Zug und Güterbahnhof
-Kopf jeder Seite: ein Wagen je Waggon (gemischt aus allen Quellen), Füllstand, Marken („💬 n neu“, „↩ n neu“,
-„● n dran“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
+Kopf jeder Seite: ein Wagen je Waggon (gemischt aus allen Quellen), Füllstand, Marken („💬 n neu“, „● n dran“ –
+ein eigenes „ungesehen“ gibt es nicht, ein neuer Beitrag anderer macht die Diskussion „dran“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
 Welche MRs: `mr_liste` (reviewer, author, assignee).
 - Achsen: Quelle, Marke am Wagen, Knopf im Leitstand.
 - Ort: `alle_wagen`/`wagen_fuer` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
