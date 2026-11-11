@@ -16,12 +16,12 @@ from .zuhoerer import horcht, kontext
 from collections import Counter
 from dataclasses import dataclass
 
-def stand(mr, akte):
+def stand(waggon, akte):
     teile = [akte.get("struktur") or ""]
-    teile.append(horcht(mr) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
-    k = kontext(mr)
+    teile.append(horcht(waggon) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+    k = kontext(waggon)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
-    for p in [akte_datei(mr)] + ([] if mr.lokal else hinweis_dateien(mr, akte)):
+    for p in [akte_datei(waggon)] + ([] if waggon.lokal else hinweis_dateien(waggon, akte)):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:

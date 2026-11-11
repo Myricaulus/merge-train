@@ -42,13 +42,13 @@ def gespraech_agenten(waggon):
     return namen + ([wer] if wer and wer not in namen else [])
 
 
-def gespraech_daten(mr, ansicht=None):
+def gespraech_daten(waggon, ansicht=None):
     """Wie review_daten, für ein Gespräch: Fäden auf den Stand der Seite umgerechnet."""
-    akte = akte_lesen(mr)
+    akte = akte_lesen(waggon)
     struktur = struktur_laden(akte)
     if struktur is None:
         try:
-            _, struktur = quelle(mr).seite(mr)
+            _, struktur = quelle(waggon).seite(waggon)
         except Fehler as e:
             return {"ok": False, "text": str(e)}
     head = struktur["refs"]["head_sha"]
@@ -82,9 +82,9 @@ def gespraech_daten(mr, ansicht=None):
         kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
         ausserhalb = vorher - len(kommentare)
     entwuerfe = sum(1 for k in faeden_von(akte) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
-    return {"ok": True, "kommentare": kommentare, "stand": stand(mr, akte),
-            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(mr), "kontext": kontext(mr),
-            "agenten": gespraech_agenten(mr),
+    return {"ok": True, "kommentare": kommentare, "stand": stand(waggon, akte),
+            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(waggon), "kontext": kontext(waggon),
+            "agenten": gespraech_agenten(waggon),
             "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
 
 

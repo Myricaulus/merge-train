@@ -1,7 +1,8 @@
 # Umbau von merge-train: übrige Schritte
 
-Arbeitsplan für den Umbau auf dem Branch `fable`, für die nächste Session (Mensch oder Agent). Die Schritte 1–8 sind
-erledigt. Nach dem Umbau und Abnahme fliegt diese Datei wieder raus (bzw. das Bleibende wandert nach README/AGENTS.md).
+Arbeitsplan für den Umbau (Branch `fable`, inzwischen auf `claude`). Die Schritte 1–8 sind erledigt, die Bewertung
+unten ist abgearbeitet (Abschnitt „Abarbeitung der Bewertung“). Nach dem Umbau und Abnahme fliegt diese Datei wieder raus
+(bzw. das Bleibende wandert nach README/AGENTS.md).
 
 ## Ziel
 
@@ -11,64 +12,66 @@ sich nichts.** Jeder Schritt ist für sich lauffähig, getestet und ein eigener 
 
 ## Regeln für die Arbeit
 
-- **Nur im Worktree `/home/wsl/workspaces/merge-train-fable` (Branch `fable`) arbeiten.** Im Hauptstand
-  `/home/wsl/workspaces/merge-train` (Branch `claude`) nichts ändern: dort läuft der Server des Nutzers (Port 8771) und
-  startet bei jeder Änderung am gebauten Skript neu. Die Bash-Shell springt nach jedem Aufruf in den Hauptstand zurück,
-  deshalb jeden Befehl mit `cd /home/wsl/workspaces/merge-train-fable && …` beginnen.
-- Branches `reviewed` und `main` nicht anfassen. Nicht pushen. Commits auf `fable` gehören zum Vorgehen.
-- **Nach jedem Schritt committen und stoppen.** Der Nutzer prüft dann seine Usage und kompaktiert selbst. Sparsam
-  arbeiten: Tests einmal je Stand laufen lassen, keine Subagenten.
-- Nicht `pkill -f "merge-train --server"`: das trifft auch den Server des Nutzers.
+Der Umbau lief im Worktree auf dem Branch `fable` und ist inzwischen auf `claude` (der Worktree ist weg). Was davon
+weiter gilt:
+
+- Branches `reviewed` und `main` nicht anfassen. Pushen nur auf Wunsch.
+- Nicht `pkill -f "merge-train --server"`: das trifft auch den Server des Nutzers (Port 8771). Zum Ausprobieren eine
+  eigene Instanz (`python3 src --beobachten`) oder eigene Konfig mit anderem Port.
 - Begriffe draft/staged/sent wie in AGENTS.md. Der Agent legt nie Review-Kommentare an.
-- Namen: zu kurze Namen maßvoll ausschreiben („muss kein Roman werden“). `st` für den geladenen Zustand und `k` für
-  einen Kommentar in kurzen Schleifen sind in Ordnung, `kom`, `rv`, `gs` und Ähnliches in längeren Funktionen nicht.
+- Namen: zu kurze Namen maßvoll ausschreiben („muss kein Roman werden“). `k` für einen Kommentar in kurzen Schleifen
+  ist in Ordnung, `kom`, `rv`, `gs` und Ähnliches in längeren Funktionen nicht. Allgemeine Namen nach dem Inhalt
+  („Zustand wovon?“ → `akte`).
 - Kein neues Framework (FastAPI, Flask o. ä.): merge-train bleibt ein Skript ohne Abhängigkeiten außer der
   Standardbibliothek (pygments optional, `glab` für GitLab).
-- Ändert `claude` sich während des Umbaus, vor dem nächsten Schritt `git merge claude` im Worktree. Änderungen an
-  `src/web/*` und Tests mergen von selbst. Python-Änderungen aus `src/NN_*.py` gibt es auf `fable` nicht mehr: dort den
-  Diff von `claude` ansehen und von Hand ins passende Modul übertragen (so geschehen in `eaa1ce2`).
 
 ## Prüfen nach jeder Änderung
 
 ```sh
-cd /home/wsl/workspaces/merge-train-fable
+cd ~/Projects/merge-train
 ./bauen                                                                  # src/ → merge-train (Python-Zip)
 MERGE_TRAIN_CONFIG=/nonexistent python3 werkzeug/namen_pruefen.py merge-train   # vergessene Imports
+python3 tests/test_einheiten.py                                          # Einzeltests, < 1 s
 python3 tests/test_gitlab.py                                             # Ende-zu-Ende, ~13 s, Port 8799; „alles ok“
+./pruefen                                                                # JS: App-Zusammenhang und Biome
+python3 werkzeug/seiten_vergleich.py                                     # nur bei JS-Umbauten: Seite wie vorher?
 ```
 
 - `werkzeug/imports_richten.py` schreibt die Import-Zeilen aller Module neu, nach dem, was sie wirklich benutzen, und
   meldet `RÜCKWÄRTS a → b`, wenn ein Modul eines nutzt, das in der Reihenfolge später kommt. Nach dem Verschieben von
   Funktionen einfach laufen lassen. Neue Module dort in `REIHENFOLGE` und in `src/merge_train/__init__.py` eintragen.
-  Namen müssen paketweit eindeutig sein (das Werkzeug bricht sonst ab).
+  Namen müssen paketweit eindeutig sein (das Werkzeug bricht sonst ab). Module der Standardbibliothek kennt es aus
+  seiner Liste `STD`: ein neues dort eintragen, sonst fällt sein Import weg.
 - `namen_pruefen.py` findet Namen, die eine Funktion lädt, die es im Modul aber nicht gibt. Die Tests treffen nicht
   jeden Pfad, dieses Werkzeug schon.
 - Die Tests laden alle Namen aller Module in ein Wörterbuch (`alles_laden` in `tests/test_gitlab.py`) und rufen manche
   Funktionen direkt beim Namen auf. Wer eine Funktion umbenennt, muss sie dort mit umbenennen (`grep -n 'm\["' tests/`).
-- JS hat keine Tests außer `node --check` (Teil von `test_gitlab.py`). Änderungen an der Seite im Browser prüfen: eigenen
-  Server aus dem Worktree auf einem anderen Port starten (`port = …` in einer eigenen Konfig, `MERGE_TRAIN_CONFIG=…`),
-  nie den auf 8771 benutzen. Zum Anschauen gibt es die chrome-devtools-MCP-Werkzeuge.
+- JS: `./pruefen` prüft mit `werkzeug/app_pruefen.py`, ob jedes gelesene `App.x` gesetzt wird, ob beim Laden nur
+  Früheres herausgenommen wird und ob die Kopfkommentare stimmen; danach Biome je Seitenbündel.
+  `werkzeug/seiten_vergleich.py [REF]` vergleicht die Seite von REF und Arbeitsstand im Browser (DOM nach Seite,
+  Fäden, Antwort, Popups, Toast).
 
-## Stand nach den Schritten 1–8
+## Stand nach den Schritten 1–8 und der Abarbeitung
 
-| Commit | Inhalt |
+Commits ohne Hash: die History von `claude` wurde danach neu geschrieben, sie heißen wie hier in der ersten Spalte.
+
+| Commit (Anfang der Nachricht) | Inhalt |
 |---|---|
-| `558ecc0` | Schritt 1: Datei-Modus ohne Server, `--von/--bis/--inline/--alle` und Durchreich-Hüllen entfernt |
-| `bd6784b` | Schritt 2: echte Python-Module im Paket `src/merge_train/`, `./bauen` bündelt zum Python-Zip, Migration `alt_gespraech_uebernehmen` entfernt |
-| `0c14fc2` | Kürzel ausgeschrieben: `g_…` → `faden_…`/`gespraech_…`, `rk` → `review_kommentare`, `k_status` → `kommentar_status` |
-| `eaa1ce2` | Merge von `claude` (Kontext-Füllstand im HUD) |
-| `a6f6a12` | Schritt 3: Typ `Waggon` (waggon.py), `Fehler` als Basis von `GitLabFehler`, Quellen entschlackt, kein Import-Zyklus mehr |
-| Schritt 4 | Zustand kapseln: `with zustand(waggon) as st:`, `zustand_lesen`, `kommentar_finden`/`faden_finden`, `…_anhaengen`, `eintrag_entfernen`, `ist_staged`/`ist_sent`, Aufbau der Datei oben in `zustand.py` |
-| Schritt 5 | Server als Routen-Tabelle (`@route`, `bearbeiten`, `Antwort`/`Anfrage`, `beobachten`), Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
-| Schritt 6 | Abschließen: `abschluss_planen` (rein) → `schritt_ausfuehren` (GitLab, ohne Sperre) → `schritt_eintragen` (je Schritt kurz unter der Sperre); `entwuerfe_abgleichen(st, vorhanden, eigene_texte)` rein, Texte vorher per `abgleich_vorbereiten`; Umformulieren: `umformulieren_ziel_finden` → `hinweis_text_aendern` / `draft_daneben` |
-| Schritt 7 | JS: Formatierung (7a), dann Namen, `App`, Dateien `app.js`, `navigation.js` (war `basis.js`), `zeichnungen.js`, `hud.js`, `toasts.js` (7b) |
-| Schritt 8 | `tests/test_einheiten.py` (24 Tests, < 1 s); Syntaxprüfung des Seiten-Skripts ohne node mit biome |
+| „Aufräumen: Datei-Modus ohne Server“ | Schritt 1: Datei-Modus ohne Server, `--von/--bis/--inline/--alle` und Durchreich-Hüllen entfernt |
+| „Echte Python-Module“ | Schritt 2: Paket `src/merge_train/`, `./bauen` bündelt zum Python-Zip; Kürzel ausgeschrieben (`g_…` → `faden_…`/`gespraech_…`, `rk` → `review_kommentare`) |
+| „Ein Typ für den Waggon-Schlüssel“ | Schritt 3: Typ `Waggon` (waggon.py), `Fehler` als Basis von `GitLabFehler`, Quellen entschlackt, kein Import-Zyklus mehr |
+| „Zustand kapseln“ | Schritt 4: `with zustand(waggon) as st:` (heute `akte_bearbeiten`), `kommentar_finden`/`faden_finden`, `…_anhaengen`, `ist_staged`/`ist_sent` |
+| „Server: Routen-Tabelle“ | Schritt 5: `@route`, `bearbeiten`, `Antwort`/`Anfrage`, Aktions-Tabellen `AM_FADEN`, `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR` |
+| „Abschließen: planen (rein)“ | Schritt 6: `abschluss_planen` → `schritt_ausfuehren` (GitLab, ohne Sperre) → `schritt_eintragen` (je Schritt gesperrt) |
+| „JS: Formatierung“, „JS: Namen ausgeschrieben“ | Schritt 7: prettier einmalig; Namen, `App`, Dateien `app.js`, `navigation.js`, `zeichnungen.js`, `hud.js`, `toasts.js` |
+| „Einzeltests“ | Schritt 8: `tests/test_einheiten.py` |
+| „Akte statt Zustand“ … „JS: lange Funktionen zerlegt“ | Abarbeitung der Bewertung, siehe ganz unten |
 
 Aufbau (`src/merge_train/`, jedes Modul nutzt nur die davor, siehe `__init__.py`):
 
 ```
-einstellungen  waggon  git  syntax  zeilen  web  diff_html  zustand  gitlab  hinweise  ansichten  seite
-quellen  zuhoerer  review  gespraech  server  agent_cli  cli          (+ src/__main__.py, web/*.css|js|svg|webp)
+einstellungen  waggon  git  syntax  zeilen  web  diff_html  akte  beobachter  gitlab  hinweise  ansichten  seite
+quellen  zuhoerer  review  gespraech  server  prozess  instanz  agent_cli  cli     (+ src/__main__.py, web/*.css|js|svg|webp)
 ```
 
 Wichtige Bausteine:
@@ -76,17 +79,17 @@ Wichtige Bausteine:
 - **`Waggon`** (`waggon.py`, `NamedTuple`): `Waggon(lokal="proj")` oder `Waggon(host, projekt, iid)`. Daran hängen
   `.id` (Kennung der Seite: `projekt:name` bzw. `host/gruppe/projekt/42`), `Waggon.aus_id(...)`, `.name`, `.url`,
   `.dateiname`, `.kann` (`review`/`fertig`/`committen`), `.als_dict()` / `Waggon.aus_dict()` (Feld `mr` der
-  Zustandsdatei). Unveränderlich: ändern mit `waggon._replace(host=…)`. Variablen heißen `waggon`. In älterem Code
+  Akte). Unveränderlich: ändern mit `waggon._replace(host=…)`. Variablen heißen `waggon`. In älterem Code
   heißt derselbe Wert noch oft `mr`, auch für lokale Projekte. Beim Anfassen in `waggon` umbenennen, wo er beides sein
   kann, `mr` nur behalten, wo es wirklich ein MR ist.
 - **Quellen** (`quellen.py`): `LOKAL`, `GITLAB`, `quelle(waggon)`. Sie wissen `an()`, `ort()` (Klon und Stand),
   `seite()`, `wagen()`, `prompt()`. `schluessel_von(kennung)` prüft zusätzlich, ob die Quelle eingeschaltet ist.
-- **Zustand** (`zustand.py`): eine JSON je Waggon (`review_datei/laden/speichern`), globale `SPERRE` (RLock, in
-  `einstellungen.py`). `kommentare` enthält Review-Kommentare und Gesprächsfäden gemischt: Fäden haben `nachrichten`
-  (`review_kommentare(st)` und `faeden_von(st)` trennen sie). Die Seiten-Struktur liegt als Zeiger `st["struktur"]`
-  auf eine Cache-JSON (`struktur_laden`).
-- **Fehler** (`waggon.py`): `Fehler` = Meldung für Nutzer/Agent; `GitLabFehler(Fehler)` nur für glab-Probleme,
-  `MetaFehlt(GitLabFehler)` für fehlende MR-Daten.
+- **Akte** (`akte.py`, früher `zustand.py`): eine JSON je Waggon (`akte_datei/laden/speichern`), gesperrt mit `SPERRE`
+  (RLock, Threads) und einer Dateisperre `DATEN/.sperre` (andere Prozesse). `kommentare` enthält Review-Kommentare und
+  Gesprächsfäden gemischt: Fäden haben `nachrichten` (`review_kommentare(akte)` und `faeden_von(akte)` trennen sie). Die
+  Seiten-Struktur liegt als Zeiger `akte["struktur"]` auf eine Cache-JSON (`struktur_laden`).
+- **Fehler** (`waggon.py`): `Fehler` = Meldung für Nutzer/Agent; `Ungueltig(Fehler)` für ungültige Eingaben,
+  `GitLabFehler(Fehler)` nur für glab-Probleme, `MetaFehlt(GitLabFehler)` für fehlende MR-Daten.
 
 ---
 
@@ -146,11 +149,12 @@ auseinandergehalten.
   (sonst hätte das automatische Speichern beim frühen `return` den Hinweis ohne Kommentar übernommen). Lokale
   Variablen `zustand` in `agent_main`/`_prozess` heißen jetzt `befund`/`prozess_zustand`.
 
-## Offen: aussagekräftigere Namen (Hinweis des Nutzers)
+## Aussagekräftigere Namen (Hinweis des Nutzers) – erledigt
 
-„zustand“ ist sehr allgemein – Zustand wovon? Gemeint ist die Review-/Gesprächsdatei eines Waggons. Bei Gelegenheit
-(eigener Commit, rein mechanisch) Modul und Funktionen nach dem benennen, was sie halten, z. B. `waggon_datei` /
-`with waggon_daten(waggon) as daten:`; dasselbe Maß an andere allgemeine Namen anlegen (`st`, `d`, `r`, `rv`).
+„zustand“ ist sehr allgemein – Zustand wovon? Gemeint ist die Review-/Gesprächsdatei eines Waggons. Umgesetzt als
+**Akte**: Modul `akte.py`, `with akte_bearbeiten(waggon) as akte:`, `akte_lesen`, `akte_datei`; die Variable `st`
+heißt überall `akte`, `d` bei Aktionen `eingabe`, `rv`/`gs` `review`/`gespraech`. (`waggon_daten` hätte sich mit
+`wagen_daten`, den Daten für die Seite, und den vielen `daten` beim Server gebissen.)
 
 ## Schritt 5: Server als Routen-Tabelle
 
@@ -350,7 +354,7 @@ in `docs/ideen.md`.
 
 ## Bewertung der Schritte 4–8 (Kritik, nichts korrigiert)
 
-Stand `e3efe7d`, 2026-11-11. Grundlage: Code noch einmal gelesen, Biome über die JS-Dateien, Tests wie oben.
+Stand nach Schritt 8 (Commit „Einzeltests“), 2026-11-11. Grundlage: Code noch einmal gelesen, Biome über die JS-Dateien, Tests wie oben.
 
 **Gesamturteil.** Die Struktur ist besser als vorher, und das Verhalten ist für die geprüften Fälle gleich. Die
 Schritte 4 (Zugriff auf die Datei), 5 (Routen) und 6 (GitLab ohne Sperre) haben ihr Ziel erreicht. Schritt 7 hat die
@@ -460,3 +464,118 @@ gemacht, aber nicht gelöst hat.
   des Umbaus, größer als alles oben.
 - Dieses Dokument selbst: Pfade unter `/home/wsl/…`, Regeln („stoppen“, `node --check`), die nicht mehr gelten, und
   die Tabelle nennt für die Schritte 4–8 keine Commits.
+
+---
+
+## Abarbeitung der Bewertung
+
+Stand 2026-11-11. Je Punkt oben: was daraus geworden ist. Geprüft wie unter „Prüfen nach jeder Änderung“: 37
+Einzeltests, `test_gitlab.py` „alles ok“, `namen_pruefen` 0, `./pruefen` ohne Befunde, `seiten_vergleich.py` gegen den
+Stand vor den JS-Änderungen in allen 7 Schritten gleich, dazu ein Bildvergleich der Kopfzeile (pixelgleich).
+
+### Neues Risiko
+
+- **Doppeltes Abschließen – erledigt.** Je MR läuft nur ein „Review abschließen“ (`_ABSCHLUSS_LAEUFT` in `review.py`).
+  Der zweite Aufruf bekommt sofort „läuft für diesen MR schon (anderer Tab?)“. Test `test_nur_ein_lauf_je_mr`. Gilt je
+  Serverprozess; MRs laufen nur über den Hauptserver (die `--beobachten`-Instanzen sind lokal).
+
+### Schritt 4: Zustand → Akte
+
+- **Sperre nur im Serverprozess – erledigt.** `akten_sperre()` nimmt zur `SPERRE` eine Dateisperre (`flock` auf
+  `DATEN/.sperre`), verschachtelt im selben Thread nur einmal. Server und `merge-train agent` überschreiben sich nicht
+  mehr gegenseitig. Test mit einem zweiten Prozess.
+- **Speichern beim Verlassen – erledigt.** Aktionen der Seite laufen über `aktion_ausfuehren(waggon, aktion)`: lehnt
+  die Aktion ab (`(False, text)`), wird nichts gespeichert, auch keine halbe Änderung. Die Regel „erst prüfen, dann
+  ändern“ ist damit keine Voraussetzung mehr. Test `test_abgelehnte_aktion_speichert_nichts`.
+- **Kaputte Datei – erledigt.** `akte_bearbeiten` verschiebt sie nach `<datei>.kaputt-<zeit>` und meldet das auf stderr,
+  statt sie mit einer leeren Akte zu überschreiben. Nur lesen lässt sie liegen.
+- **Namen – erledigt.** Siehe „Aussagekräftigere Namen“. `mr` heißt `waggon`, wo beides gemeint sein kann
+  (`akte_laden`, `faeden_archivieren`, `gespraech_daten`, `stand`, `faden_neu`, `gespraech_aktion`). In `review.py` und
+  `gitlab.py` bleibt `mr`, dort ist es wirklich ein MR.
+
+### Schritt 5: Server
+
+- **Aufrufkonvention – erledigt.** Handler bekommen `waggon=` und `struktur=` als Schlüsselwörter (Regex-Gruppen
+  weiter positionsweise). Rückgabe ist ein dict (JSON 200) oder eine `Antwort`. `Antwort` ist eine Datenklasse statt
+  eines Tupels, die Verwechslung von früher geht nicht mehr. `json_antwort`/`abgelehnt` für andere Status.
+- **Tabellen – erledigt.** `GESPRAECH_AKTIONEN`, `GITLAB_AKTIONEN`, `AM_HINWEIS`; bei Fäden `FADEN_AKTIONEN` („neu“)
+  neben `AM_FADEN`, also gleich gebaut wie `KOMMENTAR_AKTIONEN`/`AM_KOMMENTAR`. **Bleibt:** Funktionen einer Tabelle
+  haben eine gemeinsame Signatur und nehmen deshalb teils Parameter, die sie nicht brauchen. Das ist der Preis der
+  Tabelle.
+- **`mr_daten_holen` – erledigt.** Steht in `review.py`. „Entwürfe abgleichen“ steht an einer Stelle
+  (`mit_gitlab_abgleichen`, mit `danach` für das Planen beim Abschließen).
+- **Unschönes – erledigt** (Verhaltensänderung, die Seite wertet Status-Codes nicht aus):
+  - `Ungueltig` 400, `GitLabFehler` 502, andere `Fehler` 409, Programmfehler 500.
+  - Kaputtes JSON im POST gibt 400.
+  - Fehler bei `api/…` und POST kommen immer als JSON, bei Seiten als Text.
+  - Pfade stehen ohne führendes „/“.
+- **`server.py` zu groß – erledigt.** Starten, Bewachen und `--stopp` stehen jetzt in `prozess.py` (107 Zeilen).
+  `server.py` (452 Zeilen) hat nur noch Routen und HTTP, dazu den Stand fürs HUD.
+- **Vergleich alt/neu nicht im Repo – teilweise.** `bearbeiten()` und die Routen haben Einzeltests (`RoutenTest`). Das
+  damalige Skript mit ~45 Anfragen ist nicht nachgebaut; die Routen deckt weiter `test_gitlab.py` Ende zu Ende ab.
+
+### Schritt 6: Abschließen
+
+- **Länge – erledigt.** `abschliessen` hält nur die Sperre je MR. Der Lauf steht in `abschluss_lauf`, die Meldung in
+  `abschluss_meldung` (Zähler als `Counter` über die Arten).
+- **Schritt als dict – erledigt.** `Schritt` ist eine Datenklasse, die Arten stehen in ihrem Docstring.
+  `schritt_eintragen` nennt „anlegen oder uebernehmen“ ausdrücklich und wirft bei einer unbekannten Art.
+- **Viermal ohne Sperre gelesen – erledigt.** Die Akte wird einmal gelesen (head, web). Die Reihenfolge
+  (`sende_reihenfolge`) wird unter derselben Sperre bestimmt wie der Plan.
+- **Ablauf ohne Test – erledigt.** Gegen ein GitLab-Fake getestet: Fehler mitten in der Liste, „währenddessen gelöscht“
+  (der neue Entwurf wird in GitLab wieder entfernt), nur ein Lauf je MR, Rückfall auf den allgemeinen Kommentar.
+
+### Schritt 7: JavaScript
+
+- **Lesbarer, aber nicht kleiner – teilweise.** Die vier genannten Funktionen sind zerlegt:
+  - `popup` → `gitlabLink`, `popupMitDiff`, `popupMitCode`
+  - `kasten` → `sortKnopf`, `listenEintrag`, `gesendetPfeil`, `erledigtKnopf`, `ziehbarMachen`
+  - `fadenBox` → `fadenKnoepfe`, `nachrichtBox`
+  - `hudZeichnen` → `hudStand`, `hudZaehler`, `hudAgent`
+
+  **Bleibt:**
+  - Über 60 Zeilen sind noch `allgemein` (94), `zugZeichnen` (91), `zeichnen` (83), `bearbeiten` (75), `hinweisBox`
+    (70), `inlineBauen` (70), `anlageZeichnen` (64).
+  - `review.js` und `diff.js` sind weiter die großen Dateien.
+- **`App` als Sammelbecken – bleibt** (35 Namen). Die stillen Voraussetzungen sind jetzt geprüft:
+  `werkzeug/app_pruefen.py` (läuft in `./pruefen`) meldet
+  - ein gelesenes `App.x`, das niemand setzt,
+  - ein `const {x} = App`, das erst eine später geladene Datei setzt,
+  - ein Herausnehmen von Namen, die ersetzt werden (die `melden`-Falle).
+- **Kopfkommentare – erledigt.** `app_pruefen.py` vergleicht „Braucht von App“ und „Stellt bereit“ mit dem Code.
+- **Browser-Vergleich nicht im Repo – erledigt.** `werkzeug/seiten_vergleich.py [REF]`: baut beide Stände, legt ein
+  Test-Repo an und spielt in Chromium dieselben Schritte durch (ohne Node). Dann vergleicht es das geglättete DOM.
+  Gegenprobe: Ein geänderter Knopftext fällt auf.
+- **Zeilen über 120 Zeichen – erledigt.** Keine mehr. SVG-Schnipsel sind zwischen Elementen bzw. Attributen umbrochen.
+- **7b in einem Commit – bleibt.** Lässt sich nachträglich nicht aufteilen.
+- **Biome-Befunde und `./pruefen` – erledigt.** Beim Zusammenführen mit `claude` behoben bzw. neu geschrieben.
+
+### Schritt 8: Tests
+
+- **Dünn – erledigt für das Neue.** 37 Tests statt 24. Neu: Akte (nur bei Änderung, nicht bei Ausnahme oder
+  Ablehnung, kaputte Datei, Sperre), `bearbeiten()`/Routen, Faden-Aktionen, Abschließen als Ganzes,
+  `entwurf_anlegen` mit Rückfall.
+- **JS ohne Test – bleibt.** `seiten_vergleich.py` vergleicht zwei Stände, prüft aber nicht, ob das Verhalten richtig
+  ist.
+- **Angepasste Erwartungen – bleibt als Hinweis.** Die neuen Tests sind gegen das gewollte Verhalten geschrieben.
+  Einer war beim ersten Lauf rot, wegen des Fakes, nicht wegen des Codes.
+
+### Übergreifend
+
+- **Verhalten:** Diese Runde ändert bewusst:
+  - Fehlercodes
+  - JSON-Fehler bei `api/…`
+  - zweites Abschließen abgelehnt
+  - abgelehnte Aktion speichert nichts
+  - kaputte Akte wird beiseitegelegt
+
+  Die Seite selbst ist laut Vergleich unverändert.
+- **Kurze Namen – erledigt:** `kom`, `rv`, `gs`, `imd`, `ans_st`, `P`, `z`, `pub`, `verw`. `st` heißt `akte`, `d` bei
+  Aktionen `eingabe`.
+- **Das Größte, das liegen blieb:** `agent_main` ist zerlegt (je Unterbefehl eine Funktion über
+  `set_defaults(aufruf=…)`, Ausgabe je Hinweis in `hinweis_befund`). **Bleibt:** `seite_bauen`, `hinweise_aufloesen`
+  und `befehl_hinweise` (~60 Zeilen).
+- **Abstand zu `claude` – erledigt.** `fable` ist auf `claude`. `--stopp` und `--beobachten` sind in der neuen Struktur
+  neu umgesetzt (`beobachter.py`, `instanz.py`).
+- **Dieses Dokument – erledigt:** Pfade, Regeln, Prüfbefehle und die Commit-Tabelle (ohne Hashes, weil die History neu
+  geschrieben wird).

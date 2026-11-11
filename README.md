@@ -77,7 +77,7 @@ erledigte Fäden weg. Offene bleiben für den nächsten Stand.
 - **Eigener Befehl**: `feedback_befehl` in der Einstellung startet stattdessen etwas Eigenes, z. B.
   `feedback_befehl = "konsole --workdir {ordner} -e claude {prompt}"` (Platzhalter `{ordner}`, `{projekt}`, `{prompt}`).
 
-Der Zustand liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
+Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
 
 ## GitLab-Review
 
@@ -250,19 +250,29 @@ Bausteine:
 - **`Waggon`** (`waggon.py`): Schlüssel eines Vergleichs, `Waggon(lokal="proj")` oder `Waggon(host=…, projekt=…, iid=…)`;
   daran `.id` (Kennung der Seite), `.name`, `.url`, `.dateiname`, `.kann` (review/fertig/committen). `Fehler` = Meldung
   für Nutzer oder Agent.
-- **Zustand je Waggon** (`zustand.py`, Aufbau der Datei oben dort): ändern nur mit `with zustand(waggon) as st:` (Sperre,
-  speichert bei Änderung), lesen mit `zustand_lesen`. Unter der Sperre keine GitLab-Anfragen.
-- **Server** (`server.py`): Handler mit `@route(methode, pfad, …)`; Schlüssel, Quelle, Waggon und Fehler behandelt
-  `bearbeiten()` an einer Stelle.
+- **Akte je Waggon** (`akte.py`, Aufbau der Datei oben dort): Review-Kommentare, Gesprächsfäden, Hinweis-Status. Ändern
+  nur mit `with akte_bearbeiten(waggon) as akte:` (sperrt auch gegen andere Prozesse wie `merge-train agent`, speichert
+  nur bei Änderung, nicht bei einer Ausnahme), Aktionen der Seite über `aktion_ausfuehren` (abgelehnt = nichts
+  gespeichert), lesen mit `akte_lesen`. Gesperrt keine GitLab-Anfragen.
+- **Server** (`server.py`): Handler mit `@route(methode, pfad, …)`; Schlüssel, Quelle, Waggon, Struktur und Fehler
+  behandelt `bearbeiten()` an einer Stelle. Ein Handler bekommt `waggon=`/`struktur=` als Schlüsselwörter und gibt ein
+  dict (JSON 200) oder eine `Antwort` zurück. Fehlercodes: `Ungueltig` 400, `GitLabFehler` 502, sonst `Fehler` 409.
+  Starten, Bewachen und `--stopp` stehen in `prozess.py`.
 - **Seiten-Skripte** (`web/*.js`, Liste und Reihenfolge in `web.py`): jede Datei in eigener Funktion, gemeinsam nur über
   `App` (`app.js`); oben in jeder Datei, was sie braucht und bereitstellt.
 
-Prüfwerkzeuge nach dem Verschieben von Python-Funktionen:
+Prüfwerkzeuge:
 
 ```sh
 python3 werkzeug/imports_richten.py                                              # Import-Zeilen neu, meldet Rückwärts-Abhängigkeiten
 ./bauen && MERGE_TRAIN_CONFIG=/nonexistent python3 werkzeug/namen_pruefen.py merge-train   # vergessene Imports
+python3 werkzeug/app_pruefen.py                    # JS: App-Namen, Ladereihenfolge, Kopfkommentare (läuft in ./pruefen)
+python3 werkzeug/seiten_vergleich.py [REF]         # Diff-Seite von REF (Standard HEAD) und Arbeitsstand im Browser vergleichen
 ```
+
+`seiten_vergleich.py` ist für Umbauten am JS gedacht, die nichts am Verhalten ändern sollen: Es baut beide Stände, legt
+ein Test-Repo an, spielt in Chromium dieselben Schritte durch (Seite, Fäden, Antwort, Popups, Toast) und vergleicht das
+DOM. Braucht `chromium` (`sudo pacman -Syu chromium`), kein Node.
 
 Neue Module in `werkzeug/imports_richten.py` (`REIHENFOLGE`) und `src/merge_train/__init__.py` eintragen; Namen müssen
 paketweit eindeutig sein. Die Seite im Browser ausprobieren: `python3 src --beobachten` (eigene Instanz, eigener Port)
@@ -271,12 +281,13 @@ oder eigener Server mit eigener Konfig (`port = …`, `MERGE_TRAIN_CONFIG=…`),
 ## Tests
 
 ```sh
-python3 tests/test_einheiten.py   # Logik einzeln (Zeilen, Stufen, Waggon, Abschließen, Hinweise), ohne Server, < 1 s
+python3 tests/test_einheiten.py   # Logik einzeln (Zeilen, Stufen, Akte, Routen, Abschließen gegen GitLab-Fake), < 1 s
 python3 tests/test_gitlab.py      # GitLab-Modus komplett, mit tests/fake-glab statt GitLab
 ```
 
 Die Syntax des Seiten-Skripts prüft `test_gitlab.py` mit `node --check`, ohne node mit `biome`.
-`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt.
+`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt,
+und prüft vorher mit `werkzeug/app_pruefen.py`, wie die Dateien über `App` zusammenhängen.
 
 `tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien und Draft-Notes.
 Mit `--behalten` bleibt der Testordner liegen.
