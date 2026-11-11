@@ -148,6 +148,10 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   in merge-train, die Diskussion in GitLab offen; grauer ✓ in der Liste, die Box wird grau. Schreibt danach jemand
   anderes in die Diskussion, ist sie wieder offen. **„✓ in GitLab erledigt“** löst sie in GitLab auf; grüner ✓. Der ○ in
   der Liste erledigt lokal.
+  Neben dem Titel der Liste steht für jeden möglichen Stand ein kleiner Filterknopf mit Anzahl, auch bei 0:
+  dieselben Zeichen wie in der Liste: ○ offen in der Farbe des Stands (Entwurf, Antwort, wartet), grauer ✓ lokal
+  erledigt, grüner ✓ in GitLab erledigt. Grüner Rahmen = angezeigt, Klick blendet den Stand aus (grau). Die Gesamtzahl am Titel entfällt dafür. Das merkt
+  sich der Browser je Waggon.
 - **Antworten auf GitLab-Diskussionen**: Mit „sofort senden“
   geht die Antwort gleich als veröffentlichter Kommentar in die Diskussion, ohne lokalen und GitLab-Entwurf. Ohne wird sie
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine

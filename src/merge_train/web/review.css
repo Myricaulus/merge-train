@@ -101,6 +101,7 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .kopfknoepfe{margin-left:auto;display:flex;gap:8px;align-items:center} .kopfknoepfe #fertig,.kopfknoepfe #abschliessen{margin-left:0}
 label.sofort{font-size:12px;color:var(--muted);margin-right:6px;cursor:pointer;user-select:none} label.sofort input{vertical-align:middle;margin:0 3px 0 0}
 .kbox.gs .unten{text-align:right;margin-top:4px} .kbox.gs:has(textarea) .unten{display:none}
+details.kliste>summary .stfilter{float:right;display:flex;align-items:center;gap:2px;height:1lh} details.kliste>summary .stfilter button{display:inline-flex;align-items:center;gap:2px;height:16px;font:11px/1 system-ui,sans-serif;padding:0 3px;border:1px solid var(--p);border-radius:4px;background:var(--bg);color:var(--fg);cursor:pointer} details.kliste>summary .stfilter button.aus{border-color:var(--rand);color:var(--muted);opacity:.6}
 details.kliste>summary .sortknopf{float:right;font:11px system-ui,sans-serif;padding:0 6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
 .ke.sort{cursor:grab} .ke.zieht{opacity:.4} .ke .griff{flex:none;color:var(--muted)}
 .ke.drop-oben{box-shadow:inset 0 2px 0 var(--tn)} .ke.drop-unten{box-shadow:inset 0 -2px 0 var(--tn)}
@@ -142,7 +143,7 @@ body.mit-hud #rvstand{display:none}
  background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0 8px 30px #0007;font-size:13px}
 .nl-kopf{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--rand);position:sticky;top:0;background:var(--kopf)}
 .nl-e{padding:8px 12px;border-bottom:1px solid var(--rand)} .nl-e .sub{font-size:11px}
-.ke .zu{flex:none;font-size:12px;color:var(--tn);cursor:pointer;width:12px;text-align:center} .ke .zu:hover{color:var(--p);font-weight:700} .ke .zu.erledigt{color:var(--muted);cursor:default} .ke .zu.erledigt.gl{color:var(--p)}
+.ke .zu{flex:none;font-size:12px;color:var(--tn);cursor:pointer;width:12px;text-align:center} .ke .zu:hover{color:var(--p);font-weight:700} .zu.b-entwurf{color:var(--tb)} .zu.b-antwort{color:var(--tf)} .zu.erledigt{color:var(--muted);cursor:default} .zu.erledigt.gl{color:var(--p)}
 .mt a.codelink{color:var(--tn);cursor:pointer;font-family:ui-monospace,monospace;font-size:.95em} .mt a.codelink:hover{text-decoration:underline}
 .mt code{font:.92em ui-monospace,monospace;background:var(--bg2,rgba(127,127,127,.15));padding:0 3px;border-radius:3px}
 /* --beobachten: Rahmen um das seit dem vorigen Stand Neue (beobachten.js) */

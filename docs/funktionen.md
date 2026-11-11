@@ -107,6 +107,8 @@ und in GitLab (`erledigen`).
 - Achsen: Erledigt-Stufe (lokal, GitLab).
 - Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
   (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
+- Liste links mit Filter je Stand (`GL_STATI`, `kasten(…, stati)` in `web/diff.js`, je Waggon im Browser gemerkt);
+  eine andere Liste filtert über denselben Parameter.
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
