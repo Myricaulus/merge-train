@@ -381,7 +381,11 @@
   }
   function kommentarBox(k, mitOrt) {
     const [st, cl] = statusTexte[k.status] || ['?', ''],
-      box = el('div', {class: 'kbox km' + (k.status === 'loeschen' ? ' weg' : ''), 'data-id': k.id}),
+      gl = k.gitlab,
+      box = el('div', {
+        class: 'kbox km' + (k.status === 'loeschen' ? ' weg' : '') + (gl && gl.erledigt ? ' gl-erledigt' : ''),
+        'data-id': k.id
+      }),
       kn = el('span', {class: 'knoepfe'});
     if (nurLesen || k.lesen);
     else if (k.status === 'loeschen')
@@ -416,15 +420,51 @@
         {class: 'kk'},
         el('span', {class: 'badge ' + cl}, st),
         k.finding ? el('span', {class: 'badge b-agent'}, 'aus Agent ' + k.finding) : null,
+        gitlabStand(gl),
         mitOrt ? ortLink(k) : null,
         kn
       ),
       el('div', {class: 'kt'}, k.text)
     );
+    if (gl && gl.antworten.length)
+      box.append(
+        el(
+          'div',
+          {class: 'gl-antworten'},
+          ...gl.antworten.map(a =>
+            el(
+              'div',
+              {class: 'gl-antwort'},
+              el('div', {class: 'mk'}, el('b', {}, a.wer), ' ', uhrzeit(a.zeit)),
+              el('div', {class: 'kt'}, a.text)
+            )
+          )
+        )
+      );
     const h = k.hinweis && review.hinweise.find(x => x.key === k.hinweis),
       sa = h && sieheAuch(h.see_also);
     if (sa) box.append(sa);
     return box;
+  }
+  /** Stand des veröffentlichten Kommentars in GitLab (von „MR-Daten“): erledigt oder offen, Link auf die Diskussion. */
+  function gitlabStand(gl) {
+    if (!gl) return null;
+    const n = gl.antworten.length,
+      text = gl.erledigt
+        ? '✓ in GitLab erledigt' + (gl.erledigt.wer ? ' von ' + gl.erledigt.wer : '')
+        : 'offen in GitLab' + (n ? ' · ' + n + ' Antwort' + (n > 1 ? 'en' : '') : ''),
+      titel = gl.erledigt && gl.erledigt.zeit ? 'erledigt ' + uhrzeit(gl.erledigt.zeit) + ' – ' : '';
+    return el(
+      'a',
+      {
+        class: 'badge ' + (gl.erledigt ? 'b-gl-erledigt' : 'b-gl-offen'),
+        href: gl.url,
+        target: '_blank',
+        rel: 'noopener',
+        title: titel + 'Diskussion in GitLab öffnen'
+      },
+      text
+    );
   }
   function hinweisBox(h, mitOrt) {
     const box = el('div', {class: 'kbox hw' + (h.status === 'verworfen' ? ' weg' : ''), 'data-id': h.key}),

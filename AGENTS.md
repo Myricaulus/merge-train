@@ -33,7 +33,8 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 
 ## Tests
 
-`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (ohne Node; Regeln in `biome.json`). Nicht
+`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`); ohne Biome, aber mit node nur die Syntax
+(`node --check`). Nicht
 `biome lint src/merge_train/web` direkt: `App` und `MR` sind Globale aus dem Bündel, einzeln geprüft gibt es falsche
 „undeclared“.
 

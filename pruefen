@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prüft src/merge_train/web/*.js|css mit Biome (https://biomejs.dev, `sudo pacman -Syu biome`), ohne Node.
+"""Prüft src/merge_train/web/*.js|css mit Biome (https://biomejs.dev, `sudo pacman -Syu biome`) (ohne Biome: Syntax mit node).
 
   ./pruefen          Lint (Regeln in biome.json); Exit 1 bei Befunden
   ./pruefen --fix    sichere Korrekturen von Biome gleich anwenden (nur CSS)
@@ -7,7 +7,8 @@
 Die JS-Dateien laufen im Browser zusammengehängt in einem <script> (Reihenfolge in web.py: JS_DATEIEN für die
 Diff-Seiten, JS_START_DATEIEN für die Startseite). Jede Datei steckt in einer eigenen Funktion und sieht die anderen
 nur über das globale App (app.js). Geprüft wird deshalb je Seite das Bündel, wie sie es bekommt, mit MR als dem, was
-der Server davor setzt; Fundstellen werden auf Datei:Zeile zurückgerechnet. Ohne biome im PATH: Hinweis und Exit 0.
+der Server davor setzt; Fundstellen werden auf Datei:Zeile zurückgerechnet. Ohne biome im PATH: mit node nur die
+Syntax der Bündel (node --check), sonst Hinweis und Exit 0. Biome über node: `npm install -g @biomejs/biome`.
 
 Vorher (immer, auch ohne Biome): werkzeug/app_pruefen.py – App-Namen, Ladereihenfolge und Kopfkommentare der Dateien.
 """
@@ -67,10 +68,31 @@ def ausgeben(d, datei, z):
     print(f"src/merge_train/web/{datei}:{z}  {regel}  {text}")
 
 
+def syntax_mit_node():
+    """Ohne Biome: nur Syntax der Bündel mit node --check. Rückgabe 1 bei Fehlern."""
+    fehler = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, dateien in buendel_aus_web_py():
+            pfad = os.path.join(tmp, name + ".js")
+            karte = buendel_schreiben(pfad, dateien)
+            r = subprocess.run(["node", "--check", pfad], capture_output=True, text=True)
+            if r.returncode:
+                m = re.search(re.escape(pfad) + r":(\d+)", r.stderr)
+                f, z = zurueck(karte, int(m.group(1))) if m else ("?", 0)
+                zeilen = [l for l in r.stderr.splitlines() if "Error" in l]
+                print(f"src/merge_train/web/{f}:{z}  {zeilen[0] if zeilen else r.stderr.strip()}")
+                fehler = 1
+    print("biome nicht gefunden – nur Syntax mit node geprüft" + (" (Fehler)" if fehler else ", ok")
+          + "; Lint: npm install -g @biomejs/biome")
+    return fehler
+
+
 def main():
     app = subprocess.run([sys.executable, os.path.join(HIER, "werkzeug", "app_pruefen.py")])
     if not shutil.which("biome"):
-        print("biome nicht gefunden – Lint übersprungen (sudo pacman -Syu biome)")
+        if shutil.which("node"):
+            sys.exit(syntax_mit_node() or app.returncode)
+        print("biome nicht gefunden – Lint übersprungen (sudo pacman -Syu biome oder npm install -g @biomejs/biome)")
         sys.exit(app.returncode)
     gesehen, n = set(), 0
     with tempfile.TemporaryDirectory() as tmp:

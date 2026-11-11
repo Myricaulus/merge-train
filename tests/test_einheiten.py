@@ -424,6 +424,38 @@ class FadenBranchTest(unittest.TestCase):
         self.assertNotIn("branch", akte["kommentare"][1])  # Review-Kommentare bleiben ohne
 
 
+class DiskussionenTest(unittest.TestCase):
+    """„MR-Daten“: Antworten und Erledigt-Status veröffentlichter Kommentare aus den GitLab-Diskussionen."""
+    @staticmethod
+    def note(i, wer, text, system=False, resolved=None, von=None):
+        n = {"id": i, "author": {"id": wer, "name": f"N{wer}"}, "body": text, "system": system, "created_at": "2026-11-11T08:00:00Z"}
+        if resolved is not None:
+            n.update(resolvable=True, resolved=resolved, resolved_by={"name": von} if von else None, resolved_at="2026-11-11T09:00:00Z")
+        return n
+
+    def test_abgleich(self):
+        n = self.note
+        akte = {"mr": {}, "kommentare": [
+            {"id": "a", "text": "Erster", "gitlab_text": "Erster", "gitlab_id": 1, "gitlab_weg": True},
+            {"id": "b", "text": "Zweiter", "gitlab_text": "Zweiter", "gitlab_id": 2, "gitlab_weg": True},
+            {"id": "c", "text": "Entwurf", "gitlab_id": 3}]}  # noch nicht veröffentlicht: bleibt ohne
+        disk = [{"id": "d0", "notes": [n(9, 5, "Erster", resolved=False)]},  # gleicher Text, aber nicht von mir
+                {"id": "d1", "notes": [n(10, 1, "Erster", resolved=True), n(11, 5, "changed this line", system=True),
+                                       n(12, 5, "Done", resolved=True, von="Necmettin")]},
+                {"id": "d2", "notes": [n(20, 1, "Zweiter", resolved=False), n(21, 5, "Agreed", resolved=False)]}]
+        self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (2, 1))
+        a, b, c = akte["kommentare"]
+        self.assertEqual((a["gitlab_diskussion"]["id"], a["gitlab_diskussion"]["note_id"]), ("d1", 10))
+        self.assertEqual(a["gitlab_diskussion"]["erledigt"]["wer"], "Necmettin")
+        self.assertEqual([x["text"] for x in a["gitlab_diskussion"]["antworten"]], ["Done"])
+        self.assertIsNone(b["gitlab_diskussion"]["erledigt"])
+        self.assertNotIn("gitlab_diskussion", c)
+        a["text"] = a["gitlab_text"] = "in GitLab umformuliert"  # gemerkte id gilt weiter, auch ohne passenden Text
+        self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (0, 0))
+        self.assertEqual(a["gitlab_diskussion"]["id"], "d1")
+        self.assertEqual(review.diskussion_fuer_seite({"mr": {"web_url": "https://g/mr/1"}}, a)["url"], "https://g/mr/1#note_10")
+
+
 # ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
 
 class GitLabFake:

@@ -52,8 +52,19 @@ def kommentare_fuer_seite(akte, struktur):
         f = struktur["dateien"][i] if i is not None else None
         out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
-                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k)})
+                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
+                    "gitlab": diskussion_fuer_seite(akte, k)})
     return out
+
+
+def diskussion_fuer_seite(akte, k):
+    """Antworten und Erledigt-Status in GitLab (nur veröffentlichte Kommentare), mit Link auf den Kommentar."""
+    d = k.get("gitlab_diskussion") if k.get("gitlab_weg") else None
+    if not d:
+        return None
+    web = akte["mr"].get("web_url") or ""
+    return {"erledigt": d.get("erledigt"), "antworten": d.get("antworten") or [],
+            "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web}
 
 
 def sende_reihenfolge(mr, akte):
@@ -336,11 +347,17 @@ def fehlende_entwuerfe(akte, vorhanden):
     return [k for k in review_kommentare(akte) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
 
 
+def ich(host):
+    """Meine GitLab-Benutzer-id (ändert sich nicht, kostet aber eine eigene Anfrage)."""
+    if host not in _ICH:
+        _ICH[host] = (glab(host, "user") or {}).get("id")
+    return _ICH[host]
+
+
 def eigene_kommentartexte(mr):
     """Texte meiner (nicht System-)Kommentare im MR – um veröffentlichte Entwürfe zu erkennen. GitLab-Anfragen."""
     host, mr_api = mr.host, mr_pfad(mr)
-    if host not in _ICH:  # ändert sich nicht, kostet aber eine eigene Anfrage
-        _ICH[host] = (glab(host, "user") or {}).get("id")
+    ich(host)
     return [n.get("body") or "" for n in alle(host, f"{mr_api}/notes") if (n.get("author") or {}).get("id") == _ICH[host] and not n.get("system")]
 
 
@@ -365,6 +382,48 @@ def entwuerfe_abgleichen(akte, vorhanden, eigene_texte):
                 k.pop(f, None)
             verworfen += 1
     return veroeffentlicht, verworfen
+
+
+def diskussion_auswerten(d):
+    """GitLab-Diskussion → (note_id des ersten Kommentars, erledigt {wer, zeit} | None, Antworten ohne Systemnotizen)."""
+    notes = d.get("notes") or []
+    erste = notes[0] if notes else {}
+    loesbar = [n for n in notes if n.get("resolvable")]
+    erledigt = None
+    if loesbar and all(n.get("resolved") for n in loesbar):
+        von = next((n for n in loesbar if n.get("resolved_by")), loesbar[-1])
+        erledigt = {"wer": (von.get("resolved_by") or {}).get("name") or "", "zeit": von.get("resolved_at")}
+    antworten = [{"id": n.get("id"), "wer": (n.get("author") or {}).get("name") or "", "text": n.get("body") or "",
+                  "zeit": n.get("created_at")} for n in notes[1:] if not n.get("system")]
+    return erste.get("id"), erledigt, antworten
+
+
+def diskussionen_abgleichen(akte, diskussionen, ich_id):
+    """Reine Funktion. Veröffentlichte Kommentare mit ihrer GitLab-Diskussion verbinden (gemerkte id, sonst: erster
+    Kommentar von mir mit dem gesendeten Text) und Antworten und Erledigt-Status eintragen.
+    Rückgabe (neue Antworten, neu erledigt)."""
+    nach_id = {d.get("id"): d for d in diskussionen}
+    vergeben = {k["gitlab_diskussion"]["id"] for k in review_kommentare(akte) if k.get("gitlab_diskussion")}
+    neu_antworten = neu_erledigt = 0
+    for k in review_kommentare(akte):
+        if not k.get("gitlab_weg"):
+            continue
+        alt = k.get("gitlab_diskussion") or {}
+        d = nach_id.get(alt.get("id"))
+        if d is None:
+            text = k.get("gitlab_text") or k["text"]
+            d = next((d for d in diskussionen if d.get("id") not in vergeben and d.get("notes")
+                      and not d["notes"][0].get("system") and (d["notes"][0].get("author") or {}).get("id") == ich_id
+                      and text in (d["notes"][0].get("body") or "")), None)
+        if d is None:
+            continue
+        vergeben.add(d["id"])
+        note_id, erledigt, antworten = diskussion_auswerten(d)
+        bekannt = {a["id"] for a in alt.get("antworten") or []}
+        neu_antworten += sum(1 for a in antworten if a["id"] not in bekannt)
+        neu_erledigt += bool(erledigt and not alt.get("erledigt"))
+        k["gitlab_diskussion"] = {"id": d["id"], "note_id": note_id, "erledigt": erledigt, "antworten": antworten}
+    return neu_antworten, neu_erledigt
 
 
 def meta_und_entwuerfe(mr):
@@ -402,6 +461,17 @@ def mr_daten_holen(mr):
     if isinstance(vorhanden, Fehler):
         raise vorhanden
     veroeffentlicht, verworfen, _ = mit_gitlab_abgleichen(mr, vorhanden)
+    neu_antworten = neu_erledigt = 0
+    diskussionen_fehler = None
+    if any(k.get("gitlab_weg") for k in review_kommentare(akte_lesen(mr))):
+        try:  # GitLab, ohne Sperre
+            diskussionen, ich_id = alle(mr.host, f"{mr_pfad(mr)}/discussions"), ich(mr.host)
+        except Fehler as e:
+            diskussionen_fehler = e
+        else:
+            with akte_bearbeiten(mr) as akte:
+                neu_antworten, neu_erledigt = diskussionen_abgleichen(
+                    akte, diskussionen if isinstance(diskussionen, list) else [], ich_id)
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
         mr_seite(mr)
         neu_laden = akte_lesen(mr).get("struktur") != vorher
@@ -412,6 +482,12 @@ def mr_daten_holen(mr):
         text += f" · {verworfen} Entwurf/Entwürfe in GitLab verworfen – wieder lokal, „Review abschließen“ sendet sie neu"
     if veroeffentlicht:
         text += f" · {veroeffentlicht} in GitLab veröffentlicht"
+    if neu_antworten:
+        text += f" · {neu_antworten} neue Antwort(en)"
+    if neu_erledigt:
+        text += f" · {neu_erledigt} in GitLab erledigt"
+    if diskussionen_fehler:
+        text += f" · Antworten nicht abrufbar: {diskussionen_fehler}"
     return {"ok": True, "text": text, "neu_laden": neu_laden}
 
 

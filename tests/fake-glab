@@ -106,6 +106,17 @@ def main():
         except FileNotFoundError:
             n = []
         return raus(n if seite == 1 else [])
+    if rest == "/discussions":  # je veröffentlichtem Kommentar eine Diskussion, Antworten aus discussions.json
+        try:
+            n = json.load(open(os.path.join(STATE, "notes.json")))
+        except FileNotFoundError:
+            n = []
+        try:
+            antworten = json.load(open(os.path.join(STATE, "discussions.json")))
+        except FileNotFoundError:
+            antworten = {}
+        return raus([{"id": f"d{x.get('id', i)}", "notes": [x] + antworten.get(f"d{x.get('id', i)}", [])}
+                     for i, x in enumerate(n)] if seite == 1 else [])
     if rest == "/draft_notes":
         d = drafts()
         if methode == "GET":

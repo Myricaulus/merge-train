@@ -684,6 +684,20 @@ def main():
         pruefe(r["ok"] and len(drafts()) == 2 and any(x["note"] == weg for x in drafts()), "verworfener Entwurf wird neu gesendet")
         rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
         pruefe(next(x for x in rv["kommentare"] if x["text"] == "Insgesamt sehr gut.")["status"] == "weg", "veröffentlichter bleibt sent")
+        # Antwort in GitLab, Diskussion erledigt → „↻ MR-Daten“ zeigt beides am veröffentlichten Kommentar
+        json.dump([{"id": 900, "body": "Insgesamt sehr gut.", "author": {"id": 1}, "system": False, "resolvable": True,
+                    "resolved": True, "resolved_by": {"name": "Autorin"}}], open(f"{T}/glab/notes.json", "w"))
+        json.dump({"d900": [{"id": 901, "body": "changed this line", "author": {"id": 2}, "system": True},
+                            {"id": 902, "body": "Danke, erledigt", "author": {"id": 2, "name": "Autorin"}, "system": False,
+                             "created_at": "2026-11-11T08:00:00Z", "resolvable": True, "resolved": True}]},
+                  open(f"{T}/glab/discussions.json", "w"))
+        r = post("/api/gitlab", dict(basis, aktion="mrdaten"))
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        gl = next(x for x in rv["kommentare"] if x["text"] == "Insgesamt sehr gut.")["gitlab"] or {}
+        pruefe(r["ok"] and "1 neue Antwort(en)" in r["text"] and "1 in GitLab erledigt" in r["text"]
+               and [a["text"] for a in gl.get("antworten", [])] == ["Danke, erledigt"]
+               and (gl.get("erledigt") or {}).get("wer") == "Autorin" and gl.get("url", "").endswith("#note_900"),
+               "MR-Daten: Antworten und Erledigt-Status aus GitLab am veröffentlichten Kommentar")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
         rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]

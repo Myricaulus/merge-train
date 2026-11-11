@@ -149,3 +149,8 @@ body.mit-hud #rvstand{display:none}
 tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>td:last-child{box-shadow:inset -3px 0 0 var(--tf)}
 tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
 tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}
+.b-gl-erledigt{color:var(--p);text-decoration:none} .b-gl-offen{color:var(--tn);text-decoration:none}
+.kbox.gl-erledigt>.kt{opacity:.7}
+.gl-antworten{display:flex;flex-direction:column;gap:6px;margin:6px 0 2px 14px}
+.gl-antwort{padding:4px 9px;border-radius:8px;border:1px solid var(--rand);border-left:3px solid var(--tn);background:var(--bg)}
+.gl-antwort .mk{font-size:11px;opacity:.75} .gl-antwort .kt{white-space:pre-wrap}

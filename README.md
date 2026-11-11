@@ -138,6 +138,9 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **Review abschließen → GitLab** legt neue Kommentare als Draft-Notes an, aktualisiert geänderte und löscht entfernte.
   Nichts wird veröffentlicht: In GitLab steht dann „Pending comments“, dort prüfen und das Review abschicken.
   Mehrfaches Abschließen erzeugt keine Duplikate. Einen in GitLab veröffentlichten Kommentar fasst das Tool nicht an.
+- **Antworten aus GitLab**: „↻ MR-Daten“ holt zu veröffentlichten Kommentaren die Diskussion. Am Kommentar stehen dann
+  die Antworten (ohne Systemnotizen wie „changed this line“) und „✓ in GitLab erledigt von …“ bzw. „offen in GitLab“.
+  Das Etikett führt zur Diskussion in GitLab. Antworten und Erledigen geht weiter nur in GitLab.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
 
@@ -180,7 +183,8 @@ Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten 
 GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 
 - von `merge-train agent pruefen|zeigen` (macht der jira-review-Skill, wenn er den Branch aktualisiert hat) und `merge-train <MR>`,
-- im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer bin) und „↻ MR-Daten“ (dieser MR),
+- im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer bin) und „↻ MR-Daten“ (dieser MR,
+  mit Antworten und Erledigt-Status der veröffentlichten Kommentare),
 - beim **Review abschließen**: aktueller GitLab-Stand (steht GitLab woanders als die Seite, wird nichts übertragen),
   dann die Draft-Notes.
 
@@ -303,8 +307,9 @@ python3 tests/test_gitlab.py      # GitLab-Modus komplett, mit tests/fake-glab s
 ```
 
 Die Syntax des Seiten-Skripts prüft `test_gitlab.py` mit `node --check`, ohne node mit `biome`.
-`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt,
-und prüft vorher mit `werkzeug/app_pruefen.py`, wie die Dateien über `App` zusammenhängen.
+`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt.
+Ohne Biome, aber mit node prüft es nur die Syntax der Bündel (`node --check`); Biome gibt es auch über
+`npm install -g @biomejs/biome`. Vorher prüft es mit `werkzeug/app_pruefen.py`, wie die Dateien über `App` zusammenhängen.
 
-`tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien und Draft-Notes.
+`tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien, Draft-Notes und Diskussionen.
 Mit `--behalten` bleibt der Testordner liegen.

@@ -19,7 +19,9 @@ Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
 
 Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erstellt, path, old_path, a (alte Zeile),
   b (neue Zeile), text, finding/hinweis (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
-  (position | allgemein | mr), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen).
+  (position | allgemein | mr), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen),
+  gitlab_diskussion (veröffentlicht, von „MR-Daten“: id, note_id, erledigt {wer, zeit} oder None,
+  antworten [{id, wer, text, zeit}]).
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
