@@ -121,6 +121,20 @@
       return false;
     }
   } // „Fäden anderer Branches zeigen“, bleibt gespeichert
+  const SOFORT_TITEL =
+    'gleich abschicken: Fragen an den Agenten ohne „' +
+    (mitReview ? 'Fragen' : 'Feedback') +
+    ' senden“' +
+    (mitReview ? ', Antworten auf GitLab-Diskussionen ohne Entwurf (gleich veröffentlicht)' : '');
+  function sofortHaken() {
+    const c = el('input', {type: 'checkbox', class: 'sofort-haken'});
+    c.checked = sofort();
+    c.addEventListener('change', () => {
+      sofort(c.checked);
+      document.querySelectorAll('.sofort-haken').forEach(x => (x.checked = c.checked)); // alle Häkchen gleich
+    });
+    return c;
+  }
   function sofortSenden(d) {
     if (d && d.ok && sofort()) senden();
     return d;
@@ -169,19 +183,8 @@
           mitSofort
             ? el(
                 'label',
-                {
-                  class: 'sofort',
-                  title:
-                    'Fragen an den Agenten gleich abschicken statt erst mit „' +
-                    (mitReview ? 'Fragen' : 'Feedback') +
-                    ' senden“'
-                },
-                (() => {
-                  const c = el('input', {type: 'checkbox'});
-                  c.checked = sofort();
-                  c.addEventListener('change', () => sofort(c.checked));
-                  return c;
-                })(),
+                {class: 'sofort', title: SOFORT_TITEL},
+                sofortHaken(),
                 ' sofort senden'
               )
             : null,
@@ -431,6 +434,7 @@
       el('div', {class: 'kt'}, k.text)
     );
     if (gl && gl.antworten.length) box.append(antwortenListe(gl.antworten));
+    if (gl) antwortTeil(box, gl.diskussion);
     const h = k.hinweis && review.hinweise.find(x => x.key === k.hinweis),
       sa = h && sieheAuch(h.see_also);
     if (sa) box.append(sa);
@@ -465,7 +469,39 @@
       el('div', {class: 'kt'}, d.text)
     );
     if (d.antworten.length) box.append(antwortenListe(d.antworten));
+    antwortTeil(box, d.diskussion);
     return box;
+  }
+  /** Unter einer GitLab-Diskussion: eigene Antwort-Entwürfe (staged) und „↩ antworten“ – mit „sofort senden“ gleich
+   *  veröffentlicht, sonst als Entwurf, den „Review abschließen“ als Draft-Antwort überträgt. */
+  function antwortTeil(box, diskussion) {
+    if (!diskussion) return;
+    review.kommentare
+      .filter(k => k.antwort_auf === diskussion && k.status !== 'weg')
+      .forEach(k => box.append(kommentarBox(k, false)));
+    if (nurLesen) return;
+    const unten = el('div', {class: 'unten'});
+    unten.append(
+      el(
+        'button',
+        {
+          onclick: () => {
+            const b = el('div', {class: 'gl-antwort entwurf'});
+            unten.before(b);
+            bearbeiten(
+              b,
+              '',
+              t => kommentarAktion({aktion: 'antworten', diskussion, text: t, sofort: sofort() ? 1 : ''}),
+              () => b.remove(),
+              undefined,
+              true
+            );
+          }
+        },
+        '↩ antworten'
+      )
+    );
+    box.append(unten);
   }
   /** Stand des veröffentlichten Kommentars in GitLab (von „MR-Daten“): erledigt oder offen, Link auf die Diskussion. */
   function gitlabStand(gl) {
@@ -639,8 +675,10 @@
     const allgDazu = (x, mach) => {
       if (!bleibt.has(x.id || x.key)) allg.push(mach);
     };
-    review.kommentare.forEach(k => {
-      if (!platz(k, () => kommentarBox(k, false)) && !unter(k, () => kommentarBox(k, false)))
+    review.kommentare
+      .filter(k => !k.antwort_auf)
+      .forEach(k => {
+        if (!platz(k, () => kommentarBox(k, false)) && !unter(k, () => kommentarBox(k, false)))
         allgDazu(k, () => kommentarBox(k, true));
     });
     faeden().forEach(k => {
@@ -671,6 +709,7 @@
       kopfhoeheSetzen();
       return;
     }
+    abschliessenStand();
     gsStand(
       n +
         ' Kommentar(e)' +
@@ -889,11 +928,24 @@
   });
   const abschliessenKnopf = document.getElementById('abschliessen');
   if (abschliessenKnopf)
+    abschliessenKnopf.after(el('label', {class: 'sofort', title: SOFORT_TITEL}, sofortHaken(), ' sofort senden'));
+  /** „Review abschließen“ nur, wenn es lokale Entwürfe (staged) gibt. */
+  function abschliessenStand() {
+    if (!abschliessenKnopf || abschliessenKnopf.dataset.laeuft) return;
+    abschliessenKnopf.disabled = !review.ausstehend;
+    abschliessenKnopf.title = review.ausstehend
+      ? review.ausstehend + ' lokale Entwürfe als Entwürfe („Review starten“) in den MR übertragen – veröffentlicht wird erst in GitLab'
+      : 'keine lokalen Entwürfe – nichts zu übertragen';
+  }
+  if (abschliessenKnopf)
     abschliessenKnopf.addEventListener('click', () => {
+      abschliessenKnopf.dataset.laeuft = 1;
       abschliessenKnopf.disabled = true;
       App.melden('überträgt Entwürfe nach GitLab …');
       post('/api/abschliessen', {}).then(d => {
+        delete abschliessenKnopf.dataset.laeuft;
         abschliessenKnopf.disabled = false;
+        abschliessenStand();
         App.melden((d.text || '') + (d.web_url ? ' → in GitLab prüfen ↗' : ''));
         if (d.review) {
           Object.assign(review, d.review);

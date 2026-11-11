@@ -713,6 +713,20 @@ def main():
         get(f"/mr/{mr}")
         zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
         pruefe(zw["marke"] == "● 1 offen", "nach dem Öffnen der Seite: nicht mehr neu, noch offen")
+        # Antwort auf die Diskussion: sofort → gleich veröffentlicht; sonst lokaler Entwurf → Abschließen als Draft-Antwort
+        r = post("/api/kommentar", dict(basis, aktion="antworten", diskussion="d950", text="Darum.", sofort=1))
+        fremd = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and [a["text"] for a in fremd["antworten"]] == ["Darum."]
+               and "Darum." in [x["body"] for x in json.load(open(f"{T}/glab/discussions.json"))["d950"]]
+               and not any(k.get("antwort_auf") for k in r["review"]["kommentare"]),
+               "Antwort mit sofort senden: gleich in GitLab, kein Entwurf")
+        r = post("/api/kommentar", dict(basis, aktion="antworten", diskussion="d950", text="Noch was."))
+        ent = [k for k in r["review"]["kommentare"] if k.get("antwort_auf") == "d950"]
+        pruefe(r["ok"] and len(ent) == 1 and ent[0]["status"] == "neu" and r["review"]["ausstehend"] == 1,
+               "Antwort ohne sofort: lokaler Entwurf (staged)")
+        r = post("/api/abschliessen", basis)
+        pruefe(r["ok"] and any(x.get("in_reply_to_discussion_id") == "d950" and x["note"] == "Noch was." for x in drafts()),
+               "Abschließen: Antwort als Draft-Note in der Diskussion")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
         rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]

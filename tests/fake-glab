@@ -124,8 +124,20 @@ def main():
         body = json.loads(eingabe)
         if body.get("position") and os.environ.get("FAKE_GLAB_FEHLER_POSITION"):
             raise SystemExit('glab: 400 Bad Request {"message":"line_code can\'t be blank"}')
-        neu = {"id": max([x["id"] for x in d] + [100]) + 1, "note": body["note"], "position": body.get("position")}
+        neu = {"id": max([x["id"] for x in d] + [100]) + 1, "note": body["note"], "position": body.get("position"),
+               "in_reply_to_discussion_id": body.get("in_reply_to_discussion_id")}
         d.append(neu); drafts_speichern(d)
+        return raus(neu)
+    m = re.fullmatch(r"/discussions/([^/]+)/notes", rest)
+    if m and methode == "POST":  # Antwort gleich veröffentlicht
+        try:
+            antworten = json.load(open(os.path.join(STATE, "discussions.json")))
+        except FileNotFoundError:
+            antworten = {}
+        neu = {"id": 5000 + sum(map(len, antworten.values())), "body": json.loads(eingabe)["body"],
+               "author": {"id": 1, "name": "Test Er"}, "system": False, "created_at": "2026-11-11T10:00:00Z"}
+        antworten.setdefault(m.group(1), []).append(neu)
+        json.dump(antworten, open(os.path.join(STATE, "discussions.json"), "w"))
         return raus(neu)
     m = re.fullmatch(r"/draft_notes/(\d+)", rest)
     if m:

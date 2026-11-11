@@ -19,7 +19,8 @@ Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
 
 Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erstellt, path, old_path, a (alte Zeile),
   b (neue Zeile), text, finding/hinweis (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
-  (position | allgemein | mr), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen),
+  (position | allgemein | mr | antwort), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen),
+  antwort_auf (id einer GitLab-Diskussion: Antwort darauf statt eigener Kommentar),
   gitlab_diskussion (veröffentlicht, von „MR-Daten“: id, note_id, erledigt {wer, zeit} oder None,
   antworten [{id, wer, wer_id, text, zeit}]).
   diskussionen     alle Diskussionen des MR aus GitLab („MR-Daten“, „MRs“): id, note_id, wer, wer_id, text, zeit, path,

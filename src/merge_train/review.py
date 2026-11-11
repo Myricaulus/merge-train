@@ -54,7 +54,7 @@ def kommentare_fuer_seite(akte, struktur):
         out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
                     "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
-                    "gitlab": diskussion_fuer_seite(akte, k)})
+                    "gitlab": diskussion_fuer_seite(akte, k), "antwort_auf": k.get("antwort_auf")})
     return out
 
 
@@ -64,7 +64,7 @@ def diskussion_fuer_seite(akte, k):
     if not d:
         return None
     web = akte["mr"].get("web_url") or ""
-    return {"erledigt": d.get("erledigt"), "antworten": d.get("antworten") or [],
+    return {"diskussion": d["id"], "erledigt": d.get("erledigt"), "antworten": d.get("antworten") or [],
             "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web}
 
 
@@ -88,7 +88,7 @@ def diskussionen_fuer_seite(akte, struktur):
         drin = bool(f and (a or b) and im_diff(f, a, b))
         if f and b and not drin and not unter:
             unter = f"Zeile {b} liegt außerhalb der Änderungen"
-        out.append({"id": "gl:" + str(d["id"]), "text": d["text"], "wer": d["wer"], "zeit": d["zeit"], "path": d.get("path"),
+        out.append({"id": "gl:" + str(d["id"]), "diskussion": d["id"], "text": d["text"], "wer": d["wer"], "zeit": d["zeit"], "path": d.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
                     "erledigt": d.get("erledigt"), "loesbar": d.get("loesbar"), "antworten": d.get("antworten") or [],
                     "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web, "lesen": True})
@@ -300,7 +300,48 @@ def kommentar_wiederherstellen(akte, k, eingabe):
     return True, ""
 
 
-KOMMENTAR_AKTIONEN = {"neu": kommentar_neu, "reihenfolge": kommentare_sortieren}
+def antwort_entwurf(mr, akte, eingabe, ansicht):
+    """Antwort auf eine GitLab-Diskussion als lokaler Entwurf (staged): „Review abschließen“ legt sie als Draft-Note mit
+    in_reply_to_discussion_id an. Ort wie die Diskussion (nur für die Liste und die Reihenfolge)."""
+    text = str(eingabe.get("text") or "").strip()
+    d = diskussion_finden(akte, eingabe.get("diskussion"))
+    if not d:
+        return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
+    if not text:
+        return False, "leere Antwort"
+    kommentar_anhaengen(akte, {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "erstellt": datetime.now().isoformat(timespec="seconds"),
+                               "text": text, "antwort_auf": d["id"], "path": d.get("path"), "a": d.get("a"), "b": d.get("b")})
+    return True, ""
+
+
+def diskussion_finden(akte, did):
+    return next((d for d in akte.get("diskussionen") or [] if d.get("id") == did), None) if did else None
+
+
+def antwort_senden(mr, eingabe):
+    """„sofort senden“: Antwort gleich als Kommentar in die GitLab-Diskussion (ohne lokalen und GitLab-Entwurf), dann in
+    die Akte. Rückgabe (ok, text)."""
+    text = str(eingabe.get("text") or "").strip()
+    did = eingabe.get("diskussion")
+    if not diskussion_finden(akte_lesen(mr), did):
+        return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
+    if not text:
+        return False, "leere Antwort"
+    note = glab(mr.host, f"{mr_pfad(mr)}/discussions/{did}/notes", "POST", {"body": text}) or {}  # GitLab, ohne Sperre
+    antwort = {"id": note.get("id"), "wer": (note.get("author") or {}).get("name") or "",
+               "wer_id": (note.get("author") or {}).get("id"), "text": note.get("body") or text,
+               "zeit": note.get("created_at") or datetime.now().astimezone().isoformat(timespec="seconds")}
+    with akte_bearbeiten(mr) as akte:
+        d = diskussion_finden(akte, did)
+        if d is not None:
+            d.setdefault("antworten", []).append(antwort)
+        for k in review_kommentare(akte):
+            if (k.get("gitlab_diskussion") or {}).get("id") == did:
+                k["gitlab_diskussion"].setdefault("antworten", []).append(antwort)
+    return True, "Antwort in GitLab veröffentlicht"
+
+
+KOMMENTAR_AKTIONEN = {"neu": kommentar_neu, "reihenfolge": kommentare_sortieren, "antworten": antwort_entwurf}
 AM_KOMMENTAR = {"aendern": kommentar_aendern, "loeschen": kommentar_loeschen, "wiederherstellen": kommentar_wiederherstellen}
 
 
@@ -310,6 +351,8 @@ def kommentar_aktion(mr, eingabe):
     ansicht = ansicht_lesen(eingabe.get("ansicht"))
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
+    if aktion == "antworten" and eingabe.get("sofort"):
+        return antwort_senden(mr, eingabe)
     if aktion in KOMMENTAR_AKTIONEN:
         return aktion_ausfuehren(mr, lambda akte: KOMMENTAR_AKTIONEN[aktion](mr, akte, eingabe, ansicht))
     if aktion not in AM_KOMMENTAR:
@@ -348,6 +391,8 @@ def entwurf_anlegen(mr, k, head, proj_url):
     """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
     host, mr_api = mr.host, mr_pfad(mr)
     refs = k.get("refs") or {}
+    if k.get("antwort_auf"):  # Antwort auf eine Diskussion: Ort hat die Diskussion
+        return glab(host, f"{mr_api}/draft_notes", "POST", {"note": k["text"], "in_reply_to_discussion_id": k["antwort_auf"]}), "antwort"
     if k.get("path") and (k.get("a") or k.get("b")) and refs.get("head_sha"):
         pos = {"position_type": "text", "base_sha": refs.get("base_sha"), "start_sha": refs.get("start_sha"),
                "head_sha": refs["head_sha"], "old_path": k.get("old_path") or k["path"], "new_path": k["path"]}
@@ -457,7 +502,7 @@ def diskussionen_abgleichen(akte, diskussionen, ich_id):
     vergeben = {k["gitlab_diskussion"]["id"] for k in review_kommentare(akte) if k.get("gitlab_diskussion")}
     neu_antworten = neu_erledigt = 0
     for k in review_kommentare(akte):
-        if not k.get("gitlab_weg"):
+        if not k.get("gitlab_weg") or k.get("antwort_auf"):  # Antworten stehen in ihrer Diskussion
             continue
         alt = k.get("gitlab_diskussion") or {}
         d = nach_id.get(alt.get("id"))
