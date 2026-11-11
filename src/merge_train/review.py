@@ -2,12 +2,13 @@
 import hashlib, os, re, threading
 from datetime import datetime
 from .waggon import Fehler, Waggon
+from .einstellungen import jetzt
 from .git import ANLASS, anlass, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_vorwaerts, zurueck_diffs
 from .diff_html import datei_tabelle
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, diskussionen_stand,
-    eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, diskussion_abgehakt,
+    diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import alle, glab, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
@@ -92,16 +93,29 @@ def diskussionen_fuer_seite(akte, struktur):
         entwuerfe = [{"id": e["id"], "von": "ich", "text": e["text"], "zeit": e.get("erstellt"), "gesendet": None,
                       "stufe": kommentar_status(e)} for e in review_kommentare(akte)
                      if e.get("antwort_auf") == d["id"] and kommentar_status(e) not in ("weg", "loeschen")]
-        erledigt = d.get("erledigt")
+        erledigt, abgehakt = d.get("erledigt"), diskussion_abgehakt(akte, d)
         status = ("entwurf" if any(e["stufe"] in ("neu", "geaendert") for e in entwuerfe) else "erledigt" if erledigt
-                  else "wartet" if nachrichten[-1]["von"] == "ich" else "antwort")
+                  else "abgehakt" if abgehakt else "wartet" if nachrichten[-1]["von"] == "ich" else "antwort")
         out.append({"id": "gl:" + str(d["id"]), "ziel": "gitlab", "diskussion": d["id"], "kommentar": k["id"] if k else None,
                     "finding": k.get("finding") if k else None, "text": nachrichten[0]["text"], "path": ort.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
                     "status": status, "loesbar": d.get("loesbar"), "nachrichten": nachrichten + entwuerfe, "links": [],
-                    "erledigt": dict(erledigt, von=von(erledigt.get("wer_id"))) if erledigt else None,
+                    "erledigt": dict(erledigt, von=von(erledigt.get("wer_id"))) if erledigt else None, "abgehakt": abgehakt,
                     "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web})
     return out
+
+
+def diskussion_abhaken(akte, eingabe):
+    """☑ lokal erledigt / lokal wieder offen: nur in der Akte, GitLab bleibt offen (Code dort noch nicht geändert)."""
+    did = eingabe.get("diskussion")
+    if not diskussion_finden(akte, did):
+        return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
+    ab = akte.setdefault("diskussionen_abgehakt", {})
+    if eingabe.get("aktion") == "abhaken":
+        ab[str(did)] = jetzt()
+    else:
+        ab.pop(str(did), None)
+    return True, ""
 
 
 def diskussion_aufloesen(mr, eingabe):
@@ -384,6 +398,8 @@ def kommentar_aktion(mr, eingabe):
         return antwort_senden(mr, eingabe)
     if aktion in ("erledigen", "wiedereroeffnen"):
         return diskussion_aufloesen(mr, eingabe)
+    if aktion in ("abhaken", "aufhaken"):
+        return aktion_ausfuehren(mr, lambda akte: diskussion_abhaken(akte, eingabe))
     if aktion in KOMMENTAR_AKTIONEN:
         return aktion_ausfuehren(mr, lambda akte: KOMMENTAR_AKTIONEN[aktion](mr, akte, eingabe, ansicht))
     if aktion not in AM_KOMMENTAR:

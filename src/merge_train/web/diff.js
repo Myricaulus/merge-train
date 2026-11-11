@@ -328,13 +328,16 @@
     return el('span', {class: 'gesendet', title: titel}, '➜');
   }
   function erledigtKnopf(i) {
-    if (i.x.erledigt) return el('span', {class: 'zu erledigt', title: 'erledigt'}, '✓');
-    if (i.x.ziel === 'gitlab' && !i.x.loesbar) return null;
+    const gl = i.x.ziel === 'gitlab';
+    if (i.x.erledigt)
+      return el('span', {class: 'zu erledigt' + (gl ? ' gl' : ''), title: gl ? 'in GitLab erledigt' : 'erledigt'}, '✓');
+    if (i.x.abgehakt) return el('span', {class: 'zu erledigt', title: 'lokal erledigt – in GitLab offen'}, '✓');
     return el(
       'span',
       {
         class: 'zu',
-        title: 'noch offen – Klick: als erledigt markieren',
+        title:
+          'noch offen – Klick: ' + (gl ? 'lokal erledigt (GitLab bleibt offen)' : 'als erledigt markieren'),
         onclick: e => {
           e.stopPropagation();
           App.fadenErledigen(i.x);

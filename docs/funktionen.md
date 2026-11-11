@@ -102,8 +102,11 @@ Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt d
 ### 12. GitLab-Diskussionen lesen und beantworten
 Holt Diskussionen zu MRs: Antworten und Erledigt-Status an eigenen Kommentaren, fremde Diskussionen nur lesend an der
 Zeile und in einer Liste. „↩ antworten“: sofort senden oder als lokaler Entwurf, den „Review abschließen“ als
-Draft-Antwort anlegt.
-- Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden` (`review.py`).
+Draft-Antwort anlegt. Erledigt in zwei Stufen: lokal (`abhaken`, nur in der Akte, bis ein anderer danach schreibt)
+und in GitLab (`erledigen`).
+- Achsen: Erledigt-Stufe (lokal, GitLab).
+- Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
+  (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim

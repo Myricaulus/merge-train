@@ -27,6 +27,8 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
                    old_path, a, b, head_sha (Stand des Kommentars), loesbar, erledigt, antworten – nur MRs
   ich_id           meine GitLab-Benutzer-id (für „neu“: Beiträge anderer)
   diskussionen_gesehen  höchste note-id anderer beim letzten Öffnen der Seite; was danach kam, ist im Zug „neu“
+  diskussionen_abgehakt  {diskussion-id: zeit}: lokal erledigt (gesehen/beantwortet, in GitLab noch offen); gilt, bis
+                   ein anderer danach schreibt (diskussion_abgehakt)
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
@@ -36,6 +38,7 @@ Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, zeile_text, a
   gehört der Faden zu keinem Branch.
 """
 import fcntl, json, os, sys, threading
+from datetime import datetime
 from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 from contextlib import contextmanager
 
@@ -257,10 +260,31 @@ def notizen_von_anderen(akte, ich_id):
     return out
 
 
+def zeitpunkt(iso):
+    """ISO-Zeit (GitLab mit Zone/„Z“, lokal ohne) → vergleichbarer Zeitpunkt, None wenn unlesbar."""
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.astimezone()
+
+
+def diskussion_abgehakt(akte, d):
+    """Zeit, zu der die Diskussion lokal erledigt wurde – None, wenn nicht oder wenn ein anderer danach geschrieben hat."""
+    z = (akte.get("diskussionen_abgehakt") or {}).get(str(d.get("id")))
+    t = zeitpunkt(z) if z else None
+    if not t:
+        return None
+    ich_id = akte.get("ich_id")
+    spaeter = [x for x in [d] + (d.get("antworten") or []) if x.get("wer_id") != ich_id and (zeitpunkt(x.get("zeit")) or t) > t]
+    return None if spaeter else z
+
+
 def diskussionen_stand(akte):
-    """Für Waggon und Seite: offen (lösbar, nicht erledigt), erledigt, neu (Beiträge anderer seit dem letzten Öffnen)."""
+    """Für Waggon und Seite: offen (lösbar, weder in GitLab noch lokal erledigt), erledigt (in GitLab), neu (Beiträge
+    anderer seit dem letzten Öffnen)."""
     ds = akte.get("diskussionen") or []
     gesehen = akte.get("diskussionen_gesehen") or 0
-    return {"offen": sum(1 for d in ds if d.get("loesbar") and not d.get("erledigt")),
+    return {"offen": sum(1 for d in ds if d.get("loesbar") and not d.get("erledigt") and not diskussion_abgehakt(akte, d)),
             "erledigt": sum(1 for d in ds if d.get("erledigt")),
             "neu": sum(1 for i, _ in notizen_von_anderen(akte, akte.get("ich_id")) if i > gesehen)}

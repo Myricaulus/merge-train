@@ -741,6 +741,14 @@ def main():
         r = post("/api/kommentar", dict(basis, aktion="wiedereroeffnen", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
         pruefe(r["ok"] and not faden["erledigt"] and faden["status"] != "erledigt", "wieder öffnen: in GitLab wieder offen")
+        aufgeloest = lambda: json.load(open(f"{T}/glab/resolved.json")).get("d950")
+        r = post("/api/kommentar", dict(basis, aktion="abhaken", diskussion="d950"))
+        faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and faden["status"] == "abgehakt" and faden["abgehakt"] and not faden["erledigt"] and not aufgeloest(),
+               "☑ lokal erledigt: nur in merge-train, in GitLab offen")
+        r = post("/api/kommentar", dict(basis, aktion="aufhaken", diskussion="d950"))
+        faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and faden["status"] != "abgehakt" and not faden["abgehakt"], "lokal wieder offen")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
         rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]

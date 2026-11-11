@@ -141,16 +141,20 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **GitLab-Diskussionen als Threads**: „↻ MR-Daten“ holt alle Diskussionen des MR (ohne Systemnotizen wie „changed this
   line“). Veröffentlichte eigene Kommentare und die anderer (andere Reviewer, im eigenen MR die Reviewer, direkt in GitLab
   Geschriebenes) stehen als Threads an ihrer Zeile, genau wie die KI-Threads: Verlauf mit deinen Beiträgen rechts, Stand
-  (wartet auf Antwort, Antwort in GitLab, erledigt), „↩ antworten“, „✓ erledigt“ und „wieder öffnen“. Links stehen sie
-  in der Liste „GitLab-Diskussionen“ mit ○/✓. Der einzige Unterschied ist das Ziel: Erledigen und wieder öffnen gehen
-  sofort an GitLab. Die Liste „GitLab-Kommentare“ enthält nur noch, was „Review abschließen“ sendet.
+  (wartet auf Antwort, Antwort in GitLab, erledigt), „↩ antworten“ und „wieder öffnen“. Links stehen sie in der Liste
+  „GitLab-Diskussionen“ mit ○/✓. Der einzige Unterschied ist das Ziel: Erledigen und wieder öffnen gehen sofort an
+  GitLab. Die Liste „GitLab-Kommentare“ enthält nur noch, was „Review abschließen“ sendet.
+  Erledigt gibt es in zwei Stufen: **„☑ lokal erledigt“** (gesehen oder beantwortet, im Code aber noch offen) bleibt
+  in merge-train, die Diskussion in GitLab offen; grauer ✓ in der Liste, die Box wird grau. Schreibt danach jemand
+  anderes in die Diskussion, ist sie wieder offen. **„✓ in GitLab erledigt“** löst sie in GitLab auf; grüner ✓. Der ○ in
+  der Liste erledigt lokal.
 - **Antworten auf GitLab-Diskussionen**: Mit „sofort senden“
   geht die Antwort gleich als veröffentlichter Kommentar in die Diskussion, ohne lokalen und GitLab-Entwurf. Ohne wird sie
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine
   Einstellung des Browsers und gilt auch für Fragen an Agenten. Sie steht neben „Review abschließen“ und in jedem
   Eingabefeld. „Review abschließen“ ist ausgegraut, solange es keine lokalen Entwürfe gibt.
 - **Der MR-Waggon im Zug** zeigt, was am meisten zählt: „💬 N neu“ (Agent-Antworten in Fäden), „↩ N neu“ (Beiträge
-  anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (nicht erledigte Diskussionen), sonst „✓ in GitLab“
+  anderer in GitLab seit dem letzten Öffnen der Seite), „● N offen“ (weder in GitLab noch lokal erledigte Diskussionen), sonst „✓ in GitLab“
   bzw. „● N Komm.“. Der Tooltip nennt Rolle (Reviewer/Autor), offene und erledigte Diskussionen, neue Antworten, eigene
   Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus

@@ -90,7 +90,8 @@
     gl_entwurf: ['Antwort-Entwurf (lokal)', 'b-entwurf'],
     gl_wartet: ['wartet auf Antwort', 'b-wartet'],
     gl_antwort: ['Antwort in GitLab', 'b-antwort'],
-    gl_erledigt: ['in GitLab erledigt', 'b-erledigt']
+    gl_erledigt: ['in GitLab erledigt', 'b-erledigt'],
+    gl_abgehakt: ['lokal erledigt – in GitLab offen', 'b-abgehakt']
   };
   /** [Text, Klasse] des Stands eines Threads – Gesprächsfaden oder GitLab-Diskussion. */
   function fadenStatus(k) {
@@ -108,6 +109,8 @@
     antworten: (k, d) => ({aktion: 'antworten', diskussion: k.diskussion, text: d.text, sofort: sofort() ? 1 : ''}),
     erledigt: k => ({aktion: 'erledigen', diskussion: k.diskussion}),
     oeffnen: k => ({aktion: 'wiedereroeffnen', diskussion: k.diskussion}),
+    abhaken: k => ({aktion: 'abhaken', diskussion: k.diskussion}), // lokal erledigt, GitLab bleibt offen
+    aufhaken: k => ({aktion: 'aufhaken', diskussion: k.diskussion}),
     aendern: (k, d) => ({aktion: 'aendern', id: d.nid, text: d.text}), // Antwort-Entwurf = Review-Kommentar
     loeschen: (k, d) => ({aktion: 'loeschen', id: d.nid})
   };
@@ -249,7 +252,7 @@
         class:
           'kbox km gs st-' +
           k.status +
-          (k.status === 'erledigt' ? ' erledigt' : '') +
+          (k.status === 'erledigt' || k.status === 'abgehakt' ? ' erledigt' : '') +
           (k.ziel === 'gitlab' ? ' gl' : ''),
         'data-id': k.id
       }),
@@ -285,7 +288,9 @@
             ' ' +
             uhrzeit(k.erledigt.zeit)
         )
-      : null;
+      : k.abgehakt
+        ? el('span', {}, '· lokal erledigt ' + uhrzeit(k.abgehakt))
+        : null;
     const gitlab = k.url
       ? el(
           'a',
@@ -321,37 +326,35 @@
   /** Knöpfe eines offenen Threads neben „antworten“: erledigt bzw. wieder öffnen (GitLab: nur lösbare), löschen
    *  (nur Fäden – eine GitLab-Diskussion löscht man in GitLab). */
   function fadenKnoepfe(k, senden) {
-    const gitlab = k.ziel === 'gitlab';
+    const knopf = (aktion, text, title) => el('button', {title, onclick: () => senden({aktion})}, text);
+    if (k.ziel !== 'gitlab')
+      return [
+        k.erledigt
+          ? knopf('oeffnen', 'wieder öffnen')
+          : knopf('erledigt', '✓ erledigt', 'Gespräch als erledigt markieren'),
+        el(
+          'button',
+          {
+            title: 'ganzes Gespräch löschen',
+            onclick: () => {
+              if (confirm('Ganzes Gespräch löschen?')) senden({aktion: 'loeschen'});
+            }
+          },
+          '🗑'
+        )
+      ];
+    // GitLab: lokal erledigt (gesehen/beantwortet, Code noch offen) und in GitLab erledigt sind zwei Stufen
+    if (k.erledigt) return k.loesbar ? [knopf('oeffnen', 'wieder öffnen', 'in GitLab wieder öffnen')] : [];
     return [
-      gitlab && !k.loesbar
-        ? null
-        : k.erledigt
-          ? el('button', {onclick: () => senden({aktion: 'oeffnen'})}, 'wieder öffnen')
-          : el(
-              'button',
-              {
-                title: gitlab ? 'in GitLab als erledigt markieren' : 'Gespräch als erledigt markieren',
-                onclick: () => senden({aktion: 'erledigt'})
-              },
-              '✓ erledigt'
-            ),
-      gitlab
-        ? null
-        : el(
-            'button',
-            {
-              title: 'ganzes Gespräch löschen',
-              onclick: () => {
-                if (confirm('Ganzes Gespräch löschen?')) senden({aktion: 'loeschen'});
-              }
-            },
-            '🗑'
-          )
+      k.abgehakt
+        ? knopf('aufhaken', 'lokal wieder offen', 'lokal erledigt zurücknehmen')
+        : knopf('abhaken', '☑ lokal erledigt', 'für mich erledigt, in GitLab bleibt die Diskussion offen'),
+      k.loesbar ? knopf('erledigt', '✓ in GitLab erledigt', 'in GitLab als erledigt markieren') : null
     ].filter(Boolean); // append() schriebe null als Text
   }
-  /** Für die Liste links (○ → erledigt). */
+  /** Für die Liste links (○ → erledigt; GitLab: lokal erledigt, geschlossen wird in GitLab nur per Knopf). */
   function fadenErledigen(k) {
-    return ziel(k)({aktion: 'erledigt'});
+    return ziel(k)({aktion: k.ziel === 'gitlab' ? 'abhaken' : 'erledigt'});
   }
   /** Eine Nachricht im Verlauf: Kopf (wer, wann, ✓/✓✓ bzw. Entwurf mit ✎/🗑) und Text mit Code-Links. */
   function nachrichtBox(k, m, wer, offen, senden) {

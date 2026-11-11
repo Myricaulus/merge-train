@@ -470,6 +470,28 @@ class DiskussionenTest(unittest.TestCase):
         self.assertEqual(review.diskussionen_abgleichen(akte, disk, 1), (1, 1))  # nur Beiträge anderer zählen
         self.assertEqual(diskussionen_stand(akte), {"offen": 0, "erledigt": 1, "neu": 1})
 
+    def test_lokal_erledigt(self):
+        from merge_train.akte import diskussion_abgehakt, diskussionen_stand
+        n = self.note
+        akte = {"mr": {}, "kommentare": []}
+        disk = [{"id": "x", "notes": [n(40, 5, "Frage", resolved=False)]}]
+        review.diskussionen_abgleichen(akte, disk, 1)
+        d = akte["diskussionen"][0]
+        self.assertEqual(review.diskussion_abhaken(akte, {"aktion": "abhaken", "diskussion": "x"}), (True, ""))
+        self.assertTrue(diskussion_abgehakt(akte, d))
+        self.assertEqual(diskussionen_stand(akte)["offen"], 0)  # lokal erledigt zählt im Zug nicht als offen
+        self.assertFalse(d.get("erledigt"))  # in GitLab bleibt sie offen
+        akte["diskussionen_abgehakt"]["x"] = "2026-11-11T08:30:00+00:00"
+        disk[0]["notes"].append(dict(n(41, 1, "meine Antwort", resolved=False), created_at="2026-11-11T09:00:00Z"))
+        review.diskussionen_abgleichen(akte, disk, 1)
+        self.assertTrue(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # eigene Antwort: bleibt erledigt
+        disk[0]["notes"].append(dict(n(42, 5, "doch noch was", resolved=False), created_at="2026-11-11T09:10:00Z"))
+        review.diskussionen_abgleichen(akte, disk, 1)
+        self.assertIsNone(diskussion_abgehakt(akte, akte["diskussionen"][0]))  # anderer schreibt danach: wieder offen
+        self.assertEqual(diskussionen_stand(akte)["offen"], 1)
+        review.diskussion_abhaken(akte, {"aktion": "aufhaken", "diskussion": "x"})
+        self.assertEqual(akte["diskussionen_abgehakt"], {})
+
 
 # ---- Review abschließen als Ganzes, gegen ein GitLab-Fake
 
