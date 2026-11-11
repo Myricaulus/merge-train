@@ -72,8 +72,10 @@ def server():
     syntax.SERVER_SOCKET = srv.socket
     beobachtet = [SKRIPT, KONFIG_DATEI]
     neu = []
-    threading.Thread(target=lambda: neu.append(server_bewachen(srv, beobachtet)), daemon=True).start()
+    waechter = threading.Thread(target=lambda: neu.append(server_bewachen(srv, beobachtet)), daemon=True)
+    waechter.start()
     srv.serve_forever()
+    waechter.join()  # shutdown() kommt aus dem Wächter: erst sein Ergebnis abwarten, sonst fehlt der Neustart
     srv.server_close()
     if neu and neu[0]:
         os.execv(sys.executable, [sys.executable, beobachtet[0], "--server"])
