@@ -32,6 +32,7 @@ STANDARD = {
     "agenten": {},            # Gespräch auch im GitLab-Modus: Name = Startbefehl, z. B. copilot = "… copilot -i {prompt}"
     "kontext_fenster": 0,     # HUD „ctx“: Kontextfenster der Agenten-Session in Tokens; 0 = 200k (1M bei [1m])
     "kontext_schwellen": [15, 20, 25, 35],  # HUD-Balken in %: bis a grün, bis b → orange, bis c → rot, ab d giftlila
+    "mr_auschecken": True,    # erster Besuch eines MR: Quell-Branch im lokalen Klon auschecken, wenn der Stand sauber ist
     "ich_symbol": "🤓",       # Listen links: dein Symbol für „zuletzt von dir“ (🤖 = Agent, Logo der Quelle = extern)
     "log_tage": 7,            # Log der Anfragen an die Quellen (git, GitLab): ~/.cache/merge-train/aussen-<datum>.log; 0 = aus
 }

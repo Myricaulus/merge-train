@@ -2,8 +2,8 @@
 import hashlib, os, re, threading
 from datetime import datetime
 from .waggon import Fehler, Waggon
-from .einstellungen import jetzt
-from .git import ANLASS, anlass, git, inhalt, zerlegen
+from .einstellungen import KONF, jetzt
+from .git import ANLASS, anlass, branch_auschecken, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_vorwaerts, zurueck_diffs
 from .diff_html import datei_tabelle
@@ -11,7 +11,7 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
     diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import alle, glab, mr_meta_holen, mr_pfad
+from .gitlab import alle, glab, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
@@ -630,6 +630,31 @@ def mr_gitlab_holen(mr):
     if neu_erledigt:
         teile.append(f"{neu_erledigt} in GitLab erledigt")
     return teile
+
+
+_AUSCHECKEN = threading.Lock()
+
+
+def mr_auschecken(mr):
+    """Erster Besuch der MR-Seite (mr_auschecken = true): den Quell-Branch im lokalen Klon auschecken, wenn der Stand
+    sauber ist (branch_auschecken). Einmal je MR (akte „ausgecheckt“) – wechselst du danach selbst zurück, bleibt es
+    so. Ging es nicht (offene Änderungen …), beim nächsten Besuch wieder. Die Seite hängt nicht davon ab (sie liest die
+    Branch-Refs, nicht HEAD), muss also nicht neu laden. Rückgabe: Text für die Glocke oder ""."""
+    if not KONF["mr_auschecken"] or akte_lesen(mr).get("ausgecheckt"):
+        return ""
+    with _AUSCHECKEN:
+        akte = akte_lesen(mr)
+        if akte.get("ausgecheckt") or not akte.get("meta"):
+            return ""
+        try:
+            ordner, _ = mr_lokal(mr, akte["meta"])
+        except Fehler:
+            return ""
+        erledigt, text = branch_auschecken(ordner, akte["meta"].get("source_branch") or "")
+        if erledigt:
+            with akte_bearbeiten(mr) as a:
+                a["ausgecheckt"] = jetzt()
+        return text
 
 
 def mr_daten_holen(mr):

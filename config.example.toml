@@ -32,6 +32,9 @@
 # Wie viele Tage aufbewahren; 0 = kein Log.
 # log_tage = 7
 
+# Erster Besuch eines MR: dessen Quell-Branch im lokalen Klon auschecken, wenn dort nichts Uncommittetes liegt
+# mr_auschecken = true
+
 # Listen links: dein Symbol für „zuletzt von dir“ (🤖 = Agent, Logo der Quelle = von außen)
 # ich_symbol = "🤓"
 

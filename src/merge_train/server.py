@@ -13,7 +13,7 @@ from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, schluessel_von
 from .zuhoerer import feedback_senden, seite_lebt, session_starten
-from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
+from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
 from http.server import BaseHTTPRequestHandler
@@ -214,6 +214,7 @@ def mr_seite_liefern(anfrage, kennung):
         return Antwort(200, startseite(str(e), kennung))
     if mr.id != kennung:  # Kennung kanonisch machen
         return weiterleitung("/mr/" + mr.id + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
+    im_hintergrund(mr, mr_auschecken)  # Seite nicht aufhalten; Meldung kommt über api/stand
     return Antwort(200, open(datei, "rb").read())
 
 
@@ -246,13 +247,30 @@ def api_review(anfrage, waggon):
     return wagen_daten(waggon, anfrage.ansicht)
 
 
+MELDUNGEN = {}  # Waggon-id → Text für die Glocke, den die nächste Abfrage von api/stand abholt
+
+
+def im_hintergrund(waggon, arbeit):
+    """arbeit(waggon) in einem Thread; ihr Text (falls einer) geht über api/stand an die offene Seite."""
+    def los():
+        try:
+            text = arbeit(waggon)
+        except Exception as e:  # z. B. git nicht erreichbar – die Seite soll trotzdem davon erfahren
+            text = f"{arbeit.__name__}: {e}"
+        if text:
+            MELDUNGEN[waggon.id] = text
+    threading.Thread(target=los, daemon=True).start()
+
+
 @route("GET", "api/stand", waggon=True)
 def api_stand(anfrage, waggon):
     """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden.
-    seite: die zuletzt gebaute Seite des MR – im Hintergrund neu gebaut (z. B. MR-Daten aus dem Zug) → neu laden."""
+    seite: die zuletzt gebaute Seite des MR – im Hintergrund neu gebaut (z. B. MR-Daten aus dem Zug) → neu laden.
+    meldung: Text aus im_hintergrund (z. B. „… ausgecheckt“) für die Glocke, einmal."""
     seite_lebt(waggon)
     akte = akte_lesen(waggon)
-    return {"stand": stand(waggon, akte), "seite": None if waggon.lokal else akte.get("struktur"), "version": VERSION, "server": server_stand(),
+    return {"stand": stand(waggon, akte), "seite": None if waggon.lokal else akte.get("struktur"),
+            "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION, "server": server_stand(),
             "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
 
 

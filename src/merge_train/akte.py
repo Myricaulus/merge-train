@@ -26,6 +26,7 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
   diskussionen     alle Diskussionen des MR aus GitLab („MR-Daten“, „MRs“): id, note_id, wer, wer_id, text, zeit, path,
                    old_path, a, b, head_sha (Stand des Kommentars), loesbar, erledigt, antworten – nur MRs
   ich_id           meine GitLab-Benutzer-id (wer: du oder extern)
+  ausgecheckt      zeit, zu der mr_auschecken den Quell-Branch im Klon ausgecheckt hat (oder er schon/anderswo da war)
   diskussionen_abgehakt  {diskussion-id: zeit}: „☑ abwarten“ (Ball ohne Antwort abgegeben, in GitLab noch offen); gilt,
                    bis ein anderer danach schreibt (diskussion_abgehakt)
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).

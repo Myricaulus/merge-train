@@ -983,6 +983,7 @@
       .then(r => r.json())
       .then(d => {
         if (d.server) App.serverStandSetzen(d.server);
+        if (d.meldung) App.melden(d.meldung);
         if (d.version && waggon.version && d.version !== waggon.version)
           return neuLaden('merge-train wurde aktualisiert – Seite neu geladen');
         if (d.veraltet) return neuLaden('Änderung im Repo – Seite neu geladen', waggon.sha || '');

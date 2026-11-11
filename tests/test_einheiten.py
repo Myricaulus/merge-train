@@ -701,6 +701,27 @@ class AktualisierenTest(unittest.TestCase):
         self.assertTrue(d["ok"] and d["neu_laden"]); self.assertIn(neu[:8], d["text"])
         self.assertIn("MR-Daten", d["text"])  # danach geholt (hier ohne GitLab: gescheitert, aber gemeldet)
 
+    def test_auschecken(self):
+        """branch_auschecken: neuer Branch aus origin, schützt offene Änderungen; mr_auschecken nur einmal je MR."""
+        from merge_train.git import branch_auschecken
+        from merge_train.review import mr_auschecken
+        self.g("switch", "-q", "-c", "feature", ort=self.oben); self.commit(self.oben, "f1")
+        self.g("push", "-q", "origin", "feature", ort=self.oben); self.g("fetch", "-q", ort=self.klon)
+        schreiben(f"{self.klon}/f", "lokal\n")
+        ok, text = branch_auschecken(self.klon, "feature")
+        self.assertFalse(ok); self.assertIn("nicht committete", text)
+        self.g("checkout", "-q", "f", ort=self.klon)
+        mr = Waggon(host="gitlab.example", projekt="g/aus", iid=8)
+        with akte_bearbeiten(mr) as akte:
+            akte.update(klon=self.klon, meta={"source_branch": "feature", "target_branch": "mr"})
+        self.assertIn("mr → feature ausgecheckt", mr_auschecken(mr))
+        self.assertEqual(self.g("rev-parse", "--abbrev-ref", "HEAD", ort=self.klon), "feature")
+        self.assertEqual(self.g("rev-parse", "--abbrev-ref", "feature@{u}", ort=self.klon), "origin/feature")
+        self.g("switch", "-q", "mr", ort=self.klon)  # selbst zurück: bleibt so
+        self.assertEqual(mr_auschecken(mr), "")
+        self.assertEqual(self.g("rev-parse", "--abbrev-ref", "HEAD", ort=self.klon), "mr")
+        self.assertEqual(branch_auschecken(self.klon, "mr"), (True, ""))  # schon ausgecheckt
+
     def test_schuetzt_eigenes(self):
         self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
         schreiben(f"{self.klon}/f", "lokal\n")

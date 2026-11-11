@@ -253,20 +253,52 @@ def branch_aktualisieren(ordner, branch):
     vorspulen = git(ordner, "merge-base", "--is-ancestor", lokal, neu, check=False) is not None
     if not vorspulen and lokal != alt:
         raise Fehler(f"{branch} hat lokale Commits, die nicht auf origin sind – bitte selbst zusammenführen")
-    baum = None  # Worktree, in dem der Branch ausgecheckt ist
-    for block in (git(ordner, "worktree", "list", "--porcelain", check=False) or "").split("\n\n"):
-        zeilen = dict(z.split(" ", 1) for z in block.splitlines() if " " in z)
-        if zeilen.get("branch") == f"refs/heads/{branch}":
-            baum = zeilen.get("worktree")
+    baum = worktree_mit(ordner, branch)
     if not baum:
         git(ordner, "update-ref", f"refs/heads/{branch}", neu, lokal)
     else:
-        offen = git(baum, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
-        if offen.strip():
-            raise Fehler(f"{kurzpfad(baum)} hat nicht committete Änderungen:\n{offen.rstrip()}")
+        sauber_oder_fehler(baum)
         git_oder_fehler(baum, *(["merge", "--ff-only", "-q"] if vorspulen else ["reset", "--keep", "-q"]), neu)
         git_oder_fehler(baum, "submodule", "update", "--init", "--recursive")
     return f"{branch}: {lokal[:8]} → {neu[:8]}" + ("" if vorspulen else " (neu gesetzt, origin wurde umgeschrieben)")
+
+
+def worktree_mit(ordner, branch):
+    """Worktree (auch der Hauptordner), in dem der Branch ausgecheckt ist, sonst None."""
+    for block in (git(ordner, "worktree", "list", "--porcelain", check=False) or "").split("\n\n"):
+        zeilen = dict(z.split(" ", 1) for z in block.splitlines() if " " in z)
+        if zeilen.get("branch") == f"refs/heads/{branch}":
+            return zeilen.get("worktree")
+    return None
+
+
+def sauber_oder_fehler(baum):
+    """Fehler, wenn der Worktree nicht committete Änderungen hat (Submodul-Zeiger zählen nicht, unversionierte Dateien
+    auch nicht – die schützt git selbst)."""
+    offen = git(baum, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
+    if offen.strip():
+        raise Fehler(f"{kurzpfad(baum)} hat nicht committete Änderungen:\n{offen.rstrip()}")
+
+
+def branch_auschecken(ordner, branch):
+    """Den Quell-Branch eines MR im Klon auschecken, wenn das gefahrlos geht: Stand sauber, HEAD auf einem Branch (kein
+    Rebase, kein losgelöster HEAD), Branch nicht schon in einem anderen Worktree. Fehlt er lokal, entsteht er aus
+    origin/<branch> (mit Tracking). Submodule ziehen mit. Rückgabe (erledigt, text): erledigt = nichts mehr zu tun
+    (ausgecheckt oder schon da/anderswo), sonst text = warum nicht."""
+    baum = worktree_mit(ordner, branch)
+    if baum:
+        return True, ("" if os.path.realpath(baum) == os.path.realpath(ordner) else f"{branch} ist in {kurzpfad(baum)} ausgecheckt")
+    vorher = (git(ordner, "symbolic-ref", "-q", "--short", "HEAD", check=False) or "").strip()
+    if not vorher:
+        return False, f"{kurzpfad(ordner)}: HEAD steht auf keinem Branch (Rebase?) – {branch} nicht ausgecheckt"
+    try:
+        sauber_oder_fehler(ordner)
+        lokal = git(ordner, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", check=False) is not None
+        git_oder_fehler(ordner, "switch", "-q", *([branch] if lokal else ["--track", "-c", branch, f"origin/{branch}"]))
+        git_oder_fehler(ordner, "submodule", "update", "--init", "--recursive")
+    except Fehler as e:
+        return False, f"{branch} nicht ausgecheckt – {e}"
+    return True, f"{kurzpfad(ordner)}: {vorher} → {branch} ausgecheckt"
 
 
 INHALT = {}

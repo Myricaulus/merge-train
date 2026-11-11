@@ -120,7 +120,10 @@ Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahn
 Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt; ist
 origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren` in `git.py`, Aktion `aktualisieren`)
 und holt danach die MR-Daten (`mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
-lädt offene Tabs neu (`neuLaden` in `web/review.js`).
+lädt offene Tabs neu (`neuLaden` in `web/review.js`). Beim ersten Besuch eines MR checkt `mr_auschecken` (`review.py`,
+im Hintergrund über `im_hintergrund` im Server) den Quell-Branch im Klon aus, wenn der Stand sauber ist
+(`branch_auschecken` in `git.py`; Einstellung `mr_auschecken`, einmal je MR: Akte `ausgecheckt`). Die Seite liest die
+Branch-Refs, nicht HEAD, und lädt deshalb nicht neu; die Meldung kommt über `api/stand` (`meldung`) in die Glocke.
 - Ort: `gitlab.py`, `mr_gitlab_holen`/`mr_daten_holen` (`review.py`), Route `api/gitlab`, `web/bahnhof.js`.
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen eigenen Abruf beim Laden der Seite.
 

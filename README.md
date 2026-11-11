@@ -242,6 +242,11 @@ bleiben unangetastet, dann bricht es mit Meldung ab. Danach holt der Knopf gleic
 auch verschwindet, wenn inzwischen weiter gepusht wurde. Holt der Zug neue MR-Daten im Hintergrund und ändert sich
 dadurch die Seite, lädt ein offener Tab von selbst neu (nicht, solange ein Eingabefeld offen ist).
 
+Beim ersten Öffnen eines MR checkt merge-train dessen Quell-Branch im lokalen Klon aus (fehlt er, mit Tracking aus
+origin), damit IDE und Agent gleich auf dem richtigen Stand sind – nur wenn dort nichts Uncommittetes liegt und HEAD
+auf einem Branch steht (kein Rebase), samt Submodulen. Die Seite lädt dafür nicht neu, die Glocke meldet den Wechsel.
+Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `mr_auschecken = false`.
+
 ## Einstellungen
 
 `~/.config/merge-train/config.toml`, Vorlage: [`config.example.toml`](config.example.toml). Die wichtigsten Einträge:
