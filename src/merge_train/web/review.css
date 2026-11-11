@@ -38,8 +38,8 @@ background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0
  #popup tr.ziel td{background:var(--akt)}
 details.kliste{border-bottom:1px solid var(--rand)} details.kliste>summary{font-size:13px;font-weight:600;padding:6px 10px;background:var(--kopf);cursor:pointer;border-bottom:1px solid var(--rand)}
 details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
-.ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px;border-left:3px solid transparent}
-.ke:hover{background:var(--kopf)} .ke.hw{border-left-color:var(--tf)} .ke.km{border-left-color:var(--tn)}
+.ke{display:flex;gap:6px;align-items:baseline;padding:2px 10px;cursor:pointer;white-space:nowrap;font-size:12px}
+.ke:hover{background:var(--kopf)}
 .ke b{flex:none} .ke .kt2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ke .ki{flex:none;font-size:11px}
 .kbox.blink{animation:blinkbox 1.8s ease-out} @keyframes blinkbox{0%,30%{box-shadow:0 0 0 3px var(--tn)}}
@@ -101,12 +101,11 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 .kopfknoepfe{margin-left:auto;display:flex;gap:8px;align-items:center} .kopfknoepfe #fertig,.kopfknoepfe #abschliessen{margin-left:0}
 label.sofort{font-size:12px;color:var(--muted);margin-right:6px;cursor:pointer;user-select:none} label.sofort input{vertical-align:middle;margin:0 3px 0 0}
 .kbox.gs .unten{text-align:right;margin-top:4px} .kbox.gs:has(textarea) .unten{display:none}
-details.kliste>summary .stfilter{float:right;display:flex;align-items:center;gap:2px;height:1lh} details.kliste>summary .stfilter button{display:inline-flex;align-items:center;gap:2px;height:16px;font:11px/1 system-ui,sans-serif;padding:0 3px;border:1px solid var(--p);border-radius:4px;background:var(--bg);color:var(--fg);cursor:pointer} details.kliste>summary .stfilter button.aus{border-color:var(--rand);color:var(--muted);opacity:.6}
-details.kliste>summary .sortknopf{float:right;font:11px system-ui,sans-serif;padding:0 6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
+details.kliste>summary .stfilter{float:right;display:flex;align-items:center;gap:1px;height:1lh} details.kliste>summary .stfilter button{display:inline-flex;align-items:center;gap:2px;height:16px;font:11px/1 system-ui,sans-serif;padding:0 2px;border:1px solid var(--p);border-radius:4px;background:var(--bg);color:var(--fg);cursor:pointer} details.kliste>summary .stfilter button.aus{border-color:var(--rand);color:var(--muted);opacity:.6}
+details.kliste>summary .stfilter button.sortknopf{margin-left:3px;border-color:var(--rand);color:var(--tn)} details.kliste>summary .stfilter button.sortknopf.an{border-color:var(--p)}
 .ke.sort{cursor:grab} .ke.zieht{opacity:.4} .ke .griff{flex:none;color:var(--muted)}
 .ke.drop-oben{box-shadow:inset 0 2px 0 var(--tn)} .ke.drop-unten{box-shadow:inset 0 -2px 0 var(--tn)}
 .ke .pfeile{flex:none;display:flex;gap:2px} .ke .pfeile button{font-size:11px;padding:0 4px;border:1px solid var(--rand);border-radius:3px;background:var(--bg);color:var(--tn);cursor:pointer}
-.ke .gesendet{flex:none;color:var(--p);font-size:11px;margin-left:-3px}
 /* HUD: Stellwerk auf Stelzen im Vordergrund (über dem Zug), Inhalt als HTML über der Kabine */
 #hud-bau{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
 #hud{position:absolute;z-index:4;box-sizing:border-box;padding:3px 6px 3px 9px;display:flex;align-items:center;gap:8px;
@@ -143,11 +142,12 @@ body.mit-hud #rvstand{display:none}
  background:var(--bg);border:1px solid var(--rand);border-radius:8px;box-shadow:0 8px 30px #0007;font-size:13px}
 .nl-kopf{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--rand);position:sticky;top:0;background:var(--kopf)}
 .nl-e{padding:8px 12px;border-bottom:1px solid var(--rand)} .nl-e .sub{font-size:11px}
-.ke .zu{flex:none;font-size:12px;color:var(--tn);cursor:pointer;width:12px;text-align:center} .ke .zu:hover{color:var(--p);font-weight:700} .zu.b-entwurf{color:var(--tb)} .zu.b-antwort{color:var(--tf)} .zu.erledigt{color:var(--muted);cursor:default} .zu.erledigt.gl{color:var(--p)}
+.ke .zu{flex:none;font-size:12px;cursor:pointer;width:12px;text-align:center} .ke .zu:not(.fest):hover{color:var(--p);font-weight:700} .zu.fest{cursor:default}
+.zu{color:var(--tn)} .zu.b-entwurf,.zu.b-neu,.zu.b-geaendert{color:var(--tb)} .zu.b-antwort,.zu.b-agent{color:var(--tf)} .zu.b-ok,.zu.erledigt.gl{color:var(--p)} .zu.erledigt{color:var(--muted)}
 .mt a.codelink{color:var(--tn);cursor:pointer;font-family:ui-monospace,monospace;font-size:.95em} .mt a.codelink:hover{text-decoration:underline}
 .mt code{font:.92em ui-monospace,monospace;background:var(--bg2,rgba(127,127,127,.15));padding:0 3px;border-radius:3px}
 /* --beobachten: Rahmen um das seit dem vorigen Stand Neue (beobachten.js) */
 tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>td:last-child{box-shadow:inset -3px 0 0 var(--tf)}
 tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
 tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}
-.kbox.gl,.ke.gl{border-left-style:dashed} .gs .msg.andere{border-left-color:var(--tn)}
+.kbox.gl{border-left-style:dashed} .gs .msg.andere{border-left-color:var(--tn)}

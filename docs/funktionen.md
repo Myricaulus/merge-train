@@ -107,8 +107,7 @@ und in GitLab (`erledigen`).
 - Achsen: Erledigt-Stufe (lokal, GitLab).
 - Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
   (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
-- Liste links mit Filter je Stand (`GL_STATI`, `kasten(…, stati)` in `web/diff.js`, je Waggon im Browser gemerkt);
-  eine andere Liste filtert über denselben Parameter.
+- Liste links: siehe Baustein „Liste links über den Dateien“.
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
@@ -170,7 +169,7 @@ Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für 
 | GitLab aufrufen | `gitlab.py` (glab), nur auf Knopfdruck |
 | Zeile zwischen Ständen zuordnen | `zeilen.py` |
 | Code-Stelle verlinken | `pfad:zeile` im Text bzw. `see_also`, Popup aus `web/diff.js` |
-| Liste links über den Dateien | `kommentarListe` (`web/diff.js`) |
+| Liste links über den Dateien | `kommentarListe`, `kasten` (`web/diff.js`); Stände je Liste in `LISTEN_STATI`, Zeichen aus `standZeichen` (Liste und Filterknöpfe), Filter je Waggon im Browser (`ausgeblendet`). Neue Liste = neuer Eintrag in `LISTEN_STATI` |
 | Meldung an den Nutzer | `App.melden` (Toasts), auf Python-Seite `Fehler` |
 | Langer Ablauf mit GitLab | planen und ausführen getrennt (wie `abschluss_planen`/`schritt_ausfuehren`) |
 | Agent soll etwas tun | `Quelle.prompt` und `benachrichtigen` (`zuhoerer.py`) |

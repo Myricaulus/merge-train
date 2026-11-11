@@ -65,8 +65,12 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
   der Bereich (`pfad:10-20`) ist hervorgehoben. Liegt die Datei im Diff, zeigt das Popup deren Diff (Lücken aufklappbar,
   „alles aufklappen“), sonst den Dateiinhalt (mehr laden / ganze Datei).
 - **Kommentarlisten** links über den Dateien, in Datei-Reihenfolge: „KI-Threads“ (Gespräche mit Agenten) und bei einem MR
-  „GitLab-Kommentare“ (siehe unten). Leere Listen sind ausgeblendet. Ein Klick springt zum Eintrag und klappt dafür bei
-  Bedarf Kontext oder Datei auf.
+  „GitLab-Kommentare“ und „GitLab-Diskussionen“ (siehe unten). Leere Listen sind ausgeblendet. Ein Klick springt zum
+  Eintrag und klappt dafür bei Bedarf Kontext oder Datei auf. Alle drei sind gleich gebaut: Jeder Eintrag zeigt seinen
+  Stand als Zeichen (○ steht aus, in der Farbe des Stands; ➜ an GitLab gesendet; ✓ erledigt bzw. veröffentlicht), ein
+  Klick auf das ○ eines Threads erledigt ihn. Neben dem Titel steht für jeden möglichen Stand ein kleiner Filterknopf mit
+  demselben Zeichen und der Anzahl, auch bei 0. Grüner Rahmen = angezeigt, Klick blendet den Stand aus (grau). Das merkt
+  sich der Browser je Waggon und Liste.
 - **Stellwerk** (HUD) rechts im Güterbahnhof, auf Stelzen über dem Gleis: LED (grün: Server läuft, rot: nicht erreichbar,
   gelb: neuer Server, die Seite lädt gleich neu), Stand von merge-train (letzter Commit mit Zeit, `*` = Änderungen in
   `src/` noch nicht committet), wer zuhört, Zahl der Kommentare, Hinweise und KI-Threads (offen = nicht erledigt; in der
@@ -123,8 +127,10 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 
 - **Stand**: Lag GitLab beim letzten Holen auf einem anderen Stand als der Klon (`[repos]` oder Repo der Hinweis-Datei),
   sagt das ein Hinweis oben.
-- **GitLab-Kommentare** (Liste links): offene Agent-Hinweise 🤖, eigene bzw. übernommene Kommentare 💬. Die Reihenfolge
-  ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅ sortieren“ per Drag & Drop oder ⤒/⤓
+- **GitLab-Kommentare** (Liste links): offene Agent-Hinweise 🤖, eigene bzw. übernommene Kommentare 💬. Stand: lila ○
+  Agent-Hinweis, blauer ○ Entwurf (lokal), blauer ➜ geändert (wird aktualisiert), grüner ➜ in GitLab (Entwurf), grüner ✓
+  in GitLab veröffentlicht. Die Reihenfolge
+  ist die Sende-Reihenfolge bei „Review abschließen“: nach Datei und Zeile, mit „⇅“ (am Ende der Filterknöpfe) per Drag & Drop oder ⤒/⤓
   (ganz nach oben/unten) änderbar. Sie wird beim MR gespeichert, Neues landet an seiner Stelle nach Datei und Zeile,
   ein übernommener Hinweis behält seinen Platz.
 - **Kommentar schreiben**: Auf eine Zeilennummer klicken (links = alte Zeile, rechts = neue). Speichern mit Strg+Enter, abbrechen mit Esc.
@@ -148,10 +154,8 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   in merge-train, die Diskussion in GitLab offen; grauer ✓ in der Liste, die Box wird grau. Schreibt danach jemand
   anderes in die Diskussion, ist sie wieder offen. **„✓ in GitLab erledigt“** löst sie in GitLab auf; grüner ✓. Der ○ in
   der Liste erledigt lokal.
-  Neben dem Titel der Liste steht für jeden möglichen Stand ein kleiner Filterknopf mit Anzahl, auch bei 0:
-  dieselben Zeichen wie in der Liste: ○ offen in der Farbe des Stands (Entwurf, Antwort, wartet), grauer ✓ lokal
-  erledigt, grüner ✓ in GitLab erledigt. Grüner Rahmen = angezeigt, Klick blendet den Stand aus (grau). Die Gesamtzahl am Titel entfällt dafür. Das merkt
-  sich der Browser je Waggon.
+  Filterknöpfe wie bei allen Listen: ○ offen in der Farbe des Stands (Entwurf, Antwort, wartet), grauer ✓ lokal
+  erledigt, grüner ✓ in GitLab erledigt.
 - **Antworten auf GitLab-Diskussionen**: Mit „sofort senden“
   geht die Antwort gleich als veröffentlichter Kommentar in die Diskussion, ohne lokalen und GitLab-Entwurf. Ohne wird sie
   ein lokaler Entwurf in der Diskussion, und „Review abschließen“ legt sie als Draft-Antwort an. „sofort senden“ ist eine
