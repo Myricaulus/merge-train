@@ -56,6 +56,7 @@
       Object.assign(review, d.review);
       zeichnen();
     }
+    App.zugHolen(); // Marke und fertig des Waggons hängen an Kommentaren, Fäden und Diskussionen
     return d;
   }
   function laden() {
