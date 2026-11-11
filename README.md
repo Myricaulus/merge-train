@@ -71,9 +71,11 @@ erledigte Fäden weg. Offene bleiben für den nächsten Stand.
   Feedback direkt dorthin. Oben steht dann „🎧 Claude hört zu“. Dazu genügt es, der Session zu sagen: „hör auf merge-train“.
   In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
   (`skill/merge-train/SKILL.md`, von `install.sh` nach `~/.claude/skills` verlinkt).
-- **Keine hört zu**: „Feedback senden“ legt einen `todo`-Eintrag im Projekt an (mit Startprompt), und das Panel pulsiert.
+- **Keine hört zu**: Ist das Werkzeug `todo` installiert (eigenes Werkzeug des Autors, nicht Teil von merge-train und
+  nicht veröffentlicht), legt „Feedback senden“ dort einen Eintrag im Projekt an (mit Startprompt), und dessen Panel pulsiert.
   „▶ Session starten“ auf der Seite öffnet ihn mit `todo los` (Konsole im Projekt, Enter startet Claude).
   Weitere Nachrichten hängen sich als Notiz an denselben Eintrag. Sind alle Fäden beantwortet, hakt merge-train ihn ab.
+  Ohne `todo` und ohne `feedback_befehl` sagt die Seite nur, dass keine Session zuhört.
 - **Eigener Befehl**: `feedback_befehl` in der Einstellung startet stattdessen etwas Eigenes, z. B.
   `feedback_befehl = "konsole --workdir {ordner} -e claude {prompt}"` (Platzhalter `{ordner}`, `{projekt}`, `{prompt}`).
 
@@ -84,7 +86,8 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 - **Quelle**: Diff, Dateien und Commits kommen immer aus dem lokalen Klon (`[repos]` oder Repo der Hinweis-Datei):
   Stand = Quell-Branch des MR (lokal, sonst `origin/…`), Basis = gemeinsamer Vorgänger mit dem Ziel-Branch.
   Welcher Branch ausgecheckt ist und lokale Änderungen spielen keine Rolle. Stand GitLab beim letzten Holen woanders,
-  sagt das ein Hinweis oben. Die GitLab-API für Diffs wird nicht mehr benutzt.
+  sagt das ein Hinweis oben. Diffs nicht über die GitLab-API, weil sie bei großen Änderungen oft keinen Diff liefert
+  und langsam ist.
 - **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
@@ -120,7 +123,7 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   *geändert* oder *wird in GitLab gelöscht*.
 - **Review abschließen → GitLab** legt neue Kommentare als Draft-Notes an, aktualisiert geänderte und löscht entfernte.
   Nichts wird veröffentlicht: In GitLab steht dann „Pending comments“, dort prüfen und das Review abschicken.
-  Mehrfaches Abschließen erzeugt keine Duplikate. Einen schon veröffentlichten Kommentar fasst das Tool nicht mehr an.
+  Mehrfaches Abschließen erzeugt keine Duplikate. Einen in GitLab veröffentlichten Kommentar fasst das Tool nicht an.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
 
@@ -243,7 +246,7 @@ steht in `__init__.py`), CSS und JS in `src/merge_train/web/`. `./bauen` bündel
 
 `merge-train` ist das gebaute Ergebnis und nicht eingecheckt (`.gitignore`). `~/.local/bin/merge-train` zeigt darauf.
 `install.sh` richtet Git-Hooks ein (post-merge, post-checkout, post-rewrite), die danach `./bauen` ausführen.
-Ein `git pull` genügt also weiterhin zum Aktualisieren.
+Zum Aktualisieren genügt also ein `git pull`.
 
 Bausteine:
 

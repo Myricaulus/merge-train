@@ -86,4 +86,4 @@ Commits `321af08` … `eba8275` auf `claude`:
   (`prefers-color-scheme: dark`). Der Chromium-Schalter `--force-dark-mode` greift headless nicht.
 - **Bildschirme des Nutzers:** 2560×1440 und 1920×1080.
 - **Server auf 8771:** Er beendet sich nach einer Weile ohne Anfragen. Neu starten mit
-  `setsid -f merge-train --server`, nie per `pkill` (siehe AGENTS.md).
+  `setsid -f merge-train --server`, beenden mit `merge-train --stopp`.

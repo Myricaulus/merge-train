@@ -38,8 +38,8 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 „undeclared“.
 
 `python3 tests/test_einheiten.py` (schnell, zuerst; Akte, Routen, Abschließen gegen ein GitLab-Fake), dann `python3 tests/test_gitlab.py` (GitLab-Modus mit `tests/fake-glab`, Port 8799).
-Die Einzeltests rufen Funktionen beim Namen auf, `test_gitlab.py` über `alles_laden` auch – beim Umbenennen mitziehen. Nicht `pkill -f "merge-train --server"`:
-das trifft auch den Server des Nutzers auf Port 8771.
+Die Einzeltests rufen Funktionen beim Namen auf, `test_gitlab.py` über `alles_laden` auch – beim Umbenennen mitziehen. Den Server des Nutzers (Port 8771)
+nur mit `merge-train --stopp` beenden, eine eigene Instanz mit `merge-train --beobachten --stopp [ordner]`.
 
 ## Gespräch im lokalen Modus
 

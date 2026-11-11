@@ -16,7 +16,7 @@ Der Umbau lief im Worktree auf dem Branch `fable` und ist inzwischen auf `claude
 weiter gilt:
 
 - Branches `reviewed` und `main` nicht anfassen. Pushen nur auf Wunsch.
-- Nicht `pkill -f "merge-train --server"`: das trifft auch den Server des Nutzers (Port 8771). Zum Ausprobieren eine
+- Server beenden mit `merge-train --stopp` (bzw. `--beobachten --stopp` für eine eigene Instanz). Zum Ausprobieren eine
   eigene Instanz (`python3 src --beobachten`) oder eigene Konfig mit anderem Port.
 - Begriffe draft/staged/sent wie in AGENTS.md. Der Agent legt nie Review-Kommentare an.
 - Namen: zu kurze Namen maßvoll ausschreiben („muss kein Roman werden“). `k` für einen Kommentar in kurzen Schleifen
