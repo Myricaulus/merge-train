@@ -199,27 +199,26 @@
       if (d && d.querySelector('.spaet')) dateiLaden(d);
     });
   }
+  /** Gespräch: Verlauf wie im Messenger, eigene Nachrichten rechts. */
   function fadenBox(k, mitOrt) {
-    // Gespräch: Verlauf wie im Messenger, eigene Nachrichten rechts
     const wer = k.an || 'Claude',
       [st0, cl] = statusTexte[k.status] || ['?', ''],
-      st = (k.vom_agenten && k.status === 'antwort' && k.nachrichten.length === 1 ? 'neu von Claude' : st0).replace(
-        'Claude',
-        wer
-      ),
+      neuVomAgenten = k.vom_agenten && k.status === 'antwort' && k.nachrichten.length === 1,
+      st = (neuVomAgenten ? 'neu von Claude' : st0).replace('Claude', wer),
       box = el('div', {
         class: 'kbox km gs st-' + k.status + (k.status === 'erledigt' ? ' erledigt' : ''),
         'data-id': k.id
       }),
-      kn = el('span', {class: 'knoepfe'});
-    const offen = !nurLesen && !k.lesen;
+      kn = el('span', {class: 'knoepfe'}),
+      offen = !nurLesen && !k.lesen,
+      verlauf = el('div', {class: 'verlauf'});
     const antw = () =>
       el(
         'button',
         {
           onclick: () => {
             const b = el('div', {class: 'msg ich entwurf'});
-            v.append(b);
+            verlauf.append(b);
             bearbeiten(
               b,
               '',
@@ -232,27 +231,7 @@
         },
         '↩ antworten'
       );
-    if (offen)
-      kn.append(
-        antw(),
-        k.status === 'erledigt'
-          ? el('button', {onclick: () => fadenAktion({aktion: 'oeffnen', id: k.id})}, 'wieder öffnen')
-          : el(
-              'button',
-              {title: 'Gespräch als erledigt markieren', onclick: () => fadenAktion({aktion: 'erledigt', id: k.id})},
-              '✓ erledigt'
-            ),
-        el(
-          'button',
-          {
-            title: 'ganzes Gespräch löschen',
-            onclick: () => {
-              if (confirm('Ganzes Gespräch löschen?')) fadenAktion({aktion: 'loeschen', id: k.id});
-            }
-          },
-          '🗑'
-        )
-      );
+    if (offen) kn.append(antw(), ...fadenKnoepfe(k));
     const er = k.erledigt
       ? el(
           'span',
@@ -272,51 +251,70 @@
           'damals: ' + k.zeile_text.trim()
         )
       );
-    const v = el('div', {class: 'verlauf'});
-    k.nachrichten.forEach(m => {
-      const ich = m.von === 'ich',
-        ent = ich && !m.gesendet,
-        mb = el('div', {class: 'msg ' + (ich ? 'ich' : 'claude') + (ent ? ' entwurf' : '')});
-      const haken = !ich
-        ? null
-        : ent
-          ? el('span', {}, 'Entwurf')
-          : el(
-              'span',
-              {
-                class: 'haken' + (m.abgeholt ? ' abgeholt' : ''),
-                title: m.abgeholt
-                  ? 'von ' + wer + ' abgeholt um ' + uhrzeit(m.abgeholt)
-                  : 'gesendet, noch nicht abgeholt'
-              },
-              m.abgeholt ? '✓✓' : '✓'
-            );
-      const mk = el(
-        'div',
-        {class: 'mk'},
-        el('b', {}, ich ? 'Du' : '🤖 ' + (m.wer || wer)),
-        el('span', {}, uhrzeit(m.gesendet || m.zeit)),
-        haken
-      );
-      if (ent && offen)
-        mk.append(
-          el(
-            'button',
-            {
-              onclick: () => bearbeiten(mb, m.text, t => fadenAktion({aktion: 'aendern', id: k.id, nid: m.id, text: t}))
-            },
-            '✎'
-          ),
-          el('button', {onclick: () => fadenAktion({aktion: 'loeschen', id: k.id, nid: m.id})}, '🗑')
-        );
-      mb.append(mk, el('div', {class: 'mt'}, ...verlinkt(m.text, k.links)));
-      v.append(mb);
-    });
-    box.append(v);
+    k.nachrichten.forEach(m => verlauf.append(nachrichtBox(k, m, wer, offen)));
+    box.append(verlauf);
     const sa = sieheAuch(k.see_also);
     if (sa) box.append(sa);
     if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten (lange Fäden)
     return box;
+  }
+  /** Knöpfe eines offenen Fadens neben „antworten“: erledigt bzw. wieder öffnen, löschen. */
+  function fadenKnoepfe(k) {
+    return [
+      k.status === 'erledigt'
+        ? el('button', {onclick: () => fadenAktion({aktion: 'oeffnen', id: k.id})}, 'wieder öffnen')
+        : el(
+            'button',
+            {title: 'Gespräch als erledigt markieren', onclick: () => fadenAktion({aktion: 'erledigt', id: k.id})},
+            '✓ erledigt'
+          ),
+      el(
+        'button',
+        {
+          title: 'ganzes Gespräch löschen',
+          onclick: () => {
+            if (confirm('Ganzes Gespräch löschen?')) fadenAktion({aktion: 'loeschen', id: k.id});
+          }
+        },
+        '🗑'
+      )
+    ];
+  }
+  /** Eine Nachricht im Verlauf: Kopf (wer, wann, ✓/✓✓ bzw. Entwurf mit ✎/🗑) und Text mit Code-Links. */
+  function nachrichtBox(k, m, wer, offen) {
+    const ich = m.von === 'ich',
+      entwurf = ich && !m.gesendet,
+      mb = el('div', {class: 'msg ' + (ich ? 'ich' : 'claude') + (entwurf ? ' entwurf' : '')});
+    const haken = !ich
+      ? null
+      : entwurf
+        ? el('span', {}, 'Entwurf')
+        : el(
+            'span',
+            {
+              class: 'haken' + (m.abgeholt ? ' abgeholt' : ''),
+              title: m.abgeholt ? 'von ' + wer + ' abgeholt um ' + uhrzeit(m.abgeholt) : 'gesendet, noch nicht abgeholt'
+            },
+            m.abgeholt ? '✓✓' : '✓'
+          );
+    const mk = el(
+      'div',
+      {class: 'mk'},
+      el('b', {}, ich ? 'Du' : '🤖 ' + (m.wer || wer)),
+      el('span', {}, uhrzeit(m.gesendet || m.zeit)),
+      haken
+    );
+    if (entwurf && offen)
+      mk.append(
+        el(
+          'button',
+          {onclick: () => bearbeiten(mb, m.text, t => fadenAktion({aktion: 'aendern', id: k.id, nid: m.id, text: t}))},
+          '✎'
+        ),
+        el('button', {onclick: () => fadenAktion({aktion: 'loeschen', id: k.id, nid: m.id})}, '🗑')
+      );
+    mb.append(mk, el('div', {class: 'mt'}, ...verlinkt(m.text, k.links)));
+    return mb;
   }
   function verlinkt(text, links) {
     // etwas Markdown (`code`, **fett**) und Code-Verweise (pfad:zeile, Dateiname) als Links aufs Popup

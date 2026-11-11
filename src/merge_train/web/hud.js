@@ -57,18 +57,27 @@
   function hudZeichnen() {
     if (!hudTeile) return;
     hudLage();
-    const KX = App.review.kontext;
-    const f = App.review.faeden || [],
-      neu = f.filter(k => k.status !== 'erledigt').length,
-      km = App.review.kommentare.filter(k => k.status !== 'loeschen'),
-      lokal = App.review.ausstehend || 0,
-      hw = App.review.hinweise.filter(h => h.status === 'offen').length,
-      ledT = {
-        an: 'Server läuft',
-        weg: 'Server nicht erreichbar',
-        neu: 'neuer Server – Seite lädt neu, sobald kein Eingabefeld offen ist'
-      }[ledZustand];
-    const stand = el(
+    const ledTitel = {
+      an: 'Server läuft',
+      weg: 'Server nicht erreichbar',
+      neu: 'neuer Server – Seite lädt neu, sobald kein Eingabefeld offen ist'
+    }[ledZustand];
+    const zaehler = hudZaehler();
+    const zeilen = [
+      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand()),
+      el(
+        'div',
+        {class: 'hud-z'},
+        ...(zaehler.length
+          ? zaehler.flatMap((e, i) => (i ? [el('span', {class: 'hud-trenn'}, '·'), e] : [e]))
+          : [el('span', {}, 'keine Kommentare')])
+      )
+    ];
+    hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen), hudAgent(App.review.kontext));
+  }
+  /** Stand von merge-train selbst: Commit, Zeit, * bei nicht committeten Änderungen in src/. */
+  function hudStand() {
+    return el(
       'span',
       {
         class: 'hud-stand',
@@ -84,38 +93,39 @@
         ? 'merge-train ' + serverStand.commit + (serverStand.geaendert ? '*' : '') + ' · ' + serverStand.zeit
         : 'merge-train'
     );
-    const zl = [
+  }
+  /** Zähler: GitLab-Kommentare (davon lokal), offene Agent-Hinweise, KI-Threads (davon offen). */
+  function hudZaehler() {
+    const faeden = App.review.faeden || [],
+      offen = faeden.filter(k => k.status !== 'erledigt').length,
+      kommentare = App.review.kommentare.filter(k => k.status !== 'loeschen'),
+      lokal = App.review.ausstehend || 0,
+      hinweise = App.review.hinweise.filter(h => h.status === 'offen').length;
+    return [
       mitReview
         ? el(
             'span',
-            {title: km.length + ' GitLab-Kommentar(e), davon ' + lokal + ' noch nicht in GitLab'},
-            '💬 ' + km.length + (lokal ? ' (' + lokal + ' lokal)' : '')
+            {title: kommentare.length + ' GitLab-Kommentar(e), davon ' + lokal + ' noch nicht in GitLab'},
+            '💬 ' + kommentare.length + (lokal ? ' (' + lokal + ' lokal)' : '')
           )
         : null,
-      mitReview && hw ? el('span', {title: hw + ' Agent-Hinweis(e) offen'}, '🤖 ' + hw) : null,
-      f.length
+      mitReview && hinweise ? el('span', {title: hinweise + ' Agent-Hinweis(e) offen'}, '🤖 ' + hinweise) : null,
+      faeden.length
         ? el(
             'span',
             {
               title:
-                f.length +
+                faeden.length +
                 ' KI-Thread(s)' +
-                (neu ? ', davon ' + neu + ' noch offen (nicht erledigt)' : ', alle erledigt')
+                (offen ? ', davon ' + offen + ' noch offen (nicht erledigt)' : ', alle erledigt')
             },
-            '🧵 ' + f.length + (neu ? ' (' + neu + ' offen)' : '')
+            '🧵 ' + faeden.length + (offen ? ' (' + offen + ' offen)' : '')
           )
         : null
     ].filter(Boolean);
-    const zeilen = [
-      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledT}), stand),
-      el(
-        'div',
-        {class: 'hud-z'},
-        ...(zl.length
-          ? zl.flatMap((e, i) => (i ? [el('span', {class: 'hud-trenn'}, '·'), e] : [e]))
-          : [el('span', {}, 'keine Kommentare')])
-      )
-    ];
+  }
+  /** Rechts: wer zuhört, darunter der Kontext-Füllstand der Agenten-Session (KX aus kontext, sonst ohne Balken). */
+  function hudAgent(KX) {
     const SW = (KX && KX.schwellen) || [15, 20, 25, 35],
       ag = el(
         'div',
@@ -131,31 +141,30 @@
           App.review.horcht ? '🎧 ' + App.review.horcht + ' hört zu' : '🎧 –'
         )
       );
-    if (KX) {
-      const p = Math.min(100, KX.prozent),
-        c = ctxFarbe(KX.prozent, SW);
-      ag.append(
-        el(
-          'span',
-          {
-            class: 'hud-ctx',
-            style: `background:linear-gradient(to right,${c} ${p}%,rgba(255,255,255,.07) ${p}%)`,
-            title:
-              'Kontext von ' +
-              KX.name +
-              ': ' +
-              tokenKurz(KX.tokens) +
-              ' von ' +
-              tokenKurz(KX.fenster) +
-              ' Tokens' +
-              (App.review.horcht ? '' : ' (arbeitet gerade, hört nicht zu)') +
-              (KX.prozent >= SW[2] ? ' – im Terminal /compact, wenn ein Thema abgeschlossen ist' : '')
-          },
-          KX.prozent + ' % ctx'
-        )
-      );
-    }
-    hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen), ag);
+    if (!KX) return ag;
+    const p = Math.min(100, KX.prozent),
+      c = ctxFarbe(KX.prozent, SW);
+    ag.append(
+      el(
+        'span',
+        {
+          class: 'hud-ctx',
+          style: `background:linear-gradient(to right,${c} ${p}%,rgba(255,255,255,.07) ${p}%)`,
+          title:
+            'Kontext von ' +
+            KX.name +
+            ': ' +
+            tokenKurz(KX.tokens) +
+            ' von ' +
+            tokenKurz(KX.fenster) +
+            ' Tokens' +
+            (App.review.horcht ? '' : ' (arbeitet gerade, hört nicht zu)') +
+            (KX.prozent >= SW[2] ? ' – im Terminal /compact, wenn ein Thema abgeschlossen ist' : '')
+        },
+        KX.prozent + ' % ctx'
+      )
+    );
+    return ag;
   }
   // Balkenfarbe Kontext, Schwellen [a,b,c,d] aus kontext_schwellen: bis a grün, bis b nach orange, bis c nach rot, dann
   // rot, ab d giftlila (Klasse gift, ohne Übergang)

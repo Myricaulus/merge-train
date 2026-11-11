@@ -245,6 +245,7 @@
     }
     reihenfolge(ids);
   }
+  /** Eine Box der Kommentarliste (id kliste / kliste-ki) füllen; sortierbar: Knopf „sortieren“ (Sende-Reihenfolge). */
   function kasten(id, name, items, sortierbar) {
     const k = document.getElementById(id);
     if (!k) return;
@@ -252,110 +253,111 @@
     const sm = k.querySelector('summary'),
       s = sortierbar && sortieren && items.length > 1;
     sm.replaceChildren(name + ' (' + items.length + ')');
-    if (sortierbar && items.length > 1)
-      sm.append(
-        el(
-          'button',
-          {
-            class: 'sortknopf',
-            title: sortieren
-              ? 'Sortieren beenden'
-              : 'Reihenfolge ändern – in dieser Reihenfolge gehen die Kommentare an GitLab',
-            onclick: e => {
-              e.preventDefault();
-              sortieren = !sortieren;
-              k.open = true;
-              kommentarListe();
-            }
-          },
-          sortieren ? '✓ fertig' : '⇅ sortieren'
-        )
-      );
-    const titel = x =>
-      x.title || (x.hinweis && (App.review.hinweise.find(h => h.key === x.hinweis) || {}).title) || null;
+    if (sortierbar && items.length > 1) sm.append(sortKnopf(k));
     k.querySelector('div').replaceChildren(
       ...items.map(i => {
-        const t = String(i.x.text || ((i.x.nachrichten && i.x.nachrichten[0]) || {}).text || '').replace(/\*\*|`/g, ''),
-          f = titel(i.x) || (i.f && t.startsWith(i.f) ? t.slice(i.f.length).trim() : t);
-        const e = el(
-          'div',
-          {class: 'ke ' + i.art + (s ? ' sort' : ''), title: f, onclick: s ? null : () => springen(i)},
-          s ? el('span', {class: 'griff', title: 'ziehen zum Umsortieren'}, '⠿') : null,
-          el(
-            'span',
-            {
-              class: 'ki ' + ((App.statusTexte[i.st] || [])[1] || ''),
-              title: i.st ? (App.statusTexte[i.st] || [''])[0] : 'Agent-Hinweis'
-            },
-            i.art === 'hw' ? '🤖' : '💬'
-          ),
-          ['uebertragen', 'geaendert', 'weg'].includes(i.st) && id === 'kliste'
-            ? el(
-                'span',
-                {
-                  class: 'gesendet',
-                  title:
-                    'schon an GitLab gesendet' +
-                    (i.st === 'geaendert' ? ' – Änderung wird beim nächsten Abschließen übertragen' : '')
-                },
-                '➜'
-              )
-            : null,
-          id === 'kliste-ki'
-            ? i.st === 'erledigt'
-              ? el('span', {class: 'zu erledigt', title: 'erledigt'}, '✓')
-              : el(
-                  'span',
-                  {
-                    class: 'zu',
-                    title: 'noch offen – Klick: als erledigt markieren',
-                    onclick: e => {
-                      e.stopPropagation();
-                      App.fadenAktion({aktion: 'erledigt', id: i.id});
-                    }
-                  },
-                  '○'
-                )
-            : null,
-          i.f ? el('b', {}, i.f) : null,
-          el('span', {class: 'kt2'}, f),
-          s
-            ? el(
-                'span',
-                {class: 'pfeile'},
-                el('button', {title: 'ganz nach oben', onclick: () => verschieben(i.id, 'oben')}, '⤒'),
-                el('button', {title: 'ganz nach unten', onclick: () => verschieben(i.id, 'unten')}, '⤓')
-              )
-            : null
-        );
-        if (s) {
-          e.draggable = true;
-          const weg = () => e.classList.remove('drop-oben', 'drop-unten');
-          e.addEventListener('dragstart', ev => {
-            ev.dataTransfer.setData('text/plain', i.id);
-            ev.dataTransfer.effectAllowed = 'move';
-            e.classList.add('zieht');
-          });
-          e.addEventListener('dragend', () => e.classList.remove('zieht'));
-          e.addEventListener('dragover', ev => {
-            ev.preventDefault();
-            const r = e.getBoundingClientRect(),
-              u = ev.clientY >= r.top + r.height / 2;
-            e.classList.toggle('drop-oben', !u);
-            e.classList.toggle('drop-unten', u);
-          });
-          e.addEventListener('dragleave', weg);
-          e.addEventListener('drop', ev => {
-            ev.preventDefault();
-            const von = ev.dataTransfer.getData('text/plain'),
-              u = e.classList.contains('drop-unten');
-            weg();
-            if (von && von !== i.id) verschieben(von, i.id, u);
-          });
-        }
+        const e = listenEintrag(id, i, s);
+        if (s) ziehbarMachen(e, i);
         return e;
       })
     );
+  }
+  function sortKnopf(k) {
+    return el(
+      'button',
+      {
+        class: 'sortknopf',
+        title: sortieren
+          ? 'Sortieren beenden'
+          : 'Reihenfolge ändern – in dieser Reihenfolge gehen die Kommentare an GitLab',
+        onclick: e => {
+          e.preventDefault();
+          sortieren = !sortieren;
+          k.open = true;
+          kommentarListe();
+        }
+      },
+      sortieren ? '✓ fertig' : '⇅ sortieren'
+    );
+  }
+  const eintragTitel = x =>
+    x.title || (x.hinweis && (App.review.hinweise.find(h => h.key === x.hinweis) || {}).title) || null;
+  /** Zeile der Liste: Symbol, ➜ (schon gesendet), ○/✓ (Faden offen/erledigt), Ort, Text; beim Sortieren Pfeile. */
+  function listenEintrag(id, i, s) {
+    const t = String(i.x.text || ((i.x.nachrichten && i.x.nachrichten[0]) || {}).text || '').replace(/\*\*|`/g, ''),
+      f = eintragTitel(i.x) || (i.f && t.startsWith(i.f) ? t.slice(i.f.length).trim() : t);
+    return el(
+      'div',
+      {class: 'ke ' + i.art + (s ? ' sort' : ''), title: f, onclick: s ? null : () => springen(i)},
+      s ? el('span', {class: 'griff', title: 'ziehen zum Umsortieren'}, '⠿') : null,
+      el(
+        'span',
+        {
+          class: 'ki ' + ((App.statusTexte[i.st] || [])[1] || ''),
+          title: i.st ? (App.statusTexte[i.st] || [''])[0] : 'Agent-Hinweis'
+        },
+        i.art === 'hw' ? '🤖' : '💬'
+      ),
+      ['uebertragen', 'geaendert', 'weg'].includes(i.st) && id === 'kliste' ? gesendetPfeil(i) : null,
+      id === 'kliste-ki' ? erledigtKnopf(i) : null,
+      i.f ? el('b', {}, i.f) : null,
+      el('span', {class: 'kt2'}, f),
+      s
+        ? el(
+            'span',
+            {class: 'pfeile'},
+            el('button', {title: 'ganz nach oben', onclick: () => verschieben(i.id, 'oben')}, '⤒'),
+            el('button', {title: 'ganz nach unten', onclick: () => verschieben(i.id, 'unten')}, '⤓')
+          )
+        : null
+    );
+  }
+  function gesendetPfeil(i) {
+    const titel =
+      'schon an GitLab gesendet' +
+      (i.st === 'geaendert' ? ' – Änderung wird beim nächsten Abschließen übertragen' : '');
+    return el('span', {class: 'gesendet', title: titel}, '➜');
+  }
+  function erledigtKnopf(i) {
+    if (i.st === 'erledigt') return el('span', {class: 'zu erledigt', title: 'erledigt'}, '✓');
+    return el(
+      'span',
+      {
+        class: 'zu',
+        title: 'noch offen – Klick: als erledigt markieren',
+        onclick: e => {
+          e.stopPropagation();
+          App.fadenAktion({aktion: 'erledigt', id: i.id});
+        }
+      },
+      '○'
+    );
+  }
+  /** Drag & Drop in der Liste: oben/unten von der Mitte des Ziels abhängig. */
+  function ziehbarMachen(e, i) {
+    e.draggable = true;
+    const weg = () => e.classList.remove('drop-oben', 'drop-unten');
+    e.addEventListener('dragstart', ev => {
+      ev.dataTransfer.setData('text/plain', i.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      e.classList.add('zieht');
+    });
+    e.addEventListener('dragend', () => e.classList.remove('zieht'));
+    e.addEventListener('dragover', ev => {
+      ev.preventDefault();
+      const r = e.getBoundingClientRect(),
+        u = ev.clientY >= r.top + r.height / 2;
+      e.classList.toggle('drop-oben', !u);
+      e.classList.toggle('drop-unten', u);
+    });
+    e.addEventListener('dragleave', weg);
+    e.addEventListener('drop', ev => {
+      ev.preventDefault();
+      const von = ev.dataTransfer.getData('text/plain'),
+        u = e.classList.contains('drop-unten');
+      weg();
+      if (von && von !== i.id) verschieben(von, i.id, u);
+    });
   }
   const ort = x => (x.path ? x.path + (x.b ? ':' + x.b : x.a ? ':' + x.a + ' (alt)' : '') : 'allgemein');
   function ortLink(x) {
@@ -467,138 +469,131 @@
       if (e) e.remove();
     });
   }
+  function gitlabLink(pfad, zeile, bisZ) {
+    if (!projektUrl) return null;
+    const href =
+      projektUrl +
+      '/-/blob/' +
+      waggon.sha +
+      '/' +
+      pfad.split('/').map(encodeURIComponent).join('/') +
+      (zeile ? '#L' + zeile + (bisZ ? '-' + bisZ : '') : '');
+    return el('a', {class: 'gl-link', target: '_blank', rel: 'noopener', href}, 'GitLab ↗');
+  }
+  /** Popup mit Code im MR-Stand; liegt die Datei im Diff: deren Diff (aufklappbar). */
   function popup(pfad, zeile, label, bisZ) {
-    schliessen(); // Code im MR-Stand; liegt die Datei im Diff: deren Diff (aufklappbar)
+    schliessen();
     const di = dateien.findIndex(d => d.dataset.pfad === pfad),
-      mitDiff = di >= 0 && !nurLesen,
-      ende = bisZ || zeile,
-      info = el('span', {class: 'sub'}),
-      pb = el('div', {class: 'pb'});
-    const gl = projektUrl
-      ? el(
-          'a',
-          {
-            class: 'gl-link',
-            target: '_blank',
-            rel: 'noopener',
-            href:
-              projektUrl +
-              '/-/blob/' +
-              waggon.sha +
-              '/' +
-              pfad.split('/').map(encodeURIComponent).join('/') +
-              (zeile ? '#L' + zeile + (bisZ ? '-' + bisZ : '') : '')
-          },
-          'GitLab ↗'
-        )
-      : null;
-    const kn = el('span', {class: 'knoepfe'}),
+      p = {
+        pfad,
+        zeile,
+        ende: bisZ || zeile,
+        info: el('span', {class: 'sub'}),
+        pb: el('div', {class: 'pb'}),
+        knoepfe: el('span', {class: 'knoepfe'}),
+        gitlab: gitlabLink(pfad, zeile, bisZ),
+        zu: el('button', {title: 'schließen (Esc)', onclick: schliessen}, '✕')
+      },
       wo = pfad + (zeile ? ':' + zeile + (bisZ ? '-' + bisZ : '') : '');
     document.body.append(
       el('div', {id: 'schleier', onclick: schliessen}),
-      el('div', {id: 'popup'}, el('div', {class: 'pk'}, el('b', {}, (label ? label + ' – ' : '') + wo), info, kn), pb)
+      el(
+        'div',
+        {id: 'popup'},
+        el('div', {class: 'pk'}, el('b', {}, (label ? label + ' – ' : '') + wo), p.info, p.knoepfe),
+        p.pb
+      )
     );
-    const zu = el('button', {title: 'schließen (Esc)', onclick: schliessen}, '✕');
-    if (mitDiff) {
-      const d = dateien[di];
-      info.textContent = 'Diff im MR';
-      kn.append(
-        el(
-          'button',
-          {title: 'alle ausgeblendeten Zeilen dieser Datei laden', onclick: () => alleAuf(pb)},
-          'alles aufklappen'
-        ),
-        zeile
-          ? el(
-              'button',
-              {
-                onclick: () => {
-                  schliessen();
-                  zeileZeigen({datei: di, a: null, b: zeile, path: pfad});
-                }
-              },
-              'im Diff zeigen'
-            )
-          : '',
-        gl || '',
-        zu
-      );
-      dateiLaden(d).then(ok => {
-        if (!pb.isConnected) return; // Popup inzwischen zu
-        if (!ok) {
-          pb.textContent = 'Diff nicht verfügbar';
-          return;
-        }
-        // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie
-        // dort
-        const platz = el('div', {class: 'leihplatz', style: 'height:' + d.offsetHeight + 'px'});
-        d.replaceWith(platz);
-        d.open = true;
-        pb.append(d);
-        geliehen = {d, platz};
-        if (!zeile) return;
-        const markieren = () => {
-          let erst = null;
-          d.querySelectorAll('tr[data-b]').forEach(t => {
-            const b = +t.dataset.b,
-              an = b >= zeile && b <= ende;
-            t.classList.toggle('ziel', an);
-            if (an && !erst && t.getClientRects().length) erst = t;
-          });
-          if (erst)
-            pb.scrollTop += erst.getBoundingClientRect().top - pb.getBoundingClientRect().top - pb.clientHeight / 2;
-          return !!erst;
-        };
-        if (markieren()) return;
-        const lu = [...d.querySelectorAll('tr.lu')].find(t => +t.dataset.von <= ende && zeile <= +t.dataset.bis);
-        if (lu) aufklappen(lu, zeile - 12, ende + 12).then(markieren);
-      });
-      return;
-    }
-    const st = {von: Math.max(1, (zeile || 1) - 12), bis: (ende || 1) + 12},
-      tb = el('tbody');
-    const hoch = el(
+    if (di >= 0 && !nurLesen) popupMitDiff(p, di);
+    else popupMitCode(p);
+  }
+  /** Popup: die Datei des Diffs selbst (geliehen, nicht kopiert), Zeilen markiert. */
+  function popupMitDiff(p, di) {
+    const {pfad, zeile, ende, info, pb} = p,
+      d = dateien[di];
+    info.textContent = 'Diff im MR';
+    p.knoepfe.append(
+      el(
         'button',
-        {
-          onclick: () => {
-            st.von = Math.max(1, st.von - 30);
-            lade('oben');
-          }
-        },
-        '▲ mehr'
+        {title: 'alle ausgeblendeten Zeilen dieser Datei laden', onclick: () => alleAuf(pb)},
+        'alles aufklappen'
       ),
-      runter = el(
+      zeile
+        ? el(
+            'button',
+            {
+              onclick: () => {
+                schliessen();
+                zeileZeigen({datei: di, a: null, b: zeile, path: pfad});
+              }
+            },
+            'im Diff zeigen'
+          )
+        : '',
+      p.gitlab || '',
+      p.zu
+    );
+    dateiLaden(d).then(ok => {
+      if (!pb.isConnected) return; // Popup inzwischen zu
+      if (!ok) {
+        pb.textContent = 'Diff nicht verfügbar';
+        return;
+      }
+      // dieselbe Datei wie auf der Seite (nicht kopiert): Kommentare, Hinweise, Kontext und Klicks gelten hier wie
+      // dort
+      const platz = el('div', {class: 'leihplatz', style: 'height:' + d.offsetHeight + 'px'});
+      d.replaceWith(platz);
+      d.open = true;
+      pb.append(d);
+      geliehen = {d, platz};
+      if (!zeile) return;
+      const markieren = () => {
+        let erst = null;
+        d.querySelectorAll('tr[data-b]').forEach(t => {
+          const b = +t.dataset.b,
+            an = b >= zeile && b <= ende;
+          t.classList.toggle('ziel', an);
+          if (an && !erst && t.getClientRects().length) erst = t;
+        });
+        if (erst)
+          pb.scrollTop += erst.getBoundingClientRect().top - pb.getBoundingClientRect().top - pb.clientHeight / 2;
+        return !!erst;
+      };
+      if (markieren()) return;
+      const lu = [...d.querySelectorAll('tr.lu')].find(t => +t.dataset.von <= ende && zeile <= +t.dataset.bis);
+      if (lu) aufklappen(lu, zeile - 12, ende + 12).then(markieren);
+    });
+  }
+  /** Popup: Zeilen um die Stelle aus dem MR-Stand, nach oben/unten oder ganz nachladbar. */
+  function popupMitCode(p) {
+    const {pfad, zeile, ende, info, pb} = p,
+      bereich = {von: Math.max(1, (zeile || 1) - 12), bis: (ende || 1) + 12},
+      tb = el('tbody');
+    const knopf = (text, titel, aendern, wie) =>
+      el(
         'button',
         {
+          title: titel,
           onclick: () => {
-            st.bis += 30;
-            lade('unten');
+            aendern();
+            lade(wie);
           }
         },
-        '▼ mehr'
+        text
       );
-    const ganz = el(
-      'button',
-      {
-        title: 'ganze Datei laden',
-        onclick: () => {
-          st.von = 1;
-          st.bis = 1e6;
-          lade('erst');
-        }
-      },
-      'ganze Datei'
-    );
-    kn.append(hoch, runter, ganz, gl || '', zu);
+    const hoch = knopf('▲ mehr', null, () => (bereich.von = Math.max(1, bereich.von - 30)), 'oben'),
+      runter = knopf('▼ mehr', null, () => (bereich.bis += 30), 'unten'),
+      ganz = knopf('ganze Datei', 'ganze Datei laden', () => Object.assign(bereich, {von: 1, bis: 1e6}), 'erst');
+    p.knoepfe.append(hoch, runter, ganz, p.gitlab || '', p.zu);
     pb.append(el('table', {}, el('colgroup', {}, el('col', {class: 'cn'}), el('col', {})), tb));
     function lade(wie) {
       const rest = pb.scrollHeight - pb.scrollTop;
-      zeilenHolen(pfad, st.von, st.bis, true).then(r => {
+      zeilenHolen(pfad, bereich.von, bereich.bis, true).then(r => {
         if (!r.ok) {
           tb.replaceChildren(el('tr', {}, el('td', {}, ''), el('td', {class: 'warn'}, r.text)));
           return;
         }
-        Object.assign(st, {von: r.von, bis: r.bis});
+        Object.assign(bereich, {von: r.von, bis: r.bis});
         tb.replaceChildren(
           ...r.zeilen.map((h, i) => {
             const nr = r.von + i;
@@ -608,8 +603,8 @@
             );
           })
         );
-        hoch.disabled = st.von <= 1;
-        runter.disabled = ganz.disabled = st.bis >= r.n;
+        hoch.disabled = bereich.von <= 1;
+        runter.disabled = ganz.disabled = bereich.bis >= r.n;
         info.textContent = r.n + ' Zeilen · Stand ' + r.sha.slice(0, 8);
         if (wie === 'erst') {
           const z = tb.querySelector('tr.ziel');
