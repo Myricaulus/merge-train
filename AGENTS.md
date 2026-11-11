@@ -26,6 +26,14 @@ nie Review-Kommentare an. Er ändert nur drafts und legt sonst einen neuen draft
 als Marker in der Review-JSON des MR).
 Achtung: GitLab nennt auch sent-Kommentare „draft notes“; „draft“ meint hier immer den Agent-Hinweis.
 
+## Funktionen und DRY
+
+Vor jeder Änderung in [`docs/funktionen.md`](docs/funktionen.md) nachsehen, ob es die Funktion oder einen passenden
+Baustein schon gibt. Wenn ja, diesen erweitern statt daneben etwas Neues zu bauen: DRY bleiben. Fällt bei einer
+geplanten Änderung schon bestehende Duplikation im Code auf, sie gleich mit beseitigen, sofern sie zur geplanten
+Änderung passt (gleiche Stelle, gleicher Baustein). Sonst nur benennen. Die Datei beim Ändern mitpflegen: neue
+Funktion = neuer Eintrag, neue Variante = ein Wort in ihrer Achse.
+
 ## Code
 
 Änderungen nur in `src/` (Python-Module in `src/merge_train/`, `src/merge_train/web/*.css|js`), danach `./bauen`. `merge-train` ist das gebaute
