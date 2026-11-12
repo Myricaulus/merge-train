@@ -125,8 +125,8 @@
     oeffnen: k => ({aktion: 'wiedereroeffnen', diskussion: k.diskussion}),
     abhaken: k => ({aktion: 'abhaken', diskussion: k.diskussion}), // lokal erledigt, GitLab bleibt offen
     aufhaken: k => ({aktion: 'aufhaken', diskussion: k.diskussion}),
-    aendern: (k, d) => ({aktion: 'aendern', id: d.nid, text: d.text}), // Antwort-Entwurf = Review-Kommentar
-    loeschen: (k, d) => ({aktion: 'loeschen', id: d.nid})
+    aendern: (_k, d) => ({aktion: 'aendern', id: d.nid, text: d.text}), // Antwort-Entwurf = Review-Kommentar
+    loeschen: (_k, d) => ({aktion: 'loeschen', id: d.nid})
   };
   function ziel(k) {
     if (k.ziel === 'gitlab') return d => kommentarAktion(GITLAB_AKTIONEN[d.aktion](k, d));

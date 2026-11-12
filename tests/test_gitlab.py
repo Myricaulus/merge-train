@@ -2,13 +2,20 @@
 """Ende-zu-Ende-Test des GitLab-Modus mit tests/fake-glab (kein echtes GitLab nötig).
 
 Aufruf:  python3 tests/test_gitlab.py [--behalten]
-Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, Port 8799), startet einen eigenen Server.
+Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, freie Ports), startet einen eigenen Server.
 """
-import glob, json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import glob, json, os, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 SKRIPT = os.path.join(HIER, "..", "merge-train")
-PORT = 8799
+def freier_port():
+    """Freier Port vom System: feste Ports stoßen mit liegengebliebenen Servern (andere Sessions, abgebrochene Läufe)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT, PORT_LOKAL, PORT_GEMISCHT = freier_port(), freier_port(), freier_port()  # GitLab-Modus, lokal_test, gemischt_test
 T = tempfile.mkdtemp(prefix="merge-train-test-")
 REPO = os.path.join(T, "repo")
 AGENT_VARS = ("AI_AGENT", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "OPENCODE", "MERGE_TRAIN_AGENT")
@@ -191,15 +198,15 @@ def lokal_test():
     open(f"{T}/bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/bin/notify-send", 0o755)  # keine Desktop-Meldungen
     env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal",
                PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
-    open(env["MERGE_TRAIN_CONFIG"], "w").write(f'lokal = true\ngitlab = false\nprojekte = "{T}/Projects"\nport = 8798\nbrowser = "true"\n')
+    open(env["MERGE_TRAIN_CONFIG"], "w").write(f'lokal = true\ngitlab = false\nprojekte = "{T}/Projects"\nport = {PORT_LOKAL}\nbrowser = "true"\n')
     srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
     try:
         for _ in range(50):
             try:
-                urllib.request.urlopen("http://127.0.0.1:8798/ping", timeout=1); break
+                urllib.request.urlopen(f"http://127.0.0.1:{PORT_LOKAL}/ping", timeout=1); break
             except OSError:
                 time.sleep(0.1)
-        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:8798{p}", timeout=60).read().decode()
+        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:{PORT_LOKAL}{p}", timeout=60).read().decode()
         seite = hol("/proj.html")
         k = open(f"{T}/cache-lokal/merge-train/schluessel").read().strip()
         pruefe('class="lu" data-von="1" data-bis="16"' in seite and "generierte Datei" in seite and f"?commit={c1}" in seite
@@ -223,7 +230,7 @@ def lokal_test():
 
 def gespraech_test(proj, env, k, hol, g):
     """Gespräch im lokalen Modus: Frage an einer Zeile → Feedback senden → Agent holt ab und antwortet."""
-    port = 8798
+    port = PORT_LOKAL
     def post_l(pfad, d):
         req = urllib.request.Request(f"http://127.0.0.1:{port}{pfad}", json.dumps(d).encode(),
                                      {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"})
@@ -342,15 +349,15 @@ def gemischt_test(mr):
                TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
     open(env["MERGE_TRAIN_CONFIG"], "w").write(
         f'lokal = true\ngitlab = true\nglab = "{sys.executable} {HIER}/fake-glab"\nprojekte = "{T}/Projects"\n'
-        f'port = 8797\nbrowser = "true"\n')
+        f'port = {PORT_GEMISCHT}\nbrowser = "true"\n')
     srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
     try:
         for _ in range(50):
             try:
-                urllib.request.urlopen("http://127.0.0.1:8797/ping", timeout=1); break
+                urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/ping", timeout=1); break
             except OSError:
                 time.sleep(0.1)
-        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:8797{p}", timeout=60).read().decode()
+        hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}{p}", timeout=60).read().decode()
         # neuer lokaler Stand, damit der lokale Waggon wieder offen ist
         proj = f"{T}/Projects/proj"
         open(f"{proj}/c.py", "w").write("neu = 1\n")
@@ -366,7 +373,7 @@ def gemischt_test(mr):
                "gemischt: MR-Seite mit Review-Knopf, Leitstand beider Quellen")
         ls_ = hol("/proj.html")
         pruefe('id="fertig"' in ls_ and 'id="abschliessen"' not in ls_ and 'data-g="mrliste"' in ls_, "gemischt: lokale Seite mit fertig")
-        start = urllib.request.urlopen("http://127.0.0.1:8797/", timeout=60)
+        start = urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/", timeout=60)
         pruefe(start.geturl().endswith("/proj.html"), "gemischt: Start springt zum offenen lokalen Waggon")
     finally:
         srv.terminate(); srv.wait()
@@ -558,7 +565,7 @@ def main():
         pruefe("App.cs:50" in r.stdout and "allgemeiner Kommentar" in r.stdout, "K2 außerhalb des Diffs erkannt")
         pruefe("needle nicht gefunden" in r.stdout, "#3 needle nicht gefunden")
         r = sh(sys.executable, SKRIPT, "agent", "zeigen", hw, "--nicht-oeffnen", check=False)
-        pruefe("http://127.0.0.1:8799/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
+        pruefe(f"http://127.0.0.1:{PORT}/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
         pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
         pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
         pruefe("siehe auch" not in r.stdout, "see_also aufgelöst")
