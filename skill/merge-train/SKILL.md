@@ -141,7 +141,7 @@ EOF
 When the user asks you to listen ("hör auf merge-train", "hör zu"), or after answering when the prompt says so:
 
 1. Start `merge-train agent horchen [MR]` **in the background** (Bash `run_in_background`). The page then shows
-   „🎧 Claude hört zu“, and „An Agent senden“/„Fragen senden“ goes straight to you. Use `--als <Name>` if you are not
+   „🎧 Claude hört zu“, and „An Agent senden“ goes straight to you. Use `--als <Name>` if you are not
    Claude (e.g. `--als Copilot`).
 2. When it exits with messages, its output is the same as `feedback` (already marked as picked up): answer each
    thread with `merge-train agent antworten` (not in the console), then start `horchen` again.

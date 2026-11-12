@@ -60,7 +60,7 @@ merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-U
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
 merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
-merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „An Agent senden“/„Fragen senden“ gedrückt wird
+merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „An Agent senden“ gedrückt wird
 merge-train agent thread [--ort pfad:zeile[-bis]] [--siehe …] [--vergleich A B] "…"   # Agent: eigenen Thread anlegen
 ```
 
@@ -207,7 +207,7 @@ Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cach
 Auch zu einem MR kann man einen Agenten fragen (Claude, Copilot …), wie im lokalen Modus, nur privat:
 Im Kommentar-Editor gibt es neben „als Review-Kommentar“ je Agent einen Knopf **„an <Name>“**. Solche Fragen liegen
 als eigene Fäden in der Review-Datei des MR und gehen **nie** nach GitLab („Review abschließen“ überspringt sie).
-„Fragen senden“ schickt die Entwürfe ab, die Antworten erscheinen als Gespräch an der Zeile.
+„An Agent senden“ schickt die Entwürfe ab, die Antworten erscheinen als Gespräch an der Zeile.
 
 Aktiv sind die Knöpfe nur für Agenten aus `[agenten]` in der Einstellung oder wenn gerade einer zuhört (sonst ausgegraut):
 
@@ -216,7 +216,7 @@ Aktiv sind die Knöpfe nur für Agenten aus `[agenten]` in der Einstellung oder 
 Copilot = "wt.exe -w 0 nt --title Copilot wsl.exe -e bash -lc 'cd {ordner} && copilot -i \"$0\"' {prompt}"   # Beispiel, anpassen
 ```
 
-„Fragen senden“ startet den Befehl (Platzhalter `{ordner}` = Klon, `{projekt}`, `{prompt}`), sofern nicht schon jemand
+„An Agent senden“ startet den Befehl (Platzhalter `{ordner}` = Klon, `{projekt}`, `{prompt}`), sofern nicht schon jemand
 zuhört. Der Agent braucht nur die Shell, Befehle wie im lokalen Modus, mit der MR-Kennung aus dem Prompt (im Klon geht
 es auch ohne):
 

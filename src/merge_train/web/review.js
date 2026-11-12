@@ -740,7 +740,7 @@
     if (!feedbackKnopf) return;
     feedbackKnopf.hidden = mitReview && !f.length;
     feedbackKnopf.disabled = !e;
-    const fw = mitReview ? 'Fragen senden' : 'An Agent senden';
+    const fw = 'An Agent senden';
     feedbackKnopf.textContent = e ? fw + ' (' + e + ')' : fw;
     sessionKnopf.hidden = !review.todo || !!review.horcht;
     document.title = (neu ? '(' + neu + ') ' : '') + seitenTitel;
