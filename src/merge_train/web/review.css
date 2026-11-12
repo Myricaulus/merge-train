@@ -25,6 +25,8 @@ tr.lu td{background:var(--hk);color:var(--muted);padding:2px 8px;font:12px syste
 .spaet button,tr.lu button,#popup button{font:12px system-ui,sans-serif;padding:0 8px;margin-left:6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
 #popup button:disabled{opacity:.4;cursor:default}
 tr.blink td{animation:blink 1.8s ease-out} @keyframes blink{0%,30%{background:var(--akt)}}
+/* Faden an einem Bereich ab–b (Strich links an den Zeilennummern), im Entwurf noch blau */
+tr.bereich td.n{box-shadow:inset 3px 0 0 var(--tf)} tr.bereich-neu td.n{box-shadow:inset 3px 0 0 var(--tn);background:var(--akt)}
 #quelle{font-size:13px;margin-top:4px} .quelle-ok{color:var(--p);font-size:13px}
 .sa{margin-top:4px;font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
 .sa a,a.ortlink{color:var(--tn);cursor:pointer;font:12px ui-monospace,monospace} .sa a:hover,a.ortlink:hover{text-decoration:underline}

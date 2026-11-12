@@ -67,6 +67,15 @@ def zurueck_diffs(ordner, bis, head, pfade):
 _VORWAERTS = {}
 
 
+def bereich_anfang_vorwaerts(ordner, von, bis, pfad, ab, b_neu):
+    """Erste Zeile ab eines Bereichs ab–b (Stand von) → Stand bis, passend zur schon umgerechneten letzten Zeile b_neu.
+    None = kein Bereich mehr (Anfang geändert oder nicht mehr vor dem Ende): der Faden hängt dann nur an b_neu."""
+    if not ab or not b_neu:
+        return None
+    neu = zeile_vorwaerts(ordner, von, bis, pfad, ab)
+    return neu if neu and neu < b_neu else None
+
+
 def zeile_vorwaerts(ordner, von, bis, pfad, b):
     """Zeile b (Stand von) → Zeile im Stand bis. None = Zeile seitdem geändert oder Datei weg."""
     if von == bis or not b:

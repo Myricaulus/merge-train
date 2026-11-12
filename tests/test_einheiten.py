@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from merge_train.waggon import Fehler, Waggon
 from merge_train.git import branch_aktualisieren, origin_voraus, zerlegen
-from merge_train.zeilen import alt_zeile, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts, zurueck_diffs
+from merge_train.zeilen import (alt_zeile, bereich_anfang_vorwaerts, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts,
+                                zurueck_diffs)
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
 from merge_train.review import Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
@@ -123,6 +124,14 @@ class Zeilen(unittest.TestCase):
         self.assertIsNone(v(5, C))      # Datei gelöscht
         self.assertEqual(zeile_vorwaerts(REPO, A, A, "a.txt", 3), 3)
         self.assertEqual(zeile_vorwaerts(REPO, A, B, "bleibt.txt", 1), 1)  # Datei unverändert
+
+    def test_bereich_wandert_mit(self):
+        v = lambda ab, b_neu: bereich_anfang_vorwaerts(REPO, A, B, "a.txt", ab, b_neu)
+        self.assertEqual(v(9, 15), 9)   # 9–14 → 9–15: die Einfügung liegt im Bereich
+        self.assertEqual(v(11, 15), 12)  # ganz unter der Einfügung
+        self.assertIsNone(v(3, 10))     # Anfang geändert: nur noch die letzte Zeile
+        self.assertIsNone(v(None, 10))  # kein Bereich
+        self.assertIsNone(v(12, 12))    # Anfang nicht mehr vor dem Ende
 
     def test_zurueck_diffs(self):
         r = zurueck_diffs(REPO, A, B, ["a.txt", "bleibt.txt"])

@@ -405,7 +405,8 @@
       if (von && von !== i.id) verschieben(von, i.id, u);
     });
   }
-  const ort = x => (x.path ? x.path + (x.b ? ':' + x.b : x.a ? ':' + x.a + ' (alt)' : '') : 'allgemein');
+  const ort = x =>
+    x.path ? x.path + (x.b ? ':' + (x.ab ? x.ab + '-' : '') + x.b : x.a ? ':' + x.a + ' (alt)' : '') : 'allgemein';
   function ortLink(x) {
     return x.path
       ? el('a', {class: 'ortlink', title: 'im Code zeigen', onclick: () => zeileZeigen(x)}, ort(x))

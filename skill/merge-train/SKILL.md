@@ -114,6 +114,7 @@ on your own, open questions. The user answers on the page; the answers reach you
 
 ```sh
 merge-train agent thread --ort <pfad>:<zeile> "Text"      # at a code line (current state, see the header of feedback)
+merge-train agent thread --ort <pfad>:<von>-<bis> "Text"  # at a range of lines (one --ort per thread; --siehe/--vergleich repeatable)
 merge-train agent thread - <<'EOF'                         # general thread (no --ort), text from stdin
 …
 EOF

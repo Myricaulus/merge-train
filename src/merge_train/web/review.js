@@ -618,6 +618,12 @@
       box
     );
   }
+  /** Zeilen ab–b (neue Seite) einer Tabelle mit cls markieren: Faden an einem Bereich bzw. Bereich im Entwurf. */
+  function bereichMarkieren(tab, ab, b, cls) {
+    tab.querySelectorAll('tr[data-b]').forEach(r => {
+      if (ab <= +r.dataset.b && +r.dataset.b <= b) r.classList.add(cls);
+    });
+  }
   function zeichnen() {
     // Kästen mit offenem Eingabefeld bleiben stehen (der Text darin soll nicht verloren gehen), alles andere wird neu
     // gezeichnet. Nach dem Schließen des Felds holt nachholen() den Kasten selbst nach.
@@ -625,6 +631,7 @@
     const bleibt = new Set(felder.map(b => b.dataset.id).filter(Boolean)),
       haelt = e => felder.some(b => e === b || e.contains(b));
     zeichnenWartet = felder.length > 0;
+    document.querySelectorAll('tr.bereich').forEach(r => r.classList.remove('bereich'));
     document.querySelectorAll('tr.kr').forEach(r => {
       if (!haelt(r)) r.remove();
     });
@@ -651,6 +658,7 @@
         const r = zeileFinden(tab, x.a, x.b);
         if (r) {
           einfuegen(r, mach(), tab);
+          if (x.ab) bereichMarkieren(tab, x.ab, x.b, 'bereich');
           ok = true;
         }
       });
@@ -886,6 +894,28 @@
     allg.forEach(f => s.append(f()));
     offen.forEach(b => s.append(b));
   } // offene Eingabefelder bleiben
+  // Neuer Entwurf an einer Zeile; Umschalt-Klick auf eine zweite Zeile derselben Tabelle macht daraus einen Bereich.
+  let entwurf = null;
+  function bereichAufziehen(tab, tr, b) {
+    if (!entwurf || !entwurf.zr.isConnected || entwurf.tab !== tab || entwurf.erste == null || b == null) return false;
+    if (mitReview) {
+      App.melden('Bereiche gehen bisher nur bei Fragen an Agenten (lokal), nicht bei Review-Kommentaren');
+      return true;
+    }
+    const ort = entwurf.ort,
+      ab = Math.min(entwurf.erste, b);
+    ort.b = Math.max(entwurf.erste, b);
+    if (ab < ort.b) ort.ab = ab;
+    else delete ort.ab;
+    ort.a = null;
+    tab.querySelectorAll('tr.bereich-neu').forEach(r => r.classList.remove('bereich-neu'));
+    bereichMarkieren(tab, ab, ort.b, 'bereich-neu');
+    let z = zeileFinden(tab, null, ort.b) || tr;
+    while (z.nextElementSibling && z.nextElementSibling.classList.contains('kr') && z.nextElementSibling !== entwurf.zr)
+      z = z.nextElementSibling;
+    z.after(entwurf.zr);
+    return true;
+  }
   document.addEventListener('click', e => {
     const td = e.target.closest('main td.n,#popup:not(.vergleich) td.n');
     if (!td || !td.textContent.trim()) return; // Seite und Popup (ausgeliehene Datei, nicht der Dateivergleich)
@@ -907,14 +937,22 @@
       App.melden('In dieser Ansicht nur rechts (MR-Stand) kommentierbar');
       return;
     }
+    if (e.shiftKey && bereichAufziehen(tab, tr, b)) return;
     const box = el('div', {class: 'kbox km'}),
-      zr = einfuegen(tr, box, tab);
+      zr = einfuegen(tr, box, tab),
+      ort = {datei: n, a, b},
+      weg = () => document.querySelectorAll('tr.bereich-neu').forEach(r => r.classList.remove('bereich-neu'));
+    weg();
+    entwurf = {tab, zr, ort, erste: b};
     bearbeiten(
       box,
       '',
-      neuSpeichern({datei: n, a, b}),
-      () => zr.remove(),
-      anKnoepfe({datei: n, a, b}),
+      neuSpeichern(ort),
+      () => {
+        weg();
+        zr.remove();
+      },
+      anKnoepfe(ort),
       agenten().length > 0
     );
   });

@@ -3,7 +3,7 @@ import glob, hashlib, json, os, re
 from .einstellungen import DATEN, KONF, jetzt
 from .waggon import Fehler, Waggon
 from .git import git, inhalt
-from .zeilen import alt_zeile, im_diff, zeile_vorwaerts
+from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
 from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_stand,
     faden_status, faeden_von, struktur_laden)
 from .hinweise import see_also_aufloesen
@@ -63,6 +63,7 @@ def gespraech_daten(waggon, ansicht=None):
             b = zeile_vorwaerts(struktur["ordner"], von, head, k["path"], b)
             if b is None:
                 unter = f'Zeile {k["b"]} hat sich seit dem Kommentar geändert'
+        ab = bereich_anfang_vorwaerts(struktur["ordner"], von, head, k.get("path"), k.get("ab"), b) if k.get("path") else None
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         a = alt_zeile(f, b) if f and b else (k.get("a") if not k.get("b") else None)
@@ -70,7 +71,7 @@ def gespraech_daten(waggon, ansicht=None):
         if f and b and not zeile_im_diff and not unter:
             unter = f"Zeile {b} liegt außerhalb der Änderungen"
         kommentare.append({"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
-                    "a": a, "b": b, "datei": i, "im_diff": zeile_im_diff, "unter": unter if i is not None else None,
+                    "a": a, "b": b, "ab": ab, "datei": i, "im_diff": zeile_im_diff, "unter": unter if i is not None else None,
                     "problem": unter, "zeile_text": k.get("zeile_text"), "status": faden_status(k),
                     **dict(zip(("stand", "wer"), faden_stand(k))),
                     "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
@@ -128,6 +129,14 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
         if fehler:
             return False, fehler if waggon.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
         k.update(ort)
+        if eingabe.get("ab") is not None and ort["b"]:  # Bereich ab–b (Umschalt-Klick auf eine zweite Zeile)
+            try:
+                ab = int(eingabe["ab"])
+            except (TypeError, ValueError):
+                return False, "Bereich: ab ist keine Zeile"
+            if not 1 <= ab < ort["b"]:
+                return False, f"Bereich: ab {ab} muss vor Zeile {ort['b']} liegen"
+            k["ab"] = ab
         if ort["b"]:
             t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
             zeilen = t.split("\n")

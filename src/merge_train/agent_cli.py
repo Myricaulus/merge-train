@@ -4,7 +4,7 @@ from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, ersetzen, jetzt, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
 from .git import git, inhalt, kurzpfad, projekt_ordner
-from .zeilen import zeile_vorwaerts
+from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, review_kommentare,
     struktur_laden)
@@ -60,7 +60,7 @@ def faden_nachbarn(k, review):
     """GitLab-Kommentare und Agent-Hinweise an der Zeile des Fadens (damit der Agent weiß, welchen er ändern soll)."""
     if not review or not k.get("path"):
         return []
-    da = lambda x: x.get("path") == k["path"] and ((k.get("b") and x.get("b") == k["b"]) or (not k.get("b") and k.get("a") and x.get("a") == k["a"]))
+    da = lambda x: x.get("path") == k["path"] and ((k.get("b") and x.get("b") and (k.get("ab") or k["b"]) <= x["b"] <= k["b"]) or (not k.get("b") and k.get("a") and x.get("a") == k["a"]))
     out = []
     for x in review["kommentare"]:
         if da(x) and x["status"] != "loeschen":
@@ -79,16 +79,17 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None):
     """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""
     von = (k.get("refs") or {}).get("head_sha") or head
     b = zeile_vorwaerts(wurzel, von, head, k["path"], k["b"]) if k.get("path") and k.get("b") else None
+    ab = bereich_anfang_vorwaerts(wurzel, von, head, k.get("path"), k.get("ab"), b)
     ort = "allgemein" if not k.get("path") else \
-        f'{k["path"]}:{b}' if b else (f'{k["path"]} (alte Seite, Zeile {k["a"]})' if k.get("a") and not k.get("b")
+        f'{k["path"]}:{ab}-{b}' if ab else f'{k["path"]}:{b}' if b else (f'{k["path"]} (alte Seite, Zeile {k["a"]})' if k.get("a") and not k.get("b")
                                       else f'{k["path"]} (Zeile {k["b"]} hat sich seit dem Kommentar geändert)')
     an = f'  · an {k["an"]}' if k.get("an") else ""
     out = [f'── [{k["id"]}] {ort}{an}' + (f'  · {faden_status(k)}' if faden_status(k) != "wartet" else "")]
     if k.get("path") and b:
         t = inhalt(wurzel, head, k["path"]) or ""
         zeilen = t.split("\n")
-        for i in range(max(1, b - kontext), min(len(zeilen), b + kontext) + 1):
-            out.append(f'  {"→" if i == b else " "} {i:5} │ {zeilen[i - 1]}')
+        for i in range(max(1, (ab or b) - kontext), min(len(zeilen), b + kontext) + 1):
+            out.append(f'  {"→" if (ab or b) <= i <= b else " "} {i:5} │ {zeilen[i - 1]}')
     elif k.get("zeile_text"):
         out.append(f'      damals │ {k["zeile_text"]}')
     for name, status, text in faden_nachbarn(k, review):
@@ -221,7 +222,7 @@ def draft_daneben(waggon, art, x, text):
 
 
 def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
-    """Neuer Faden vom Agenten (erste Nachricht von ihm, gesendet): an pfad:zeile oder allgemein (ort None). siehe: see_also-
+    """Neuer Faden vom Agenten (erste Nachricht von ihm, gesendet): an pfad:zeile, pfad:von-bis oder allgemein (ort None). siehe: see_also-
     Einträge wie in der Review-JSON ("pfad:zeile-bis", {"path", "line", "end", "label", "diff"}). Rückgabe: (id, Meldung)."""
     text = (text or "").strip()
     if not text:
@@ -239,16 +240,21 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     if als:
         k["an"] = als
     if ort:
-        m = re.fullmatch(r"(.+?)(?::(\d+))?", ort.strip())
+        m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", ort.strip())
         path = pfad_norm(m.group(1))
         t = inhalt(wurzel, head, path)
         if t is None:
             raise Fehler(f"{path} gibt es im Stand {head[:8]} nicht")
-        b = int(m.group(2)) if m.group(2) else None
+        ab, b = (int(m.group(2)), int(m.group(3))) if m.group(3) else (None, int(m.group(2)) if m.group(2) else None)
         zeilen = t.split("\n")
-        if b and not 1 <= b <= zeilenzahl(t):
-            raise Fehler(f"{path} hat keine Zeile {b} ({zeilenzahl(t)} Zeilen)")
+        for z in (ab, b):
+            if z and not 1 <= z <= zeilenzahl(t):
+                raise Fehler(f"{path} hat keine Zeile {z} ({zeilenzahl(t)} Zeilen)")
+        if ab and ab >= b:
+            raise Fehler(f"Bereich {ab}-{b}: die erste Zeile muss vor der letzten liegen")
         k.update(path=path, b=b, zeile_text=zeilen[b - 1] if b else None)
+        if ab:
+            k["ab"] = ab
     sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"])
     kaputt = [f'{s["path"] or "?"}: {s["problem"]}' for s in sa if s["problem"]]
     if kaputt:
@@ -258,7 +264,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=als))
     with akte_bearbeiten(waggon) as akte:
         faden_anhaengen(akte, k)
-    wo = f'{k["path"]}:{k["b"]}' if k["b"] else (k["path"] or "allgemein")
+    wo = f'{k["path"]}:{k.get("ab") or k["b"]}' + (f'-{k["b"]}' if k.get("ab") else "") if k["b"] else (k["path"] or "allgemein")
     melden(f"{waggon.name}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
     return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt'
 
@@ -443,7 +449,8 @@ def agent_parser():
                                    "Zusammenfassung am Ende). Datei- und pfad:zeile-Angaben im Text werden auf der Seite zu "
                                    "Links. Antworten des Nutzers kommen wie sonst über feedback/horchen.")
     p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")
-    p.add_argument("--ort", metavar="PFAD[:ZEILE]", help="Zeile im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon)")
+    p.add_argument("--ort", metavar="PFAD[:ZEILE[-BIS]]",
+                   help="Zeile oder Bereich im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon); einmal je Thread")
     p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
                    help="Siehe-auch-Link (mehrfach möglich)")
     p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A", "B[|LABEL]"),
