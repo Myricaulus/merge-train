@@ -11,16 +11,15 @@
   const esc = t =>
     String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
   // Kopfhörer: alle .hoerer[data-tut] (Waggons, HUD) wechselt ein Takt. hoert → meist 🎧, ab und zu Freizeit oder
-  // Langeweile (auch mal zwei); arbeitet → wechselnde Arbeits-Emojis, die wackeln; wartet (im Terminal) → 💤
+  // Langeweile (auch mal zwei); arbeitet → wechselnde Arbeits-Emojis, die wackeln
   const LANGEWEILE = ['🥱', '😴', '🙄', '😑', '🫠', '🎮', '🎣', '☕', '🧶', '🎲', '🪀', '🏓', '🎸', '📺', '🍿', '🧩', '🎯',
       '🛹', '🪁', '🏖️', '🃏', '🎨'],
     ARBEIT = ['⚙️', '🔧', '🔨', '🛠️', '💻', '⌨️', '🧠', '📝', '🔩', '⛏️', '🧪', '🔍'],
     HOERER_TITEL = {
       hoert: wer => wer + ' hört nur hier zu und langweilt sich',
-      arbeitet: wer => wer + ' ist grad beschäftigt',
-      wartet: wer => wer + ' wartet im Terminal – hört hier gerade nicht zu'
+      arbeitet: wer => wer + ' ist grad beschäftigt'
     },
-    HOERER_TEXT = {hoert: 'hört zu', arbeitet: 'arbeitet', wartet: 'wartet'};
+    HOERER_TEXT = {hoert: 'hört zu', arbeitet: 'arbeitet'};
   const zufall = n => {
     n = Math.imul(n ^ (n >>> 15), 2246822519);
     n = Math.imul(n ^ (n >>> 13), 3266489917);
@@ -29,7 +28,6 @@
   function hoererZeichen(tut, versatz) {
     const t = Date.now() / 1000 + versatz;
     if (tut === 'arbeitet') return ARBEIT[zufall(Math.floor(t / 1.2)) % ARBEIT.length];
-    if (tut === 'wartet') return '💤';
     const runde = Math.floor(t / 9);
     if (t % 9 > 2.7 || zufall(runde) % 2) return '🎧'; // etwa alle 18 s knapp 3 s lang etwas anderes
     const r = zufall(runde * 7 + 1);

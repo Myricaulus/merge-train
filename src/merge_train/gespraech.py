@@ -13,11 +13,11 @@ from .quellen import quelle
 from .zuhoerer import horcht, kontext, todo_offen, zuhoerer
 from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_klick
 
-# Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
+# Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „An Agent senden“
 # schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
 # Bei MRs genauso, für Kommentare, die „an <Agent>“ gespeichert werden; sie liegen als Fäden (mit „nachrichten“) in der
 # Review-Datei des MR und gehen nie nach GitLab. Felder eines Fadens: siehe akte.py.
-# Wer zuhört: „agent horchen“ legt <akte>.horcht an (pid, Name). Hört niemand zu, startet „Feedback senden“ den
+# Wer zuhört: „agent horchen“ legt <akte>.horcht an (pid, Name). Hört niemand zu, startet „An Agent senden“ den
 # Agenten aus [agenten] bzw. feedback_befehl – oder legt einen todo-Eintrag an („Session starten“ öffnet ihn).
 
 

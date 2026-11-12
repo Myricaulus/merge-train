@@ -60,7 +60,7 @@ merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-U
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
 merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
-merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „Feedback/Fragen senden“ gedrückt wird
+merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „An Agent senden“/„Fragen senden“ gedrückt wird
 merge-train agent thread [--ort pfad:zeile[-bis]] [--siehe …] [--vergleich A B] "…"   # Agent: eigenen Thread anlegen
 ```
 
@@ -114,7 +114,7 @@ Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ei
    Man kann mehrere sammeln, bearbeiten oder löschen.
    Umschalt-Klick auf eine zweite Zeile derselben Datei macht daraus einen Bereich: Der Faden steht unter der letzten
    Zeile, die Zeilen sind links lila markiert und wandern nach neuen Commits mit. Bei Review-Kommentaren (GitLab) geht das nicht.
-2. **„Feedback senden“** schickt alle Entwürfe ab. ✓ heißt gesendet, ✓✓ heißt von Claude abgeholt.
+2. **„An Agent senden“** schickt alle Entwürfe ab. ✓ heißt gesendet, ✓✓ heißt von Claude abgeholt.
 3. Claude holt sie mit `merge-train agent feedback` ab (Ort im aktuellen Stand, Code drumherum, Verlauf), beantwortet
    Fragen bzw. setzt Wünsche auf `claude` um und antwortet je Faden mit `merge-train agent antworten <id> "…"`
    (`--erledigt`, wenn umgesetzt). Die Antwort erscheint sofort an der Zeile (die Seite fragt alle 4 s nach),
@@ -130,7 +130,7 @@ Dateinamen, mit dem damaligen Zeilentext. „fertig“ warnt bei offenen Fäden 
 erledigte Fäden weg. Offene bleiben für den nächsten Stand.
 
 **Fäden gehören zum Branch**, auf dem sie entstanden sind: zu `bis`, bei `bis = "arbeitsstand"` zum ausgecheckten
-Branch (bei einem MR zu dessen Quell-Branch). Seite, Zähler im Zug, „Feedback senden“, `agent feedback`/`horchen` und
+Branch (bei einem MR zu dessen Quell-Branch). Seite, Zähler im Zug, „An Agent senden“, `agent feedback`/`horchen` und
 „fertig“ sehen nur die Fäden des aktuellen Branches. Nach einem Wechsel zurück sind die alten wieder da. Oben im
 Gespräch blendet „N Fäden aus anderen Branches zeigen“ die übrigen ein, nur zum Lesen und ohne Ort im Diff.
 Der Knopf merkt sich die Wahl.
@@ -141,11 +141,11 @@ Der Knopf merkt sich die Wahl.
   Feedback direkt dorthin. Oben steht dann „🎧 Claude hört zu“. Dazu genügt es, der Session zu sagen: „hör auf merge-train“.
   Eine Session hört nur auf die Waggons ihres eigenen Projekts; jedes Projekt kann also seine eigene Session haben.
   Deshalb sitzt der Kopfhörer auch auf dem Dach des Waggons: 🎧, wenn sie zuhört (ab und zu langweilt sie sich
-  sichtbar), wackelndes Werkzeug, wenn sie gerade arbeitet, 💤, wenn sie im Terminal wartet und nicht zuhört.
+  sichtbar), wackelndes Werkzeug, wenn sie gerade arbeitet.
   In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
   (`skill/merge-train/SKILL.md`, von `install.sh` nach `~/.claude/skills` verlinkt).
 - **Keine hört zu**: Ist das Werkzeug `todo` installiert (eigenes Werkzeug des Autors, nicht Teil von merge-train und
-  nicht veröffentlicht), legt „Feedback senden“ dort einen Eintrag im Projekt an (mit Startprompt), und dessen Panel pulsiert.
+  nicht veröffentlicht), legt „An Agent senden“ dort einen Eintrag im Projekt an (mit Startprompt), und dessen Panel pulsiert.
   „▶ Session starten“ auf der Seite öffnet ihn mit `todo los` (Konsole im Projekt, Enter startet Claude).
   Weitere Nachrichten hängen sich als Notiz an denselben Eintrag. Sind alle Fäden beantwortet, hakt merge-train ihn ab.
   Ohne `todo` und ohne `feedback_befehl` sagt die Seite nur, dass keine Session zuhört.

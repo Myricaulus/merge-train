@@ -381,7 +381,7 @@ GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_start
 
 @route("POST", "api/gespraech", waggon=True)
 def api_gespraech(anfrage, waggon):
-    """Ganzes Gespräch: Feedback senden, Agenten-Session starten."""
+    """Ganzes Gespräch: An Agent senden, Agenten-Session starten."""
     aktion = GESPRAECH_AKTIONEN.get(anfrage.daten.get("aktion"))
     return aktion(anfrage, waggon) if aktion else abgelehnt(400, "unbekannte Aktion")
 

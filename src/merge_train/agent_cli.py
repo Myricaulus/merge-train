@@ -459,7 +459,7 @@ def agent_parser():
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: Claude)")
     p.set_defaults(aufruf=befehl_thread)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
-                       description=gespraech + "warten, bis der Nutzer „Feedback senden“ drückt, dann wie „feedback“ ausgeben "
+                       description=gespraech + "warten, bis der Nutzer „An Agent senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")
     p.add_argument("projekt", nargs="?", help="Projektordner, Name oder MR (Standard: aktuelles Repo samt seinen MRs)")
     p.add_argument("--als", default="Claude", help="Name, der auf der Seite als Zuhörer erscheint (z. B. Copilot)")

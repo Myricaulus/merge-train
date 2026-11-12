@@ -189,8 +189,8 @@ def kontext(waggon):
 def zuhoerer(waggon):
     """Wer an diesem Waggon zuhört und was er gerade tut, für die Kopfhörer im Waggon und im HUD: {wer, tut}, sonst
     None. tut: hoert (wartet mit „agent horchen“ auf Fragen), arbeitet (die letzte Nachricht im Transcript ist keine
-    fertige Antwort), wartet (Session lebt, Antwort fertig, sitzt im Terminal). Horcht die Session an einem anderen
-    Waggon, zählt sie hier nicht."""
+    fertige Antwort). Wartet die Session im Terminal, zeigt die Seite nichts: von dort ist sie ohnehin nicht zu
+    erreichen. Horcht die Session an einem anderen Waggon, zählt sie hier nicht."""
     wer = horcht(waggon)
     if wer:
         return {"wer": wer, "tut": "hoert"}
@@ -204,7 +204,7 @@ def zuhoerer(waggon):
         except (OSError, ValueError, IndexError):
             pass
     st = transcript_stand(sitzung[2])
-    return {"wer": sitzung[1], "tut": "arbeitet" if st and st.arbeitet else "wartet"}
+    return {"wer": sitzung[1], "tut": "arbeitet"} if st and st.arbeitet else None
 
 def kontext_schwellen():
     """[grün bis, orange bei, rot bei, giftlila ab] aus kontext_schwellen; ungültig (nicht 4 aufsteigende Zahlen) → Standard."""
@@ -226,7 +226,7 @@ def todo_offen(tid):
 
 
 def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
-    """Nach „Feedback senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
+    """Nach „An Agent senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
     todo-Eintrag. Rückgabe (text für die Seite, todo_id oder None)."""
     wer = horcht(waggon)
     if wer:
@@ -256,7 +256,7 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
         subprocess.run(["todo", "notiz", tid, zeile, "--von", "merge-train"], capture_output=True)
     else:
         r = subprocess.run(["todo", "neu", f"merge-train: Fragen/Feedback zu {projekt}", "-p", wurzel,
-                            "--von", "merge-train", "-n", "Aus merge-train „Feedback senden“. " + zeile, "--prompt", prompt],
+                            "--von", "merge-train", "-n", "Aus merge-train „An Agent senden“. " + zeile, "--prompt", prompt],
                            capture_output=True, text=True)
         tid = (r.stdout.strip().splitlines() or [""])[-1].strip() if r.returncode == 0 else None
         if not tid:

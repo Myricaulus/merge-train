@@ -14,7 +14,7 @@ Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
   hinweise         {key: uebernommen | verworfen} für Agent-Hinweise (drafts); fehlt der key, ist er offen
   hinweis_dateien  angemeldete Review-JSONs (agent zeigen)
   struktur         Pfad der Cache-JSON der zuletzt gebauten Seite (struktur_laden)
-  todo_id          todo-Eintrag aus „Feedback senden“, wenn niemand zuhörte
+  todo_id          todo-Eintrag aus „An Agent senden“, wenn niemand zuhörte
   abgeschlossen    Zeit des letzten vollständigen „Review abschließen“
 
 Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erstellt, path, old_path, a (alte Zeile),
@@ -34,7 +34,7 @@ Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, ab (erste Zei
   ab–b hängt), zeile_text (Zeile b), an (Agent, sonst Claude), vom_agenten, see_also,
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
   archiv (nach „fertig“ aus der Ansicht genommen). Stufe: faden_status.
-  branch: zu welchem Branch der Faden gehört (lokal: branch_von, MR: source_branch) – Seite, Zug, „Feedback senden“
+  branch: zu welchem Branch der Faden gehört (lokal: branch_von, MR: source_branch) – Seite, Zug, „An Agent senden“
   und der Agent sehen nur die Fäden des aktuellen Branches (faeden_von(akte, branch)); fehlt er (alte lokale Akten),
   gehört der Faden zu keinem Branch.
 """

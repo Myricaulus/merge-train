@@ -272,7 +272,7 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
     kann = Waggon.aus_id(sid).kann
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     knoepfe = ('<button id="feedback" hidden disabled title="Entwürfe (Fragen/Wünsche) an den Agenten schicken – bleiben privat">'
-               'Feedback senden</button>\n'
+               'An Agent senden</button>\n'
                '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>')
     if kann["fertig"]:
         knoepfe += f'\n<button id="fertig"{" hidden" if lesen else ""} title="{fertig_titel}">fertig ✓</button>'
