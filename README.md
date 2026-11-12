@@ -139,6 +139,9 @@ Der Knopf merkt sich die Wahl.
 
 - **Eine Claude-Session hört zu**: Läuft in einer Session `merge-train agent horchen` (im Hintergrund), geht das
   Feedback direkt dorthin. Oben steht dann „🎧 Claude hört zu“. Dazu genügt es, der Session zu sagen: „hör auf merge-train“.
+  Eine Session hört nur auf die Waggons ihres eigenen Projekts; jedes Projekt kann also seine eigene Session haben.
+  Deshalb sitzt der Kopfhörer auch auf dem Dach des Waggons: 🎧, wenn sie zuhört (ab und zu langweilt sie sich
+  sichtbar), wackelndes Werkzeug, wenn sie gerade arbeitet, 💤, wenn sie im Terminal wartet und nicht zuhört.
   In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
   (`skill/merge-train/SKILL.md`, von `install.sh` nach `~/.claude/skills` verlinkt).
 - **Keine hört zu**: Ist das Werkzeug `todo` installiert (eigenes Werkzeug des Autors, nicht Teil von merge-train und

@@ -45,6 +45,10 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 #zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default} #zug .wg.fertig.mr{cursor:pointer}
 #zug .auf rect{fill:transparent} #zug .auf text{fill:var(--muted);font-size:14px} #zug .auf:hover rect{fill:var(--rand)} #zug .auf:hover text{fill:var(--fg)}
 #zug .fehlt .kasten{stroke-dasharray:5 3}
+#zug .hoerer{font-size:17px;filter:drop-shadow(0 0 2px rgba(0,0,0,.6))} #zug .hoerer-g .hoerer{transform-box:fill-box;transform-origin:50% 80%}
+.hoerer-g.arbeitet .hoerer,.hud-hoert.arbeitet .hoerer{animation:werkeln .5s ease-in-out infinite alternate}
+@keyframes werkeln{from{transform:rotate(-15deg)}to{transform:rotate(15deg) translateY(-2px)}}
+@media (prefers-reduced-motion:reduce){.hoerer-g.arbeitet .hoerer,.hud-hoert.arbeitet .hoerer{animation:none}}
 #wagenkarte{position:fixed;z-index:70;width:min(460px,calc(100vw - 16px));background:var(--kopf);color:var(--fg);border:1px solid var(--rand);border-radius:8px;
 padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px;display:flex;flex-direction:column;gap:5px}
 #wagenkarte .zu{position:absolute;right:6px;top:6px;border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px}

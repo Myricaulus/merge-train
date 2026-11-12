@@ -1,5 +1,5 @@
 """Wer hört zu? Agenten-Sessions, die auf Nachrichten warten, benachrichtigen oder neu starten."""
-import glob, json, os, shlex, shutil, subprocess
+import glob, json, os, shlex, shutil, subprocess, time
 from datetime import datetime
 from .einstellungen import KONF, ersetzen, jetzt
 from .waggon import Fehler
@@ -139,8 +139,11 @@ def _kontext_fenster(tokens):
         modell = ""
     return 1_000_000 if "[1m]" in modell or tokens > 200_000 else 200_000
 
-def kontext(waggon):
-    """{tokens, fenster, prozent, name} der zuletzt horchenden Agenten-Session, solange sie lebt, sonst None."""
+_TRANSCRIPTS = {}  # Session-ID → Pfad des Transcripts
+
+def agent_sitzung(waggon):
+    """(pid, Name, Transcript oder None) der zuletzt an diesem Waggon horchenden Agenten-Session, solange sie lebt,
+    sonst None."""
     try:
         pid, sid, *name = open(agent_datei(waggon)).read().split()
         pid = int(pid)
@@ -148,13 +151,46 @@ def kontext(waggon):
         return None
     if _prozess(pid) is None:
         return None
-    pfade = glob.glob(os.path.join(claude_dir(), "projects", "*", sid + ".jsonl"))
-    erg = _transcript_kontext(pfade[0]) if pfade else None
+    if not os.path.exists(_TRANSCRIPTS.get(sid) or ""):
+        pfade = glob.glob(os.path.join(claude_dir(), "projects", "*", sid + ".jsonl"))
+        _TRANSCRIPTS[sid] = pfade[0] if pfade else None
+    return pid, " ".join(name) or "Claude", _TRANSCRIPTS[sid]
+
+def kontext(waggon):
+    """{tokens, fenster, prozent, name} der zuletzt horchenden Agenten-Session, solange sie lebt, sonst None."""
+    sitzung = agent_sitzung(waggon)
+    erg = _transcript_kontext(sitzung[2]) if sitzung and sitzung[2] else None
     if not erg:
         return None
     fenster = _kontext_fenster(erg[0])
-    return {"tokens": erg[0], "fenster": fenster, "prozent": round(100 * erg[0] / fenster), "name": " ".join(name) or "Claude",
+    return {"tokens": erg[0], "fenster": fenster, "prozent": round(100 * erg[0] / fenster), "name": sitzung[1],
             "schwellen": kontext_schwellen()}
+
+
+ARBEITET_S = 60  # so lange nach dem letzten Eintrag im Transcript gilt die Session als beschäftigt
+
+def zuhoerer(waggon):
+    """Wer an diesem Waggon zuhört und was er gerade tut, für die Kopfhörer im Waggon und im HUD: {wer, tut}, sonst
+    None. tut: hoert (wartet mit „agent horchen“ auf Fragen), arbeitet (horcht nicht, Transcript in den letzten
+    ARBEITET_S s gewachsen), wartet (Session lebt, sitzt im Terminal). Horcht die Session an einem anderen Waggon,
+    zählt sie hier nicht."""
+    wer = horcht(waggon)
+    if wer:
+        return {"wer": wer, "tut": "hoert"}
+    sitzung = agent_sitzung(waggon)
+    if not sitzung:
+        return None
+    for d in glob.glob(os.path.join(os.path.dirname(akte_datei(waggon)), "*.horcht")):
+        try:
+            if agent_session(int(open(d).read().split()[0])) == sitzung[0]:
+                return None
+        except (OSError, ValueError, IndexError):
+            pass
+    try:
+        frisch = time.time() - os.path.getmtime(sitzung[2]) < ARBEITET_S
+    except (OSError, TypeError):
+        frisch = False
+    return {"wer": sitzung[1], "tut": "arbeitet" if frisch else "wartet"}
 
 def kontext_schwellen():
     """[grün bis, orange bei, rot bei, giftlila ab] aus kontext_schwellen; ungültig (nicht 4 aufsteigende Zahlen) → Standard."""

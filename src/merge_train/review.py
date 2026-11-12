@@ -15,13 +15,13 @@ from .gitlab import GitLabFehler, alle, glab, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, projekt_zeiger
-from .zuhoerer import horcht, kontext
+from .zuhoerer import kontext, zuhoerer
 from collections import Counter
 from dataclasses import dataclass
 
 def stand(waggon, akte):
     teile = [akte.get("struktur") or ""]
-    teile.append(horcht(waggon) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
+    teile.append(str(zuhoerer(waggon)))  # „🎧 … hört zu“/„arbeitet“ soll sich auch ohne neue Nachricht aktualisieren
     k = kontext(waggon)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
     for p in [akte_datei(waggon)] + ([] if waggon.lokal else hinweis_dateien(waggon, akte)):

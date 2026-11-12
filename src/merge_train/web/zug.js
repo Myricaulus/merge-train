@@ -3,12 +3,87 @@
 // Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien; ist erst ein
 // Teil abgehakt, heißt der Knopf „abgeben“ (Teilstand <von>-wip, zählt wie fertig für die Abfahrt).
 // Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
-// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen.
+// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen, hoererSpan.
+// Kopfhörer auf dem Waggondach: wer an dem Waggon zuhört (api/zuhoerer, alle 5 s) und was er gerade tut.
 (() => {
   const {waggon, el} = App;
   let zugWagen = (window.MR_ZUG || {wagen: []}).wagen; // die Waggons des Zugs (/zug.js bzw. /api/zug)
   const esc = t =>
     String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+  // Kopfhörer: alle .hoerer[data-tut] (Waggons, HUD) wechselt ein Takt. hoert → meist 🎧, ab und zu Freizeit oder
+  // Langeweile (auch mal zwei); arbeitet → wechselnde Arbeits-Emojis, die wackeln; wartet (im Terminal) → 💤
+  const LANGEWEILE = ['🥱', '😴', '🙄', '😑', '🫠', '🎮', '🎣', '☕', '🧶', '🎲', '🪀', '🏓', '🎸', '📺', '🍿', '🧩', '🎯',
+      '🛹', '🪁', '🏖️', '🃏', '🎨'],
+    ARBEIT = ['⚙️', '🔧', '🔨', '🛠️', '💻', '⌨️', '🧠', '📝', '🔩', '⛏️', '🧪', '🔍'],
+    HOERER_TITEL = {
+      hoert: wer => wer + ' hört nur hier zu und langweilt sich',
+      arbeitet: wer => wer + ' ist grad beschäftigt',
+      wartet: wer => wer + ' wartet im Terminal – hört hier gerade nicht zu'
+    },
+    HOERER_TEXT = {hoert: 'hört zu', arbeitet: 'arbeitet', wartet: 'wartet'};
+  const zufall = n => {
+    n = Math.imul(n ^ (n >>> 15), 2246822519);
+    n = Math.imul(n ^ (n >>> 13), 3266489917);
+    return (n ^ (n >>> 16)) >>> 0;
+  };
+  function hoererZeichen(tut, versatz) {
+    const t = Date.now() / 1000 + versatz;
+    if (tut === 'arbeitet') return ARBEIT[zufall(Math.floor(t / 1.2)) % ARBEIT.length];
+    if (tut === 'wartet') return '💤';
+    const runde = Math.floor(t / 9);
+    if (t % 9 > 2.7 || zufall(runde) % 2) return '🎧'; // etwa alle 18 s knapp 3 s lang etwas anderes
+    const r = zufall(runde * 7 + 1);
+    return LANGEWEILE[r % LANGEWEILE.length] + (r % 4 ? '' : LANGEWEILE[(r >>> 8) % LANGEWEILE.length]);
+  }
+  function hoererTakt() {
+    document.querySelectorAll('.hoerer[data-tut]').forEach(e => {
+      const z = hoererZeichen(e.dataset.tut, +e.dataset.versatz || 0);
+      if (e.textContent !== z) e.textContent = z;
+    });
+  }
+  setInterval(hoererTakt, 300);
+  let hoererStand = {}; // Kennung → {wer, tut}
+  const kennung = w => (w.quelle && w.quelle !== 'lokal' ? w.p : 'projekt:' + w.p);
+  function hoererSetzen() {
+    document.querySelectorAll('#zug .hoerer-g').forEach(g => {
+      const w = zugWagen[+g.dataset.i],
+        z = w && hoererStand[kennung(w)],
+        t = g.querySelector('.hoerer');
+      if (z) t.dataset.tut = z.tut;
+      else {
+        delete t.dataset.tut;
+        t.textContent = '';
+      }
+      g.querySelector('title').textContent = z ? HOERER_TITEL[z.tut](z.wer) : '';
+      g.classList.toggle('arbeitet', !!z && z.tut === 'arbeitet');
+    });
+    hoererTakt();
+  }
+  function hoererHolen() {
+    if (!zugWagen.length || document.hidden) return;
+    fetch('/api/zuhoerer?ids=' + encodeURIComponent(zugWagen.map(kennung).join(',')))
+      .then(r => r.json())
+      .then(d => {
+        hoererStand = d;
+        hoererSetzen();
+      })
+      .catch(() => {});
+  }
+  setInterval(hoererHolen, 5000);
+  setTimeout(hoererHolen, 200);
+  /** Kopfhörer fürs HUD: wer zuhört (z aus zuhoerer) und was er tut, sonst „🎧 –“. */
+  App.hoererSpan = z =>
+    el(
+      'span',
+      {
+        class: 'hud-hoert' + (z ? ' an ' + z.tut : ''),
+        title: z
+          ? HOERER_TITEL[z.tut](z.wer) + (z.tut === 'hoert' ? ' – Fragen gehen direkt an die Session' : '')
+          : 'keine Agenten-Session hört zu'
+      },
+      el('span', {class: 'hoerer', 'data-tut': z ? z.tut : null}, z ? hoererZeichen(z.tut, 0) : '🎧'),
+      z ? ' ' + z.wer + ' ' + HOERER_TEXT[z.tut] : ' –'
+    );
   function naechsterWagen() {
     const i = zugWagen.findIndex(w => w.p === waggon.projekt);
     const offen = zugWagen.filter(w => w.status === 'offen' && !w.abgegeben && w.p !== waggon.projekt);
@@ -96,6 +171,8 @@
    <text x="${x + 10}" y="${y + 35}">${z2}</text>
    <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f || w.abgegeben ? 'mf' : 'mo'}">${marke}</text>
    ${balken}${auf}
+   <g class="hoerer-g" data-i="${i}"><title></title><text class="hoerer" data-versatz="${(i * 3.7) % 9}"
+     x="${x + W - 16}" y="${y - 5}" text-anchor="middle"></text></g>
    <circle cx="${x + 24}" cy="${y + H + 4}" r="6" class="rad"/>
    <circle cx="${x + W - 24}" cy="${y + H + 4}" r="6" class="rad"/></g>
    <line x1="${x + W}" y1="${y + H - 8}" x2="${x + W + G}" y2="${y + H - 8}" class="rad"
@@ -104,6 +181,7 @@
     s += `<g transform="translate(${4 + zugWagen.length * (W + G)},${yr - 70})">${App.lokSvg()}</g>`;
     svg.innerHTML = s;
     box.appendChild(svg);
+    hoererSetzen();
     svg.querySelectorAll('.wg').forEach(g =>
       g.addEventListener('click', e => {
         const w = zugWagen[+g.dataset.i];

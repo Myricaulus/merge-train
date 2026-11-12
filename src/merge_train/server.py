@@ -13,7 +13,7 @@ from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
-from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten
+from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten, zuhoerer
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
@@ -279,13 +279,26 @@ def api_stand(anfrage, waggon):
 def api_hud(anfrage):
     """HUD der Startseite (ohne Review): Stand des Servers und, wenn sie zu einem Waggon gehört (z. B. „kein lokaler
     Klon“), wer dort zuhört und Meldungen für die Glocke (wie api/stand)."""
-    d = {"server": server_stand(), "version": VERSION, "horcht": None, "kontext": None}
+    d = {"server": server_stand(), "version": VERSION, "horcht": None, "zuhoerer": None, "kontext": None}
     try:
         waggon = schluessel_von(anfrage.daten.get("mr", ""))
     except Fehler:  # Startseite ohne Waggon
         return d
     seite_lebt(waggon)  # offene Seite des Waggons: horchen hört nicht auf
-    return dict(d, horcht=horcht(waggon), kontext=kontext(waggon), meldung=MELDUNGEN.pop(waggon.id, None))
+    return dict(d, horcht=horcht(waggon), zuhoerer=zuhoerer(waggon), kontext=kontext(waggon),
+                meldung=MELDUNGEN.pop(waggon.id, None))
+
+
+@route("GET", "api/zuhoerer", mit_schluessel=False)
+def api_zuhoerer(anfrage):
+    """Kopfhörer in den Waggons (zug.js fragt alle 5 s): {Kennung: zuhoerer} für ids (Kennungen, durch Komma getrennt)."""
+    erg = {}
+    for kennung in str(anfrage.daten.get("ids", "")).split(",")[:100]:
+        try:
+            erg[kennung] = zuhoerer(Waggon.aus_id(kennung))
+        except Fehler:
+            pass
+    return erg
 
 
 @route("GET", "api/neu", waggon=True)

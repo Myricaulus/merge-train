@@ -121,7 +121,8 @@ details.kliste>summary .stfilter button.sortknopf{margin-right:3px;border-color:
 .hud-led{flex:none;width:9px;height:9px;border-radius:50%;background:#3fb950;box-shadow:0 0 5px #3fb950}
 .hud-led.weg{background:#e5534b;box-shadow:0 0 6px #e5534b;animation:funk 1s steps(2) infinite}
 .hud-led.neu{background:#d4a72c;box-shadow:0 0 6px #d4a72c}
-.hud-stand{font:11px ui-monospace,monospace;color:#c9d1d9} .hud-hoert{color:#8b949e} .hud-hoert.an{color:#7ee787}
+.hud-stand{font:11px ui-monospace,monospace;color:#c9d1d9} .hud-hoert{color:#8b949e} .hud-hoert.an{color:#7ee787} .hud-hoert.arbeitet{color:#e3b341}
+.hud-hoert.wartet{color:#8b949e} .hud-hoert .hoerer{display:inline-block}
 .hud-links{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 /* Wer zuhört + Kontext-Balken in eigenem Rahmen; der Balken ist so breit wie „🎧 … hört zu“ */
 .hud-agent{flex:none;display:flex;flex-direction:column;gap:2px;padding:1px 5px 2px;border:1px solid #4b5157;border-radius:3px;background:#22272d}

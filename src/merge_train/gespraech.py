@@ -10,7 +10,7 @@ from .hinweise import see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
 from .quellen import quelle
-from .zuhoerer import horcht, kontext, todo_offen
+from .zuhoerer import horcht, kontext, todo_offen, zuhoerer
 from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_klick
 
 # Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „Feedback senden“
@@ -30,7 +30,7 @@ def wagen_daten(waggon, ansicht=None):
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     akte = akte_lesen(waggon)
     return dict(review, faeden=gespraech["kommentare"], faeden_fremd=gespraech["fremd"], branch=gespraech["branch"],
-                g_ausstehend=gespraech["ausstehend"], horcht=gespraech["horcht"], kontext=gespraech["kontext"], todo=gespraech["todo"],
+                g_ausstehend=gespraech["ausstehend"], horcht=gespraech["horcht"], zuhoerer=gespraech["zuhoerer"], kontext=gespraech["kontext"], todo=gespraech["todo"],
                 agenten=gespraech["agenten"], kann=waggon.kann, stand=stand(waggon, akte), ausserhalb=review["ausserhalb"] + gespraech["ausserhalb"])
 
 
@@ -89,7 +89,8 @@ def gespraech_daten(waggon, ansicht=None):
     fremd = [faden_fremd(k) for k in faeden_von(akte) if k.get("branch") != branch]
     entwuerfe = sum(1 for k in faeden_von(akte, branch) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
     return {"ok": True, "kommentare": kommentare, "fremd": fremd, "branch": branch, "stand": stand(waggon, akte),
-            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(waggon), "kontext": kontext(waggon),
+            "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(waggon), "zuhoerer": zuhoerer(waggon),
+            "kontext": kontext(waggon),
             "agenten": gespraech_agenten(waggon),
             "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
 
