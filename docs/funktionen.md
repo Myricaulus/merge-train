@@ -151,7 +151,8 @@ echter Änderung neu, rahmt Neues ein, endet beim Schließen des Tabs. `agent �
 
 ### 17. Stellwerk (HUD) und Meldungen
 LED für den Server, Stand von merge-train, Zähler, wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
-- Ort: `web/hud.js`, `web/toasts.js`, `kontext` (`zuhoerer.py`).
+Auch auf der Startseite (Güterbahnhof, auch mit Fehler): HUD ohne Zähler und 🔔; Server, Zuhörer und Meldungen aus `api/hud`.
+- Ort: `web/hud.js`, `web/toasts.js`, `kontext` (`zuhoerer.py`), Route `api/hud`.
 - Erweitern: neue Statusanzeigen ins HUD, neue Meldungen über `App.melden`, keine eigenen Banner.
 
 ### 18. Server und Prozess

@@ -12,7 +12,7 @@ from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, schluessel_von
-from .zuhoerer import feedback_senden, seite_lebt, session_starten
+from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
@@ -272,6 +272,19 @@ def api_stand(anfrage, waggon):
     return {"stand": stand(waggon, akte), "seite": None if waggon.lokal else akte.get("struktur"),
             "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION, "server": server_stand(),
             "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
+
+
+@route("GET", "api/hud", mit_schluessel=False)
+def api_hud(anfrage):
+    """HUD der Startseite (ohne Review): Stand des Servers und, wenn sie zu einem Waggon gehört (z. B. „kein lokaler
+    Klon“), wer dort zuhört und Meldungen für die Glocke (wie api/stand)."""
+    d = {"server": server_stand(), "version": VERSION, "horcht": None, "kontext": None}
+    try:
+        waggon = schluessel_von(anfrage.daten.get("mr", ""))
+    except Fehler:  # Startseite ohne Waggon
+        return d
+    seite_lebt(waggon)  # offene Seite des Waggons: horchen hört nicht auf
+    return dict(d, horcht=horcht(waggon), kontext=kontext(waggon), meldung=MELDUNGEN.pop(waggon.id, None))
 
 
 @route("GET", "api/neu", waggon=True)

@@ -12,7 +12,7 @@ CSS_REVIEW = _text("review.css")
 # Diff-Seiten alle, Startseite nur JS_START.
 JS_DATEIEN = ("app.js", "navigation.js", "zeichnungen.js", "zug.js", "diff.js", "review.js", "hud.js", "toasts.js", "bahnhof.js",
               "beobachten.js")
-JS_START_DATEIEN = ("app.js", "zeichnungen.js", "zug.js", "bahnhof.js")
+JS_START_DATEIEN = ("app.js", "zeichnungen.js", "zug.js", "bahnhof.js", "hud.js", "toasts.js")
 JS = "".join(_text(n) for n in JS_DATEIEN)
 JS_START = "".join(_text(n) for n in JS_START_DATEIEN)
 FAVICON = _text("favicon.svg")

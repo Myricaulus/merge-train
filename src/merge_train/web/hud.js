@@ -1,8 +1,11 @@
 // Diff-Seiten: Stellwerk-HUD im Kopf (rechts neben der Schurre): Server-LED, Stand von merge-train, Zähler, wer zuhört,
-// Kontext-Füllstand der Agenten-Session.
-// Braucht von App: el, kann, review. Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
+// Kontext-Füllstand der Agenten-Session. Auch auf der Startseite (Güterbahnhof, auch mit Fehler wie „kein lokaler
+// Klon“): ohne review.js fragt es selbst alle 4 s api/hud (Server, wer zuhört) und zeigt keine Zähler.
+// Braucht von App: el, kann, waggon, melden, serverWeg, review (nur Diff-Seiten). Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
 (() => {
   const {el} = App;
+  const ohneReview = {kommentare: [], hinweise: [], faeden: [], horcht: null, kontext: null};
+  const R = () => App.review || ohneReview;
   // HUD: Stellwerk auf Stelzen rechts neben der Schurre (Zug fährt drunter durch): Server-LED, Stand, Zähler, wer
   // zuhört.
   let ledZustand = 'an',
@@ -65,6 +68,7 @@
     const zaehler = hudZaehler();
     const zeilen = [
       el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand()),
+      App.review &&
       el(
         'div',
         {class: 'hud-z'},
@@ -73,7 +77,7 @@
           : [el('span', {}, 'keine Kommentare')])
       )
     ];
-    hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen), hudAgent(App.review.kontext));
+    hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen.filter(Boolean)), hudAgent(R().kontext));
   }
   /** Stand von merge-train selbst: Commit, Zeit, * bei nicht committeten Änderungen in src/. */
   function hudStand() {
@@ -96,11 +100,11 @@
   }
   /** Zähler: GitLab-Kommentare (davon lokal), offene Agent-Hinweise, KI-Threads (davon offen). */
   function hudZaehler() {
-    const faeden = App.review.faeden || [],
+    const faeden = R().faeden || [],
       offen = faeden.filter(k => k.status !== 'erledigt').length,
-      kommentare = App.review.kommentare.filter(k => k.status !== 'loeschen'),
-      lokal = App.review.ausstehend || 0,
-      hinweise = App.review.hinweise.filter(h => h.status === 'offen').length;
+      kommentare = R().kommentare.filter(k => k.status !== 'loeschen'),
+      lokal = R().ausstehend || 0,
+      hinweise = R().hinweise.filter(h => h.status === 'offen').length;
     return [
       mitReview
         ? el(
@@ -133,12 +137,12 @@
         el(
           'span',
           {
-            class: 'hud-hoert' + (App.review.horcht ? ' an' : ''),
-            title: App.review.horcht
-              ? App.review.horcht + ' hört zu – Fragen gehen direkt an die Session'
+            class: 'hud-hoert' + (R().horcht ? ' an' : ''),
+            title: R().horcht
+              ? R().horcht + ' hört zu – Fragen gehen direkt an die Session'
               : 'keine Agenten-Session hört zu'
           },
-          App.review.horcht ? '🎧 ' + App.review.horcht + ' hört zu' : '🎧 –'
+          R().horcht ? '🎧 ' + R().horcht + ' hört zu' : '🎧 –'
         )
       );
     if (!KX) return ag;
@@ -158,7 +162,7 @@
             ' von ' +
             tokenKurz(KX.fenster) +
             ' Tokens' +
-            (App.review.horcht ? '' : ' (arbeitet gerade, hört nicht zu)') +
+            (R().horcht ? '' : ' (arbeitet gerade, hört nicht zu)') +
             (KX.prozent >= SW[2] ? ' – im Terminal /compact, wenn ein Thema abgeschlossen ist' : '')
         },
         KX.prozent + ' % ctx'
@@ -192,4 +196,26 @@
   }
   Object.assign(App, {hudZeichnen, serverLed, serverStandSetzen});
   hudZeichnen();
+  if (App.review) return; // Diff-Seiten: review.js fragt api/stand und meldet Server und Zuhörer
+  let version;
+  function pruefen() {
+    fetch('/api/hud?mr=' + encodeURIComponent(App.waggon.id || ''))
+      .then(r => r.json())
+      .then(d => {
+        if (version && d.version !== version) return location.reload(); // neuer Server
+        version = d.version;
+        if (d.meldung) App.melden(d.meldung);
+        ohneReview.horcht = d.horcht;
+        ohneReview.kontext = d.kontext;
+        ledZustand = 'an';
+        serverStand = d.server;
+        hudZeichnen();
+      })
+      .catch(() => {
+        App.melden(App.serverWeg);
+        serverLed('weg');
+      });
+  }
+  setInterval(pruefen, 4000);
+  pruefen();
 })();

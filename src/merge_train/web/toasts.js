@@ -1,4 +1,4 @@
-// Diff-Seiten: Toasts statt Meldungszeile (10 s, wegklickbar) und 🔔 mit den letzten 50 Meldungen (im Browser gemerkt).
+// Alle Seiten (auch Startseite/Fehlerseite): Toasts statt Meldungszeile (10 s, wegklickbar) und 🔔 mit den letzten 50 Meldungen (im Browser gemerkt).
 // Braucht von App: el, uhrzeit, meldung, serverWeg. Ersetzt: melden.
 (() => {
   const {el} = App;
