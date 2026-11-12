@@ -119,6 +119,7 @@ details.kliste>summary .stfilter button.sortknopf{margin-right:3px;border-color:
 .hud-antenne{stroke:#4b5157;stroke-width:1.5} .hud-funk{fill:#e5534b;animation:funk 2s steps(2) infinite}
 @keyframes funk{50%{fill:#5c2420}}
 .hud-z{display:flex;gap:6px;align-items:center;overflow:hidden;text-overflow:ellipsis}
+.hud-feld{flex:none;border:0;background:none;padding:0 2px;color:#d4a72c;font:inherit;cursor:pointer}
 .hud-led{flex:none;width:9px;height:9px;border-radius:50%;background:#3fb950;box-shadow:0 0 5px #3fb950}
 .hud-led.weg{background:#e5534b;box-shadow:0 0 6px #e5534b;animation:funk 1s steps(2) infinite}
 .hud-led.neu{background:#d4a72c;box-shadow:0 0 6px #d4a72c}

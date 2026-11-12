@@ -199,6 +199,7 @@
       if (abbruch) abbruch();
       else box.replaceChildren(...alt);
       nachholen();
+      App.hudZeichnen(); // ✎ im HUD weg
     };
     const ok = (sp = speichern) => {
       const t = ta.value.trim();
@@ -213,6 +214,10 @@
         zeichnen();
       });
     };
+    ta.addEventListener('blur', e => {
+      // neues, leeres Feld: beim Wegklicken zu (nicht, wenn der Fokus auf einen Knopf derselben Box geht)
+      if (ta.isConnected && !text && !ta.value.trim() && !(e.relatedTarget && box.contains(e.relatedTarget))) zu();
+    });
     ta.addEventListener('keydown', e => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -253,6 +258,7 @@
     );
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
+    App.hudZeichnen(); // ✎ im HUD
   }
   function kommentarAktion(d) {
     return post('/api/kommentar', d).then(r => {
@@ -635,12 +641,36 @@
     angehaengt(box, zuSchluessel.hinweis(h), nurLesen || h.lesen || h.status === 'verworfen' ? null : kn);
     return box;
   }
-  function einfuegen(r, inhalt, tab) {
+  /** Box unter Zeile r (hinter schon eingefügten Boxen): inline über die ganze Breite, nebeneinander nur auf der Seite
+   *  ihres Orts (b → rechts, nur a → links). ort {a, b} steht an der Zeile (data-ka/-kb) fürs Verschieben. */
+  function einfuegen(r, inhalt, tab, ort) {
     let z = r;
     while (z.nextElementSibling && z.nextElementSibling.classList.contains('kr')) z = z.nextElementSibling;
-    const tr = el('tr', {class: 'kr'}, el('td', {colspan: tab.classList.contains('sbs') ? 4 : 3}, inhalt));
+    const sbs = tab.classList.contains('sbs'),
+      td = el('td', {colspan: sbs ? 2 : 3}, inhalt),
+      leer = () => el('td', {colspan: 2, class: 'kleer'}),
+      links = ort.b == null && ort.a != null;
+    const tr = el('tr', {class: 'kr'}, ...(!sbs ? [td] : links ? [td, leer()] : [leer(), td]));
+    if (ort.a != null) tr.dataset.ka = ort.a;
+    if (ort.b != null) tr.dataset.kb = ort.b;
     z.after(tr);
     return tr;
+  }
+  const sichtbar = tab => tab.classList.contains('inl') === document.body.classList.contains('inline');
+  /** Zeile mit offenem Eingabefeld in der versteckten Tabelle (i schaltet nebeneinander/inline um): samt Feld und
+   *  Text in die sichtbare Tabelle derselben Datei verschieben. */
+  function feldMitnehmen(tr) {
+    const tab = tr.closest('table'),
+      d = tr.closest('.datei');
+    if (!tab || !d || sichtbar(tab)) return;
+    const ziel = [...d.querySelectorAll('table')].find(t => t !== tab && sichtbar(t)),
+      ort = {a: tr.dataset.ka != null ? +tr.dataset.ka : null, b: tr.dataset.kb != null ? +tr.dataset.kb : null},
+      r = ziel && zeileFinden(ziel, ort.a, ort.b),
+      box = tr.querySelector('td:not(.kleer)');
+    if (!r || !box) return;
+    const neu = einfuegen(r, box.firstElementChild, ziel, ort); // Zeile selbst bleibt (Abbrechen entfernt sie)
+    tr.replaceChildren(...neu.childNodes);
+    neu.replaceWith(tr);
   }
   function nachholen() {
     if (zeichnenWartet) setTimeout(zeichnen, 0);
@@ -714,7 +744,7 @@
       dateien[x.datei].querySelectorAll('table').forEach(tab => {
         const r = zeileFinden(tab, x.a, x.b);
         if (r) {
-          einfuegen(r, mach(), tab);
+          einfuegen(r, mach(), tab, x);
           if (x.ab) bereichMarkieren(tab, x.ab, x.b, 'bereich');
           ok = true;
         }
@@ -761,6 +791,7 @@
         if (!platz(h, () => hinweisBox(h, false)) && !unter(h, () => hinweisBox(h, false)))
           allgDazu(h, () => hinweisBox(h, true));
       });
+    felder.forEach(b => b.closest('tr.kr') && feldMitnehmen(b.closest('tr.kr')));
     allgemein(allg);
     kommentarListe();
     dateiLinks.forEach((a, i) => {
@@ -1007,7 +1038,7 @@
     }
     if (e.shiftKey && bereichAufziehen(tab, tr, b)) return;
     const box = el('div', {class: 'kbox km'}),
-      zr = einfuegen(tr, box, tab),
+      zr = einfuegen(tr, box, tab, {a, b}),
       ort = {datei: n, a, b},
       weg = () => document.querySelectorAll('tr.bereich-neu').forEach(r => r.classList.remove('bereich-neu'));
     weg();

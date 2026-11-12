@@ -67,7 +67,7 @@
     }[ledZustand];
     const zaehler = hudZaehler();
     const zeilen = [
-      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand()),
+      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand(), hudFeld()),
       App.review &&
       el(
         'div',
@@ -78,6 +78,29 @@
       )
     ];
     hudTeile.h.replaceChildren(el('div', {class: 'hud-links'}, ...zeilen.filter(Boolean)), hudAgent(R().kontext));
+  }
+  /** ✎, solange ein Eingabefeld offen ist (es hält Neuladen und Neuzeichnen seiner Box auf): Klick springt hin. */
+  function hudFeld() {
+    const ta = document.querySelector('textarea');
+    if (!ta) return null;
+    const hin = () => {
+      for (let d = ta.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+      ta.scrollIntoView({block: 'center'});
+      ta.focus({preventScroll: true});
+    };
+    return el(
+      'button',
+      {
+        class: 'hud-feld',
+        title:
+          'offenes Eingabefeld' +
+          (ledZustand === 'neu' ? ' – die Seite lädt neu, sobald es zu ist' : '') +
+          ' · Klick springt hin',
+        onmousedown: e => e.preventDefault(), // Fokus bleibt im Feld (ein leeres ginge sonst zu)
+        onclick: hin
+      },
+      '✎'
+    );
   }
   /** Stand von merge-train selbst: Commit, Zeit, * bei nicht committeten Änderungen in src/. */
   function hudStand() {

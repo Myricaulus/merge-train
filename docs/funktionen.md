@@ -59,6 +59,10 @@ hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Dat
   Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
   Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
 - Kontext zwischen Hunks nachladen (▼ 20 / ▲ 20 / alle), auch dort kommentierbar.
+- Boxen (Kommentare, Hinweise, Fäden) unter ihrer Zeile: inline über die ganze Breite, nebeneinander auf der Seite ihres
+  Orts (neue Zeile rechts, nur alte links), `einfuegen` (`web/review.js`). Eine Box mit offenem Eingabefeld zeichnet
+  `zeichnen` nicht neu; `feldMitnehmen` verschiebt sie beim Umschalten (i) samt Text in die sichtbare Tabelle. Neue,
+  leere Felder gehen beim Wegklicken zu.
 - Große und generierte Dateien erst auf Klick, automatisch, wenn ein Kommentar darin liegt.
 - Achsen: Dateiart (generiert/groß), Darstellung (nebeneinander/inline).
 - Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/navigation.js`, `web/diff.js`; Routen `api/zeilen`, `api/datei`.
@@ -181,7 +185,8 @@ echter Änderung neu, rahmt Neues ein, endet beim Schließen des Tabs. `agent �
 - Ideen zum Ausbau: `docs/ideen.md`.
 
 ### 17. Stellwerk (HUD) und Meldungen
-LED für den Server, Stand von merge-train, Zähler, wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
+LED für den Server, Stand von merge-train, ✎ bei einem offenen Eingabefeld (hält Neuladen auf, Klick springt hin:
+`hudFeld`), Zähler, wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
 Auch auf der Startseite (Güterbahnhof, auch mit Fehler): HUD ohne Zähler und 🔔; Server, Zuhörer und Meldungen aus `api/hud`.
 - Ort: `web/hud.js`, `web/toasts.js`, `kontext` (`zuhoerer.py`), Route `api/hud`.
 - Erweitern: neue Statusanzeigen ins HUD, neue Meldungen über `App.melden`, keine eigenen Banner.

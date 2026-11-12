@@ -1,5 +1,5 @@
 // Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle
-// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen. Braucht von App: –. Stellt bereit:
+// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen. Braucht von App: zeichnen (review.js, später geladen). Stellt bereit:
 // dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten.
 (() => {
   const dateien = [...document.querySelectorAll('.datei')], // die Dateien des Diffs (<details class="datei">)
@@ -69,6 +69,7 @@
       try {
         localStorage.inline = document.body.classList.contains('inline') ? 1 : '';
       } catch (_) {}
+      App.zeichnen?.(); // offene Eingabefelder wandern in die sichtbare Tabelle
     } else if (e.key === 'z') {
       const zu = dateien.some(d => d.open);
       dateien.forEach(d => (d.open = !zu));
