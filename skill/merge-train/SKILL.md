@@ -19,8 +19,8 @@ lines. You pick them up via the CLI and answer per thread. Answers appear on the
    In the console, at most one line like "3 Fäden in merge-train beantwortet" – never the answer itself.
 2. **"Kommentare", "Nachrichten", "Fragen", "Feedback" – even "GitLab-Kommentare" – mean the merge-train
    threads** whenever they arrived via `horchen`/`feedback` or the user talks about what they wrote in merge-train.
-   Don't fetch or post GitLab MR discussions (glab, API) for them. Real GitLab review comments are a different
-   task (e.g. the `mr-fetch-feedback` skill) and only when the user clearly asks for GitLab itself.
+   Don't fetch or post GitLab MR discussions (glab, API) yourself: the GitLab comments on a line reach you through
+   merge-train (listed under each thread), and you change them only via `merge-train agent kommentar` (see below).
 
 ## Which conversation
 
