@@ -1,7 +1,9 @@
 """Der Waggon: ein Vergleich Quelle → Ziel in einem lokalen Klon – entweder ein lokales Projekt (Branch bis gegen von)
-oder ein GitLab-Merge-Request. Waggon ist sein Schlüssel; daraus ergeben sich Kennung, Name, Dateiname und was er kann."""
+oder ein GitLab-Merge-Request. Waggon ist sein Schlüssel; daraus ergeben sich Kennung, Name, Dateiname und was er kann.
+von/bis eines lokalen Projekts: von_bis."""
 import re
-from .einstellungen import ARBEITSSTAND, BIS, VON, dateiname
+from .einstellungen import ARBEITSSTAND, BIS, KONF, VON, dateiname
+from .akte import akte_lesen
 from typing import NamedTuple, Optional
 
 
@@ -13,9 +15,28 @@ class Ungueltig(Fehler):
     """Ungültige Eingabe (Kennung, Parameter einer Anfrage): beim Server 400."""
 
 
-def fertig_moeglich():
+def zweige_standard(projekt):
+    """von/bis eines lokalen Projekts laut Einstellung: [zweige."<projekt>"] vor von/bis."""
+    eigen = (KONF.get("zweige") or {}).get(projekt) or {}
+    return eigen.get("von") or VON, eigen.get("bis") or BIS
+
+
+def zweige_gewaehlt(projekt):
+    """Auf der Seite (aufgeklappter Waggon) gewähltes {von, bis}, leer = Standard."""
+    return akte_lesen(Waggon(lokal=projekt)).get("zweige") or {}
+
+
+def von_bis(projekt):
+    """(von, bis) eines lokalen Projekts: auf der Seite gewählt vor der Einstellung (zweige_standard)."""
+    von, bis = zweige_standard(projekt)
+    g = zweige_gewaehlt(projekt)
+    return g.get("von") or von, g.get("bis") or bis
+
+
+def fertig_moeglich(projekt):
     """„fertig“ setzt den Branch von – nur bei lokalen Branches, nicht gegen origin/… oder den Arbeitsstand."""
-    return BIS != ARBEITSSTAND and not VON.startswith(("origin/", "refs/remotes/"))
+    von, bis = von_bis(projekt)
+    return bis != ARBEITSSTAND and not von.startswith(("origin/", "refs/remotes/"))
 
 
 class Waggon(NamedTuple):
@@ -74,5 +95,5 @@ class Waggon(NamedTuple):
         fertig    – „fertig ✓“ setzt den Ziel-Branch auf den gesehenen Stand
         committen – der Agent darf Wünsche umsetzen und committen (sonst nur antworten)"""
         if self.lokal:
-            return {"review": False, "fertig": fertig_moeglich(), "committen": True}
+            return {"review": False, "fertig": fertig_moeglich(self.lokal), "committen": True}
         return {"review": True, "fertig": False, "committen": False}

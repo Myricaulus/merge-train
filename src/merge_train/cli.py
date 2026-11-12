@@ -1,8 +1,8 @@
 """Aufruf von der Kommandozeile."""
 import argparse, os, sys
 from .einstellungen import ARBEITSSTAND, BIS, KONF, KONFIG_DATEI, VON, dateiname, projektname
-from .waggon import Fehler
-from .git import ANLASS, finde_repos, git, projekt_ordner, statistik
+from .waggon import Fehler, von_bis
+from .git import ANLASS, fehlende_zweige, finde_repos, git, projekt_ordner, statistik
 from .gitlab import ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig
 from .quellen import LOKAL
 from .prozess import im_browser, server, server_stoppen
@@ -73,12 +73,13 @@ def main():
         wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None
         if o.ordner and not wurzel:
             sys.exit(f"merge-train: kein Git-Repo: {o.ordner}")
-    if wurzel and not all(git(wurzel, "rev-parse", "--verify", "-q", b, check=False)
-                          for b in (VON, "HEAD" if BIS == ARBEITSSTAND else BIS)):
-        sys.exit(f"merge-train: Branch {VON} oder {BIS} fehlt in {wurzel}")
+    if wurzel and fehlende_zweige(wurzel):
+        von, bis = von_bis(projektname(wurzel))
+        sys.exit(f"merge-train: Branch {' und '.join(fehlende_zweige(wurzel))} fehlt in {wurzel} (von = {von}, bis = {bis}; "
+                 "im Zug den Waggon aufklappen oder [zweige] in der Einstellung)")
     if wurzel:  # der Server baut die Seite beim Abruf (und danach die übrigen offenen im Hintergrund)
         return im_browser("/" + dateiname(projektname(wurzel)), o.nur_datei)
     offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
     if not offen:
-        print(f"merge-train: nichts zu prüfen – überall {VON} = {BIS}"); return
+        print("merge-train: nichts zu prüfen – überall ist bis auf dem Stand von von"); return
     return im_browser(offen[0]["datei"], o.nur_datei)

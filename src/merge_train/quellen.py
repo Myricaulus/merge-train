@@ -1,10 +1,10 @@
 """Die beiden Quellen der Waggons – Lokal (Branches im Klon) und GitLab (Merge-Requests) – und was sie können."""
 import json, re, subprocess
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, BIS, KONF, RUNDE, SPERRE, VON, dateiname, melden, projektname
-from .waggon import Fehler, Waggon, fertig_moeglich
-from .git import arbeitsstand, branch_von, finde_repos, git, projekt_wurzel, statistik
-from .akte import (akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
+from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
+from .waggon import Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
+from .git import arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, kurzpfad, projekt_wurzel, statistik
+from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
 from .gitlab import mr_liste, mr_ref
 from .seite import mr_seite, projekt_seite
@@ -23,7 +23,7 @@ def lokal_wagen(stats, wurzeln=None):
     wurzeln: {projekt: Klon} für den Branch der Fäden."""
     wurzeln = wurzeln or {}
     fertig = runde_laden()
-    wagen = [w for w in stats if w["dateien"]]  # offen ist, was jetzt noch Unterschiede hat
+    wagen = [w for w in stats if w["dateien"] or w["status"] == "fehlt"]  # offen ist, was jetzt noch Unterschiede hat
     offen = {w["p"] for w in wagen}
     wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
@@ -35,21 +35,22 @@ def lokal_wagen(stats, wurzeln=None):
 
 
 def fertig(projekt, sha):
-    """VON auf den gesehenen Stand setzen (den Schlüssel prüft der Server). Rückgabe (ok, text)."""
+    """von des Projekts auf den gesehenen Stand setzen (den Schlüssel prüft der Server). Rückgabe (ok, text)."""
     repos = {projektname(r): r for r in finde_repos()}
     if projekt not in repos:
         return False, f"Unbekanntes Projekt: {projekt}"
     wurzel = repos[projekt]
     if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
         return False, "Abgelehnt: unbekannter Stand."
-    if not fertig_moeglich():
-        return False, f"„fertig“ geht nur mit lokalen Branches (von = {VON}, bis = {BIS})."
-    if git(wurzel, "merge-base", "--is-ancestor", VON, sha, check=False) is None:
-        return False, f"{projekt}: {VON} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
-    akte = statistik(wurzel, VON, sha)
-    log = git(wurzel, "log", "--format=%B", f"{VON}..{sha}")
+    von, bis = von_bis(projekt)
+    if not fertig_moeglich(projekt):
+        return False, f"„fertig“ geht nur mit lokalen Branches (von = {von}, bis = {bis})."
+    if git(wurzel, "merge-base", "--is-ancestor", von, sha, check=False) is None:
+        return False, f"{projekt}: {von} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
+    akte = statistik(wurzel, von, sha)
+    log = git(wurzel, "log", "--format=%B", f"{von}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
-    git(wurzel, "branch", "-f", VON, sha)
+    git(wurzel, "branch", "-f", von, sha)
     faeden_archivieren(Waggon(lokal=projekt), branch_von(wurzel))
     with SPERRE:
         r = runde_laden()
@@ -61,11 +62,64 @@ def fertig(projekt, sha):
         ok = subprocess.run(["todo", "erledigt", t, "-n", f"Merge-Request {projekt} angenommen ({sha[:8]})"],
                             cwd=wurzel, capture_output=True).returncode == 0
         erledigt.append(t + ("" if ok else " (Fehler)"))
-    rest = git(wurzel, "rev-list", "--count", f"{sha}..{BIS}").strip()
-    text = (f"{projekt}: {VON} → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
-            + (f"\nAchtung: {BIS} hat {rest} neuere Commit(s)" if rest != "0" else ""))
+    rest = git(wurzel, "rev-list", "--count", f"{sha}..{bis}").strip()
+    text = (f"{projekt}: {von} → {sha[:8]}" + (f"\ntodos erledigt: {', '.join(erledigt)}" if erledigt else "")
+            + (f"\nAchtung: {bis} hat {rest} neuere Commit(s)" if rest != "0" else ""))
     melden(text)
     return True, text
+
+
+def stand_oder_fehlt(wurzel):
+    """statistik; fehlt von oder bis im Klon, ein Waggon „⚠ fehlt“ – aufklappen und andere Zweige wählen."""
+    fehlt = fehlende_zweige(wurzel)
+    if not fehlt:
+        return statistik(wurzel)
+    p = projektname(wurzel)
+    von, bis = von_bis(p)
+    return {"p": p, "datei": dateiname(p), "plus": 0, "minus": 0, "dateien": 0, "commits": 0, "todos": [],
+            "status": "fehlt", "sha": "", "zeile2": f"{bis} → {von}", "marke": "⚠ fehlt",
+            "titel": f"{p}: {', '.join(fehlt)} fehlt im Klon – ▾ zum Einstellen"}
+
+
+def projekt_einstellung(projekt):
+    """Für den aufgeklappten Waggon: Projektinfos, von/bis (gewählt bzw. Standard) und die Branches zur Auswahl."""
+    wurzel = projekt_wurzel(projekt)
+    von, bis = von_bis(projekt)
+    std_von, std_bis = zweige_standard(projekt)
+    refs = (git(wurzel, "for-each-ref", "--sort=-committerdate", "--format=%(refname)", "refs/heads", "refs/remotes",
+                check=False) or "").split()
+    lokal = [r[len("refs/heads/"):] for r in refs if r.startswith("refs/heads/")]
+    remote = [r[len("refs/remotes/"):] for r in refs if r.startswith("refs/remotes/") and not r.endswith("/HEAD")]
+    fehlt = fehlende_zweige(wurzel)
+    info = {"p": projekt, "ordner": kurzpfad(wurzel), "von": von, "bis": bis, "standard": {"von": std_von, "bis": std_bis},
+            "gewaehlt": bool(zweige_gewaehlt(projekt)), "lokal": lokal, "remote": remote, "fehlt": fehlt,
+            "ausgecheckt": (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(losgelöst)",
+            "origin": (git(wurzel, "remote", "get-url", "origin", check=False) or "").strip(),
+            "fertig": fertig_moeglich(projekt), "arbeitsstand": ARBEITSSTAND}
+    if not fehlt:
+        st = statistik(wurzel)
+        info.update({k: st[k] for k in ("plus", "minus", "dateien", "commits")})
+        letzter = (git(wurzel, "log", "-1", "--format=%h%x1f%cd%x1f%s", "--date=format:%d.%m. %H:%M",
+                       "HEAD" if bis == ARBEITSSTAND else bis, check=False) or "").strip()
+        if letzter:
+            info["letzter"] = dict(zip(("sha", "zeit", "betreff"), letzter.split("\x1f", 2)))
+    return info
+
+
+def projekt_einstellen(projekt, von, bis):
+    """von/bis eines lokalen Projekts auf der Seite wählen (in der Akte); gleich dem Standard bzw. leer = Standard."""
+    wurzel = projekt_wurzel(projekt)
+    std = zweige_standard(projekt)
+    von, bis = (von or std[0]).strip(), (bis or std[1]).strip()
+    fehlt = fehlende_zweige(wurzel, von, bis)
+    if fehlt:
+        return False, f"{projekt}: {', '.join(fehlt)} gibt es im Klon nicht"
+    with akte_bearbeiten(Waggon(lokal=projekt)) as akte:
+        if (von, bis) == std:
+            akte.pop("zweige", None)
+        else:
+            akte["zweige"] = {"von": von, "bis": bis}
+    return True, f"{projekt}: {bis} → {von}" + (" (Standard)" if (von, bis) == std else "")
 
 
 def mr_wagen(akt=None):
@@ -114,7 +168,7 @@ def mr_wagen(akt=None):
     return wagen
 
 
-# Quellen der Waggons: die lokalen Branches (BIS gegen VON in jedem Repo unter „projekte“) und GitLab-MRs; eine
+# Quellen der Waggons: die lokalen Branches (bis gegen von in jedem Repo unter „projekte“, je Projekt: von_bis) und GitLab-MRs; eine
 # GitHub-Quelle wäre eine weitere Klasse. Der Zug mischt die Waggons aller eingeschalteten Quellen. Eine Quelle weiß,
 # wo der Klon und Stand eines Waggons liegt (ort), baut seine Seite (seite), zählt ihre Waggons auf (wagen) und sagt
 # dem Agenten, was zu tun ist (prompt). Bringt sie Einträge von außen (Diskussionen), dann mit titel und logo: das
@@ -128,13 +182,14 @@ class Lokal:
         return bool(KONF["lokal"])
 
     def ort(self, waggon):
-        """(Klon, Stand), auf den sich Zeilen beziehen: der Branch BIS."""
+        """(Klon, Stand), auf den sich Zeilen beziehen: der Branch bis des Projekts."""
         wurzel = projekt_wurzel(waggon.lokal)
-        if BIS == ARBEITSSTAND:
+        bis = von_bis(waggon.lokal)[1]
+        if bis == ARBEITSSTAND:
             return wurzel, arbeitsstand(wurzel)
-        head = (git(wurzel, "rev-parse", "--verify", "-q", BIS, check=False) or "").strip()
+        head = (git(wurzel, "rev-parse", "--verify", "-q", bis, check=False) or "").strip()
         if not head:
-            raise Fehler(f"Branch {BIS} fehlt in {wurzel}")
+            raise Fehler(f"Branch {bis} fehlt in {wurzel}")
         return wurzel, head
 
     def seite(self, waggon, ansicht=None):
@@ -149,13 +204,14 @@ class Lokal:
 
     def wagen(self, akt=None):
         from concurrent.futures import ThreadPoolExecutor
-        repos = finde_repos()
+        repos = finde_repos(alle=True)
         with ThreadPoolExecutor(8) as ex:
-            return lokal_wagen(list(ex.map(statistik, repos)), {projektname(r): r for r in repos})
+            return lokal_wagen(list(ex.map(stand_oder_fehlt, repos)), {projektname(r): r for r in repos})
 
     def prompt(self, waggon, wurzel):
-        wo = ("im Arbeitsverzeichnis umsetzen (nicht committen)" if BIS == ARBEITSSTAND else f"auf {BIS} umsetzen und committen")
-        return (f"In merge-train liegen Fragen bzw. Feedback des Nutzers zum Code von {waggon.lokal} (Diff {BIS} gegen {VON}). "
+        von, bis = von_bis(waggon.lokal)
+        wo = ("im Arbeitsverzeichnis umsetzen (nicht committen)" if bis == ARBEITSSTAND else f"auf {bis} umsetzen und committen")
+        return (f"In merge-train liegen Fragen bzw. Feedback des Nutzers zum Code von {waggon.lokal} (Diff {bis} gegen {von}). "
                 f"Hol sie mit `merge-train agent feedback` ab. Fragen beantworten, Änderungswünsche {wo}; "
                 f"zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). "
                 f"Danach mit `merge-train agent horchen` im Hintergrund auf weitere Nachrichten warten.")

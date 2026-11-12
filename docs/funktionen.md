@@ -26,6 +26,12 @@ zusammen in einem Zug.
   Quelle mit Einträgen von außen.
 - Ort: `quellen.py` (Klassen `Lokal`, `GitLab`), `gitlab.py` (glab), `cli.py` (MR-Verweise).
 - Erweitern: eine neue Quelle ist eine neue Klasse in `quellen.py` plus eine Waggon-Art, keine eigene Seite.
+- von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`): auf der Seite gewählt (Akte `zweige`) vor
+  `[zweige.<projekt>]` vor `von`/`bis`. Fehlt ein Branch: `fehlende_zweige` (`git.py`), Waggon „⚠ fehlt“
+  (`stand_oder_fehlt`), nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).
+- Waggon-Karte („▾“ am lokalen Waggon): Projektinfos, von/bis wählen. `projekt_einstellung`/`projekt_einstellen`
+  (`quellen.py`), Route `api/projekt`, `karteOeffnen` in `web/zug.js`. Erweitern: weitere Projekt-Einstellungen dort
+  und in der Akte, keine eigene Seite.
 
 ### 2. Fähigkeiten je Waggon (`kann`)
 Was ein Waggon darf, bestimmt seine Quelle: `review` (Kommentare nach GitLab), `fertig` (Ziel-Branch setzen),

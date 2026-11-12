@@ -43,6 +43,18 @@ tr.hk td{background:var(--hk);color:var(--muted);padding:3px 8px}
 .hilfe kbd{font:11px ui-monospace,monospace;border:1px solid var(--rand);border-bottom-width:2px;border-radius:3px;padding:0 4px;color:var(--fg);background:var(--bg)}
 #zug{overflow-x:auto;margin:-2px 0 6px} #zug svg{display:block}
 #zug .wg{cursor:pointer} #zug .wg.fertig{cursor:default} #zug .wg.fertig.mr{cursor:pointer}
+#zug .auf rect{fill:transparent} #zug .auf text{fill:var(--muted);font-size:14px} #zug .auf:hover rect{fill:var(--rand)} #zug .auf:hover text{fill:var(--fg)}
+#zug .fehlt .kasten{stroke-dasharray:5 3}
+#wagenkarte{position:fixed;z-index:70;width:min(460px,calc(100vw - 16px));background:var(--kopf);color:var(--fg);border:1px solid var(--rand);border-radius:8px;
+padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px;display:flex;flex-direction:column;gap:5px}
+#wagenkarte .zu{position:absolute;right:6px;top:6px;border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px}
+#wagenkarte .kopf{padding-right:20px;overflow-wrap:anywhere} #wagenkarte .sub{color:var(--muted);overflow-wrap:anywhere}
+#wagenkarte .warn{color:var(--tk)} #wagenkarte .p{color:var(--p)} #wagenkarte .m{color:var(--m)}
+#wagenkarte .wahl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+#wagenkarte select{font:12px ui-monospace,monospace;max-width:190px;padding:3px;background:var(--bg);color:var(--fg);border:1px solid var(--rand);border-radius:5px}
+#wagenkarte .knoepfe{display:flex;gap:8px;margin:2px 0}
+#wagenkarte .knoepfe button{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
+#wagenkarte .knoepfe button:disabled{opacity:.45;cursor:default}
 #zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5}
 #zug .wg:hover .kasten{stroke:var(--muted)}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}

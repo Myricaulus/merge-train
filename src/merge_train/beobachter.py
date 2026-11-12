@@ -5,8 +5,8 @@ Zähler n hat sich etwas bewegt“. Ob sich der Stand wirklich geändert hat, pr
 Dazu: welche Zeilen zwischen zwei Ständen neu sind (Rahmen um das Neue nach dem Neuladen).
 """
 import os, re, subprocess, sys, threading, time
-from .einstellungen import KONF, SPERRE, VON
-from .waggon import Fehler
+from .einstellungen import KONF, SPERRE
+from .waggon import Fehler, von_bis
 from .git import bis_sha, git, projekt_wurzel
 from .akte import akte_lesen, struktur_laden
 
@@ -113,7 +113,7 @@ def veraltet(waggon, sha):
     if not alt or alt[0] != b.zaehler:
         n = b.zaehler
         try:
-            jetzt = (bis_sha(wurzel), git(wurzel, "rev-parse", VON).strip())
+            jetzt = (bis_sha(wurzel), git(wurzel, "rev-parse", von_bis(waggon.lokal)[0]).strip())
         except subprocess.CalledProcessError:
             return False
         alt = _GEPRUEFT[wurzel] = (n, jetzt)

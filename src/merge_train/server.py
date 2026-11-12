@@ -2,7 +2,7 @@
 import json, os, re, threading, time
 import urllib.parse
 from datetime import datetime
-from .einstellungen import BIS, KONF, SKRIPT, VON, dateiname, projektname, schluessel
+from .einstellungen import KONF, SKRIPT, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
 from .git import ANLASS, anlass, branch_aktualisieren, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON, bild
@@ -11,7 +11,7 @@ from .beobachter import neue_zeilen, veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
-from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, schluessel_von
+from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -28,7 +28,7 @@ ALLES_DURCH = f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{IC
 <style>{CSS}
 .durch{{display:grid;place-items:center;min-height:100vh;text-align:center}} .durch div{{font-size:22vmin;line-height:1.25;margin-bottom:2vmin}}
 .durch p{{font-size:20px;margin:12px 0 0}} .durch code{{font-size:.9em}}</style></head>
-<body><main class="durch"><section><div>👍</div><p>Alles durch – überall {VON} = {BIS}</p>
+<body><main class="durch"><section><div>👍</div><p>Alles durch – überall ist bis auf dem Stand von von</p>
 <p class="sub">Neue Commits holt <code>merge-train</code> beim nächsten Aufruf.</p></section></main></body></html>"""
 
 
@@ -375,6 +375,20 @@ def api_fertig(anfrage):
         return NICHT_GEFUNDEN
     ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
     return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
+
+
+@route("GET", "api/projekt", quelle=LOKAL)
+def api_projekt(anfrage):
+    """Aufgeklappter Waggon eines lokalen Projekts: Infos, von/bis und die Branches zur Auswahl."""
+    return projekt_einstellung(str(anfrage.daten.get("p", "")))
+
+
+@route("POST", "api/projekt", quelle=LOKAL)
+def api_projekt_einstellen(anfrage):
+    """von/bis des Projekts wählen (leer bzw. gleich dem Standard: Standard aus der Einstellung). Danach der neue Zug."""
+    d = anfrage.daten
+    ok, text = projekt_einstellen(str(d.get("p", "")), str(d.get("von") or ""), str(d.get("bis") or ""))
+    return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(d.get("akt"))})
 
 
 def mr_liste_aktion(anfrage):

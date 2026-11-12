@@ -53,6 +53,14 @@ else
   echo "• Einstellungen schon vorhanden: $KONF"
 fi
 
+# Zum Hineinschauen (Entwicklung): Einstellung und Aktenschrank (Akten, Fäden, Review-Stände) vom Repo aus
+# erreichbar – Symlinks, in .gitignore
+DATEN="${XDG_DATA_HOME:-$HOME/.local/share}/merge-train"
+mkdir -p "$DATEN"
+ln -sfn "$(dirname "$KONF")" "$HIER/config"
+ln -sfn "$DATEN" "$HIER/aktenschrank"
+echo "✓ $HIER/config → $(dirname "$KONF"), $HIER/aktenschrank → $DATEN"
+
 python3 -c 'import pygments' 2>/dev/null && echo "✓ pygments" || \
   echo "• pygments fehlt (ohne Syntaxfarben): sudo apt install python3-pygments  bzw.  pip install --user pygments"
 if command -v glab >/dev/null; then

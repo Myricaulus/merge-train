@@ -1,8 +1,8 @@
 """merge-train agent …: die Befehle für den Agenten (feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
 import argparse, hashlib, json, os, re, subprocess, sys, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, BIS, KONF, ersetzen, jetzt, melden, projektname
-from .waggon import Fehler, Waggon
+from .einstellungen import ARBEITSSTAND, KONF, ersetzen, jetzt, melden, projektname
+from .waggon import Fehler, Waggon, von_bis
 from .git import git, inhalt, kurzpfad, projekt_ordner
 from .zeilen import zeile_vorwaerts
 from .diff_html import zeilenzahl
@@ -117,7 +117,8 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                     for m in k["nachrichten"]:
                         if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt"):
                             m["abgeholt"] = jetzt()
-        wo = f"{branch}{' · Arbeitsstand' if BIS == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
+        bis = von_bis(waggon.lokal)[1] if waggon.lokal else None
+        wo = f"{branch}{' · Arbeitsstand' if bis == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
         kopf = (f'merge-train · {waggon.name} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
@@ -133,7 +134,7 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                 pass
         teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review) + "\n" for k in zeigen]
         teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
-                     "nicht committen." if BIS == ARBEITSSTAND else f"den aktuellen Stand von {BIS}.") if waggon.kann["committen"]
+                     "nicht committen." if bis == ARBEITSSTAND else f"den aktuellen Stand von {bis}.") if waggon.kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')

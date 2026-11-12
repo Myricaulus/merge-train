@@ -1,8 +1,8 @@
 """Alles, was das lokale git fragt: Aufruf mit Protokoll, Diff zerlegen, Arbeitsstand, Repos finden, Dateiinhalte."""
 import glob, hashlib, os, re, shutil, subprocess, threading, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, PROJEKTE, PROJEKTE_LISTE, VON, dateiname, projektname
-from .waggon import Fehler
+from .einstellungen import ARBEITSSTAND, KONF, ORDNER, PROJEKTE, PROJEKTE_LISTE, dateiname, projektname
+from .waggon import Fehler, von_bis, zweige_gewaehlt
 
 ANLASS = threading.local()  # wofür die Anfrage ist (Server: Pfad/Aktion, CLI: Befehl) – nur fürs Log
 
@@ -95,10 +95,11 @@ def projekt_ordner(name):
 
 
 def branch_von(wurzel):
-    """Branch, zu dem die Fäden eines lokalen Projekts gehören: BIS, bei bis = "arbeitsstand" der ausgecheckte Branch
+    """Branch, zu dem die Fäden eines lokalen Projekts gehören: bis, bei bis = "arbeitsstand" der ausgecheckte Branch
     (losgelöster HEAD: "HEAD")."""
-    if BIS != ARBEITSSTAND:
-        return BIS
+    bis = von_bis(projektname(wurzel))[1]
+    if bis != ARBEITSSTAND:
+        return bis
     return (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "HEAD"
 
 
@@ -146,30 +147,44 @@ def arbeitsstand(wurzel):
 
 
 def bis_sha(wurzel, bis=None):
-    """Stand für bis: Branch/Ref oder der Arbeitsstand."""
-    bis = bis or BIS
+    """Stand für bis (Standard: bis des Projekts): Branch/Ref oder der Arbeitsstand."""
+    bis = bis or von_bis(projektname(wurzel))[1]
     return arbeitsstand(wurzel) if bis == ARBEITSSTAND else git(wurzel, "rev-parse", bis).strip()
 
 
-def finde_repos():
-    """Alle Repos aus projekte (Ordner: auch eine Ebene tiefer, z. B. cachy-patch/*; oder direkt ein Repo) mit VON und BIS."""
+def fehlende_zweige(wurzel, von=None, bis=None):
+    """Welche von von/bis (Standard: die des Projekts) es im Klon nicht gibt."""
+    if not (von and bis):
+        von, bis = von_bis(projektname(wurzel))
+    return [b for b, ref in ((von, von), (bis, "HEAD" if bis == ARBEITSSTAND else bis))
+            if not git(wurzel, "rev-parse", "--verify", "-q", ref + "^{commit}", check=False)]
+
+
+def finde_repos(alle=False):
+    """Alle Repos aus projekte (Ordner: auch eine Ebene tiefer, z. B. cachy-patch/*; oder direkt ein Repo), in denen es
+    von und bis des Projekts gibt. alle: auch die, denen ein Branch fehlt, sofern ausdrücklich gemeint (direkt unter
+    projekte genannt oder mit eigenen Zweigen in der Einstellung bzw. auf der Seite) – zum Einstellen im Zug."""
     out, kandidaten = [], []
     for wo in PROJEKTE_LISTE:
         if ist_repo(wo):  # direkt ein Repo
-            kandidaten.append(wo); continue
+            kandidaten.append((wo, True)); continue
         for e in sorted(os.listdir(wo)) if os.path.isdir(wo) else []:
             d = os.path.join(wo, e)
             if not os.path.isdir(d): continue
-            kandidaten += [d] if ist_repo(d) else [os.path.join(d, u) for u in sorted(os.listdir(d)) if ist_repo(os.path.join(d, u))]
-    for k in kandidaten:
-        if git(k, "rev-parse", "--verify", "-q", VON, check=False) and \
-           git(k, "rev-parse", "--verify", "-q", "HEAD" if BIS == ARBEITSSTAND else BIS, check=False):
+            kandidaten += [(d, False)] if ist_repo(d) else \
+                [(os.path.join(d, u), False) for u in sorted(os.listdir(d)) if ist_repo(os.path.join(d, u))]
+    for k, genannt in kandidaten:
+        if not fehlende_zweige(k):
             out.append(k)
+        elif alle:
+            p = projektname(k)
+            if genannt or p in (KONF.get("zweige") or {}) or zweige_gewaehlt(p):
+                out.append(k)
     return out
 
 
 def statistik(wurzel, von=None, bis=None):
-    von, bis = von or VON, bis_sha(wurzel, bis)
+    von, bis = von or von_bis(projektname(wurzel))[0], bis_sha(wurzel, bis)
     basis = git(wurzel, "merge-base", von, bis).strip()
     plus = minus = dateien = 0
     for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
@@ -322,8 +337,8 @@ def git_commits(ordner, von, bis):
 
 
 def projekt_wurzel(projekt):
-    """Klon des lokalen Projekts mit diesem Namen."""
-    wurzel = next((r for r in finde_repos() if projektname(r) == projekt), None)
+    """Klon des lokalen Projekts mit diesem Namen (auch, wenn ihm gerade ein Branch fehlt)."""
+    wurzel = next((r for r in finde_repos(alle=True) if projektname(r) == projekt), None)
     if not wurzel:
         raise Fehler(f"Projekt {projekt} nicht gefunden")
     return wurzel

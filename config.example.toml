@@ -46,6 +46,12 @@
 # Sonst ein Befehl mit {ordner}, {projekt}, {prompt}, z. B. "konsole --workdir {ordner} -e claude {prompt}"
 # feedback_befehl = ""
 
+# Eigene von/bis je lokalem Projekt (Name wie im Zug). Auf der Seite gewählte („▾“ am Waggon) gehen vor.
+# Tabelle: muss nach allen einfachen Einträgen stehen, wie [agenten] und [repos] hier unten.
+# [zweige.merge-train]
+# von = "reviewed"
+# bis = "claude"
+
 # GitLab-Modus: Agenten, die man zu einem MR fragen kann („an <Name>“ im Kommentar-Editor, bleibt privat).
 # Name = Befehl, den „Fragen senden“ startet, wenn keiner zuhört ({ordner} = Klon, {projekt}, {prompt}).
 # Tabelle: muss nach allen einfachen Einträgen stehen.

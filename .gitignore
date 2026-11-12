@@ -2,3 +2,5 @@ input/
 __pycache__/
 /merge-train
 /merge-train.neu
+/config
+/aktenschrank

@@ -121,7 +121,7 @@ st = m["statistik"](w)
 pfad, struktur = m["projekt_seite"](w)
 print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
                   "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
-                  "stat": st, "fertig": m["fertig_moeglich"](), "dateien": [d["neu"] for d in struktur["dateien"]],
+                  "stat": st, "fertig": m["fertig_moeglich"](m["projektname"](w)), "dateien": [d["neu"] for d in struktur["dateien"]],
                   "seite": os.path.exists(pfad), "titel": open(pfad, encoding="utf-8").read().split("<h1>")[1].split("</h1>")[0],
                   **thread_pruefen(m, w)}))
 """

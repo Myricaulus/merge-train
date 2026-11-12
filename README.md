@@ -26,6 +26,9 @@ sind beide an, fahren sie im selben Zug):
 - **lokal** (`lokal = true`): Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen.
   „fertig ✓“ setzt `reviewed` auf den gesehenen Stand. Fragen und Wünsche zum Code gehen per Klick auf die Zeilennummer
   an Claude, der sie auf `claude` umsetzen darf (siehe [Gespräch mit Claude](#gespräch-mit-claude-lokaler-modus)).
+  von/bis gibt es auch je Projekt: `[zweige.<projekt>]` in der Einstellung, oder im Zug den Waggon mit „▾“ aufklappen
+  (Projektinfos, Branches zur Auswahl, „↺ Standard“). Repos, denen ein Branch fehlt, fahren als gestrichelter
+  Waggon „⚠ fehlt“ mit, wenn sie ausdrücklich unter `projekte` stehen.
 - **GitLab** (`gitlab = true`): ein MR mit eigenen Review-Kommentaren und Agent-Hinweisen. „Review abschließen“ legt
   die Kommentare als **Entwürfe** im MR an, veröffentlicht wird danach in GitLab. Dazu private Fragen an Agenten
   (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)), die nur antworten, nichts ändern.
@@ -249,6 +252,17 @@ origin; noch nicht geholt, holt merge-train origin einmal selbst), damit IDE und
 auf einem Branch steht (kein Rebase), samt Submodulen. Die Seite lädt dafür nicht neu, die Glocke meldet den Wechsel.
 Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `mr_auschecken = false`.
 
+## Wo liegt was
+
+merge-train hält sich an die Linux-Ordner (XDG): Einstellung, Daten und Cache liegen getrennt. Zum Hineinschauen
+legt `install.sh` im Repo zwei Symlinks an (in `.gitignore`): `config` und `aktenschrank`.
+
+| Was | Ort | im Repo |
+|---|---|---|
+| Einstellung | `~/.config/merge-train/config.toml` (`$XDG_CONFIG_HOME`, `$MERGE_TRAIN_CONFIG`) | `config/` |
+| Akten: Fäden, Nachrichten, Review-Stände, gewählte von/bis | `~/.local/share/merge-train/` (`$XDG_DATA_HOME`): `lokal/<projekt>.json`, `reviews/<mr>.json`, `beobachten/` | `aktenschrank/` |
+| Seiten-Cache, MR-Liste, Log der Anfragen | `~/.cache/merge-train/` (`$XDG_CACHE_HOME`) | – |
+
 ## Einstellungen
 
 `~/.config/merge-train/config.toml`, Vorlage: [`config.example.toml`](config.example.toml). Die wichtigsten Einträge:
@@ -263,6 +277,7 @@ Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `
 | `mr_liste` | `reviewer,author` | welche MRs der Zug zeigt: `reviewer`, `author`, `assignee` (mehrere mit Komma) oder `keine` |
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
+| `[zweige]` | leer | je lokalem Projekt eigene von/bis: `[zweige.merge-train]` mit `von = "reviewed"`, `bis = "claude"` (auf der Seite gewählte gehen vor) |
 | `klon_ordner` | `[]` | Ordner (oder Liste), in denen weitere Klone liegen: ein MR aus `gruppe/metrics-client` findet `<ordner>/metrics-client`, wenn dessen origin auf dieses Projekt zeigt – ohne Eintrag unter `[repos]` |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |

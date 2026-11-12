@@ -1,9 +1,10 @@
 // Der Zug im Kopf: ein Waggon je Projekt/MR (Klick wechselt), „fertig ✓“ (lokale Waggons), weiter zum nächsten (n,
-// Enter), Abfahrt mit Daumen-Regen, wenn der letzte fertig ist.
-// Braucht von App: waggon, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur Diff-Seiten).
-// Stellt bereit: zugSetzen.
+// Enter), Abfahrt mit Daumen-Regen, wenn der letzte fertig ist. Lokale Waggons klappen mit „▾“ auf (Waggon-Karte):
+// Projektinfos und von/bis des Projekts zur Auswahl (api/projekt).
+// Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
+// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen.
 (() => {
-  const {waggon} = App;
+  const {waggon, el} = App;
   let zugWagen = (window.MR_ZUG || {wagen: []}).wagen; // die Waggons des Zugs (/zug.js bzw. /api/zug)
   const esc = t =>
     String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
@@ -36,9 +37,11 @@
       const x = 4 + i * (W + G),
         akt = w.p === waggon.projekt,
         f = w.status === 'fertig',
-        mr = w.quelle && w.quelle !== 'lokal';
+        mr = w.quelle && w.quelle !== 'lokal',
+        fehlt = w.status === 'fehlt',
+        nmax = mr ? 23 : 20; // lokal: Platz für „▾“
       const nm = w.name || w.p,
-        name = esc(nm.length > 23 ? nm.slice(0, 22) + '…' : nm),
+        name = esc(nm.length > nmax ? nm.slice(0, nmax - 1) + '…' : nm),
         ges = Math.max(1, w.plus + w.minus),
         bp = Math.round(((W - 20) * w.plus) / ges);
       const todos = w.todos || [],
@@ -70,13 +73,17 @@
           ? `<rect x="${x + 10}" y="${y + 43}" width="${bp}" height="4" class="tp"/>` +
             `<rect x="${x + 10 + bp}" y="${y + 43}" width="${W - 20 - bp}" height="4" class="tm"/>`
           : '';
-      const klassen = `wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${mr ? 'mr' : ''}`;
+      const klassen = `wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${mr ? 'mr' : ''} ${fehlt ? 'fehlt' : ''}`;
+      const auf = mr
+        ? ''
+        : `<g class="auf"><rect x="${x + W - 26}" y="${y + 2}" width="24" height="22" rx="4"/>` +
+          `<text x="${x + W - 14}" y="${y + 18}" text-anchor="middle">▾</text></g>`;
       s += `<g class="${klassen}" data-i="${i}"><title>${titel}</title>
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
    <text x="${x + 10}" y="${y + 17}" font-weight="600">${name}</text>
    <text x="${x + 10}" y="${y + 35}">${z2}</text>
    <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f ? 'mf' : 'mo'}">${marke}</text>
-   ${balken}
+   ${balken}${auf}
    <circle cx="${x + 24}" cy="${y + H + 4}" r="6" class="rad"/>
    <circle cx="${x + W - 24}" cy="${y + H + 4}" r="6" class="rad"/></g>
    <line x1="${x + W}" y1="${y + H - 8}" x2="${x + W + G}" y2="${y + H - 8}" class="rad"
@@ -86,9 +93,11 @@
     svg.innerHTML = s;
     box.appendChild(svg);
     svg.querySelectorAll('.wg').forEach(g =>
-      g.addEventListener('click', () => {
+      g.addEventListener('click', e => {
         const w = zugWagen[+g.dataset.i];
-        if (w && w.p !== waggon.projekt && (w.status === 'offen' || (w.quelle && w.quelle !== 'lokal')))
+        if (!w) return;
+        if (e.target.closest('.auf') || w.status === 'fehlt') return karteOeffnen(w, g);
+        if (w.p !== waggon.projekt && (w.status === 'offen' || (w.quelle && w.quelle !== 'lokal')))
           location.href = w.datei;
       })
     ); // MRs auch nach dem Abschließen anklickbar
@@ -103,9 +112,132 @@
       box.scrollLeft = Math.max(0, x + W / 2 - (cx != null ? 0 : box.clientWidth / 2));
     }
   }
+  // Waggon-Karte (aufgeklappter lokaler Waggon): Projektinfos, von/bis wählen (gespeichert in der Akte des Projekts),
+  // „↺ Standard“ = wie in der Einstellung
+  let karte = null;
+  function karteZu() {
+    if (karte) karte.remove();
+    karte = null;
+  }
+  addEventListener('keydown', e => e.key === 'Escape' && karteZu());
+  document.addEventListener('mousedown', e => {
+    if (karte && !karte.contains(e.target) && !e.target.closest('#zug .auf')) karteZu();
+  });
+  function zweigWahl(name, wert, d, mitArbeitsstand) {
+    const opt = (v, t) => el('option', {value: v, selected: v === wert ? '' : null}, t || v);
+    const gruppe = (t, liste) => (liste.length ? el('optgroup', {label: t}, ...liste.map(b => opt(b))) : null);
+    const bekannt = [...d.lokal, ...d.remote, d.arbeitsstand].includes(wert);
+    return el(
+      'label',
+      {},
+      name + ' ',
+      el(
+        'select',
+        {name},
+        bekannt ? null : opt(wert, wert + ' (fehlt)'),
+        mitArbeitsstand ? opt(d.arbeitsstand, 'arbeitsstand (Arbeitsverzeichnis, auch nicht Committetes)') : null,
+        gruppe('lokal', d.lokal),
+        gruppe('remote', d.remote)
+      )
+    );
+  }
+  function karteOeffnen(w, g) {
+    const offen = karte && karte.dataset.p === w.p;
+    karteZu();
+    if (offen) return;
+    karte = el('div', {id: 'wagenkarte', 'data-p': w.p}, el('div', {class: 'sub'}, w.p + ' …'));
+    document.body.append(karte);
+    const r = g.querySelector('.kasten').getBoundingClientRect();
+    karte.style.top = r.bottom + 14 + 'px';
+    karte.style.left = Math.max(8, Math.min(r.left, innerWidth - karte.offsetWidth - 8)) + 'px';
+    const k = karte;
+    fetch('/api/projekt?p=' + encodeURIComponent(w.p) + '&k=' + encodeURIComponent(waggon.k || ''))
+      .then(r => r.json())
+      .then(d => {
+        if (karte !== k) return;
+        if (d.ok === false || d.text) {
+          k.replaceChildren(el('div', {class: 'warn'}, d.text || 'Projekt nicht gefunden'));
+          return;
+        }
+        const std = d.standard,
+          vonWahl = zweigWahl('von', d.von, d, false),
+          bisWahl = zweigWahl('bis', d.bis, d, true);
+        const senden = (von, bis) =>
+          fetch('/api/projekt', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({p: d.p, von, bis, akt: waggon.id, k: waggon.k})
+          })
+            .then(r => r.json())
+            .then(e => {
+              App.melden(e.text);
+              if (!e.ok) return;
+              karteZu();
+              if (d.p === waggon.projekt) location.reload();
+              else zugSetzen(e.wagen || zugWagen);
+            })
+            .catch(() => App.melden(App.serverWeg));
+        const l = d.letzter;
+        k.replaceChildren(
+          el('button', {class: 'zu', title: 'zuklappen (Esc)', onclick: karteZu}, '✕'),
+          el('div', {class: 'kopf'}, el('b', {}, d.p), ' ', el('span', {class: 'sub'}, d.ordner)),
+          d.origin ? el('div', {class: 'sub'}, 'origin ' + d.origin) : null,
+          el('div', {}, 'ausgecheckt: ', el('code', {}, d.ausgecheckt)),
+          l
+            ? el(
+                'div',
+                {class: 'sub'},
+                `letzter Commit ${d.bis === d.arbeitsstand ? '(HEAD)' : 'von ' + d.bis}: ${l.sha} · ${l.zeit} · ${l.betreff}`
+              )
+            : null,
+          d.fehlt.length
+            ? el('div', {class: 'warn'}, '⚠ fehlt im Klon: ' + d.fehlt.join(', '))
+            : el(
+                'div',
+                {},
+                el('span', {class: 'p'}, '+' + d.plus),
+                ' ',
+                el('span', {class: 'm'}, '−' + d.minus),
+                ` · ${d.dateien} Datei(en) · ${d.commits} Commit(s)`
+              ),
+          el('div', {class: 'wahl'}, bisWahl, ' → ', vonWahl),
+          el(
+            'div',
+            {class: 'knoepfe'},
+            el(
+              'button',
+              {
+                onclick: () => senden(vonWahl.querySelector('select').value, bisWahl.querySelector('select').value)
+              },
+              'übernehmen'
+            ),
+            el(
+              'button',
+              {
+                disabled: d.gewaehlt ? null : '',
+                title: 'wie in der Einstellung: ' + std.bis + ' → ' + std.von,
+                onclick: () => senden('', '')
+              },
+              '↺ Standard'
+            )
+          ),
+          el(
+            'div',
+            {class: 'sub'},
+            (d.gewaehlt ? 'auf der Seite gewählt · ' : 'aus der Einstellung · ') +
+              (d.fertig ? '„fertig ✓“ setzt ' + d.von : '„fertig ✓“ nur mit lokalen Branches (nicht origin/…, arbeitsstand)')
+          )
+        );
+        k.style.left = Math.max(8, Math.min(r.left, innerWidth - k.offsetWidth - 8)) + 'px';
+      })
+      .catch(() => App.melden(App.serverWeg));
+  }
   zugZeichnen();
   App.kopfhoeheSetzen?.();
-  addEventListener('resize', zugZeichnen);
+  addEventListener('resize', () => {
+    karteZu();
+    zugZeichnen();
+  });
   /** Neue Waggons (vom Server) zeigen */
   function zugSetzen(wagen) {
     zugWagen = wagen;

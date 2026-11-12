@@ -743,6 +743,48 @@ class AktualisierenTest(unittest.TestCase):
             branch_aktualisieren(self.klon, "mr")
 
 
+class ZweigeTest(unittest.TestCase):
+    """von/bis je lokalem Projekt: Einstellung [zweige], auf der Seite gewählt (Akte), Waggon „fehlt“."""
+    def test_von_bis(self):
+        from merge_train import git as g, einstellungen as e, quellen as q
+        from merge_train.waggon import von_bis, zweige_standard
+        w = f"{tempfile.mkdtemp(dir=T)}/demo"
+        sh = lambda *a: subprocess.run(["git", "-C", w, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                       capture_output=True, text=True, check=True).stdout
+        os.makedirs(w); sh("init", "-q", "-b", "main"); schreiben(f"{w}/a", "1\n"); sh("add", "a"); sh("commit", "-qm", "a")
+        sh("switch", "-qc", "x"); schreiben(f"{w}/a", "2\n"); sh("commit", "-qam", "b")
+        alt = (g.PROJEKTE_LISTE[:], dict(e.KONF))
+        try:
+            g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = [w]
+            e.KONF.update(von="reviewed", bis="claude", zweige={})
+            self.assertEqual(von_bis("demo"), ("reviewed", "claude"))
+            self.assertEqual(g.finde_repos(), [])  # Branches fehlen
+            self.assertEqual(g.finde_repos(alle=True), [w])  # direkt genannt: zum Einstellen im Zug
+            self.assertEqual(q.stand_oder_fehlt(w)["status"], "fehlt")
+            self.assertFalse(q.projekt_einstellen("demo", "gibtsnicht", "x")[0])
+            self.assertTrue(q.projekt_einstellen("demo", "main", "x")[0])
+            self.assertEqual(von_bis("demo"), ("main", "x"))
+            self.assertEqual(g.finde_repos(), [w])
+            self.assertEqual(q.stand_oder_fehlt(w)["commits"], 1)
+            self.assertTrue(Waggon(lokal="demo").kann["fertig"])
+            d = q.projekt_einstellung("demo")
+            self.assertEqual((d["von"], d["bis"], d["gewaehlt"], sorted(d["lokal"])), ("main", "x", True, ["main", "x"]))
+            self.assertTrue(q.projekt_einstellen("demo", "main", "arbeitsstand")[0])
+            self.assertFalse(Waggon(lokal="demo").kann["fertig"])  # arbeitsstand: kein „fertig“
+            e.KONF["zweige"] = {"demo": {"von": "main", "bis": "x"}}
+            self.assertEqual(zweige_standard("demo"), ("main", "x"))
+            self.assertTrue(q.projekt_einstellen("demo", "", "")[0])  # zurück zum Standard
+            self.assertEqual(q.projekt_einstellung("demo")["gewaehlt"], False)
+        finally:
+            g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = alt[0]
+            e.KONF.clear(); e.KONF.update(alt[1])
+
+    def test_toml_ohne_tomllib(self):
+        from merge_train.einstellungen import _toml_einfach
+        d = _toml_einfach('lokal = true\n[zweige.merge-train]\nvon = "reviewed"\n[zweige."a/b"]\nbis = "x"\n[repos]\n"g/p" = "~/k"\n')
+        self.assertEqual(d, {"lokal": True, "zweige": {"merge-train": {"von": "reviewed"}, "a/b": {"bis": "x"}}, "repos": {"g/p": "~/k"}})
+
+
 class KlonSuchenTest(unittest.TestCase):
     """klon_ordner: <ordner>/<projekt> zählt nur, wenn origin auf genau dieses Projekt zeigt."""
     def test_finden(self):

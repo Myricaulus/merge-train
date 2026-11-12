@@ -1,8 +1,8 @@
 """Die Seiten bauen: Diff-Seite eines Projekts bzw. MRs, Güterbahnhof mit Zug, Startseite."""
 import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
-from .einstellungen import ARBEITSSTAND, BIS, KONF, ORDNER, SKRIPT, VON, dateiname, ersetzen, projektname, schluessel
-from .waggon import Waggon, fertig_moeglich
+from .einstellungen import ARBEITSSTAND, KONF, ORDNER, SKRIPT, dateiname, ersetzen, projektname, schluessel
+from .waggon import Waggon, fertig_moeglich, von_bis
 from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, origin_voraus, projekt_wurzel, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
@@ -206,16 +206,16 @@ def dateien_html(dateien, texte):
     return "".join(datei_html(n, d, *texte[n], luecken=True, spaeter=spaeter_grund(d)) for n, d in enumerate(dateien))
 
 
-# ---- lokales Projekt (VON … BIS, z. B. reviewed … claude)
+# ---- lokales Projekt (von … bis des Projekts, z. B. reviewed … claude)
 
 def projekt_zeiger(projekt):
     return os.path.join(LOKAL_ORDNER, dateiname(projekt) + ".zeiger")
 
 
 def projekt_seite(wurzel, ansicht=None):
-    """Seite eines lokalen Projekts (BIS gegen VON ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
-    von, bis = VON, BIS
+    """Seite eines lokalen Projekts (bis gegen von ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
     projekt = projektname(wurzel)
+    von, bis = von_bis(projekt)
     waggon = Waggon(lokal=projekt)
     head = bis_sha(wurzel, bis)
     refs = {"base_sha": git(wurzel, "merge-base", von, head).strip(), "start_sha": git(wurzel, "rev-parse", von).strip(),
@@ -253,7 +253,7 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     lesen = bool(ans and ans["art"] == "commit")
     daten = seiten_daten(Waggon(lokal=projekt).id, head, len(dateien), ans, projekt=projekt)
     klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
-    fertig_kbd = "<kbd>Enter</kbd> fertig · " if fertig_moeglich() else ""
+    fertig_kbd = "<kbd>Enter</kbd> fertig · " if fertig_moeglich(projekt) else ""
     hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""

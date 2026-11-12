@@ -24,6 +24,7 @@ STANDARD = {
     "mr_liste": "reviewer,author",  # Zug im GitLab-Modus: reviewer, assignee, author (mehrere mit Komma) | keine
     "hinweise": [],           # Globs für Agent-Hinweis-Dateien, z. B. "~/src/*/tasks/*-review-markers.json"
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
+    "zweige": {},             # je lokalem Projekt eigene von/bis: [zweige.<projekt>] von = …, bis = … (Seite: Waggon aufklappen)
     "klon_ordner": [],        # Ordner, in denen Klone liegen: MR von gruppe/projekt → <ordner>/projekt, wenn origin passt
     "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"
     "port": 8771,
@@ -47,9 +48,12 @@ def _toml_einfach(text):
         z = z.strip()
         if not z or z.startswith("#"):
             continue
-        m = re.fullmatch(r"\[([\w.-]+)\]", z)
-        if m:
-            akt = out.setdefault(m.group(1), {}); continue
+        m = re.fullmatch(r"\[(.+)\]", z)
+        if m:  # [a], [a.b], [a."b/c"]
+            akt = out
+            for teil in re.findall(r'"([^"]*)"|([^."]+)', m.group(1)):
+                akt = akt.setdefault((teil[0] or teil[1]).strip(), {})
+            continue
         k, _, v = z.partition("=")
         v = re.sub(r"\s+#[^\"']*$", "", v.strip())
         v = re.sub(r"\btrue\b", "True", re.sub(r"\bfalse\b", "False", v))
