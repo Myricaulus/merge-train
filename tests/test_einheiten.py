@@ -22,6 +22,7 @@ from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
 from merge_train.review import Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
 from merge_train.einstellungen import DATEN, schluessel
+from merge_train.zuhoerer import transcript_stand
 from merge_train.akte import akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, faeden_von, kommentar_anhaengen
 from merge_train.gespraech import gespraech_aktion
 from merge_train.server import Anfrage, bearbeiten
@@ -124,6 +125,31 @@ class Zeilen(unittest.TestCase):
         self.assertIsNone(v(5, C))      # Datei gelöscht
         self.assertEqual(zeile_vorwaerts(REPO, A, A, "a.txt", 3), 3)
         self.assertEqual(zeile_vorwaerts(REPO, A, B, "bleibt.txt", 1), 1)  # Datei unverändert
+
+    def test_transcript_stand(self):
+        import json
+        pfad = os.path.join(T, "sitzung.jsonl")
+        def dazu(*zeilen):
+            with open(pfad, "a") as f:
+                f.writelines(json.dumps(z) + "\n" for z in zeilen)
+        u = lambda n: {"input_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": n - 1}
+        dazu({"type": "user", "message": {"content": "mach mal"}},
+             {"type": "assistant", "message": {"stop_reason": "tool_use", "usage": u(250_000)}})
+        st = transcript_stand(pfad)
+        self.assertEqual((st.tokens, st.groesster, st.arbeitet), (250_000, 250_000, True))
+        dazu({"type": "system", "subtype": "compact_boundary", "compactMetadata": {"preTokens": 300_000, "postTokens": 12_000}},
+             {"type": "assistant", "message": {"stop_reason": "end_turn", "usage": u(40_000)}},
+             {"type": "ai-title"})  # Metadaten danach ändern nichts
+        st = transcript_stand(pfad)
+        self.assertEqual((st.tokens, st.groesster, st.arbeitet), (40_000, 300_000, False))
+        dazu({"type": "user", "message": {"content": [{"type": "text", "text": "noch was"}]}})
+        self.assertTrue(transcript_stand(pfad).arbeitet)
+        dazu({"type": "user", "message": {"content": [{"type": "text", "text": "[Request interrupted by user]"}]}},
+             {"type": "assistant", "isSidechain": True, "message": {"stop_reason": "tool_use"}})  # Subagent zählt nicht
+        self.assertFalse(transcript_stand(pfad).arbeitet)
+        with open(pfad, "a") as f:
+            f.write('{"type": "user", "message": {"content": "halbe Zei')  # noch nicht fertig geschrieben
+        self.assertFalse(transcript_stand(pfad).arbeitet)
 
     def test_bereich_wandert_mit(self):
         v = lambda ab, b_neu: bereich_anfang_vorwaerts(REPO, A, B, "a.txt", ab, b_neu)

@@ -1,5 +1,5 @@
 """Wer hört zu? Agenten-Sessions, die auf Nachrichten warten, benachrichtigen oder neu starten."""
-import glob, json, os, shlex, shutil, subprocess, time
+import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
 from .einstellungen import KONF, ersetzen, jetzt
 from .waggon import Fehler
@@ -79,65 +79,84 @@ def horcht(waggon):
     return " ".join(teile[2:]) or "Claude"
 
 
-# ---- Kontext-Füllstand der Agenten-Session (fürs HUD, ohne Zutun des Agenten)
+# ---- Kontext-Füllstand und Tätigkeit der Agenten-Session (fürs HUD und den Waggon, ohne Zutun des Agenten)
 # „agent horchen“ merkt sich in <akte>.agent pid und Session-ID der Agenten-Session (Claude Code setzt
-# CLAUDE_CODE_SESSION_ID). Den Füllstand liest der Server aus deren Transcript: usage der letzten Antwort
-# (input + cache_creation + cache_read) bzw. nach /compact postTokens. Solange die Session lebt, auch während sie
-# arbeitet (dann hört sie gerade nicht zu).
+# CLAUDE_CODE_SESSION_ID). Der Server liest deren Transcript (Zeile für Zeile, nur was seit dem letzten Mal dazukam):
+# Füllstand = usage der letzten Antwort (input + cache_creation + cache_read) bzw. nach /compact postTokens; ob sie
+# arbeitet = ob die letzte Nachricht eine fertige Antwort ist. Solange die Session lebt, auch während sie arbeitet.
 
 def agent_datei(waggon):
     return akte_datei(waggon)[:-5] + ".agent"
 
-_KONTEXT = {}
-
 def claude_dir():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 
-def _transcript_kontext(pfad):
-    """(tokens, modell) aus dem Ende des Transcripts, None wenn nichts zu finden. Gecacht nach Größe/mtime."""
-    try:
-        s = os.stat(pfad)
-    except OSError:
-        return None
-    alt = _KONTEXT.get(pfad)
-    if alt and alt[0] == (s.st_size, s.st_mtime_ns):
-        return alt[1]
-    erg, block = None, 1 << 20
-    with open(pfad, "rb") as f:
-        for n in (block, 8 * block):  # meist reicht das letzte MB; lange Tool-Ausgaben → mehr
-            f.seek(max(0, s.st_size - n))
-            for zeile in reversed(f.read().split(b"\n")):
-                if b'"usage"' not in zeile and b"compact_boundary" not in zeile:
-                    continue
-                try:
-                    d = json.loads(zeile)
-                except ValueError:
-                    continue
-                if d.get("isSidechain"):
-                    continue
-                if d.get("subtype") == "compact_boundary":
-                    t = (d.get("compactMetadata") or {}).get("postTokens")
-                    if t:
-                        erg = (t, None)
-                        break
-                u = (d.get("message") or {}).get("usage") if d.get("type") == "assistant" else None
-                if u:
-                    erg = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-                           + u.get("cache_read_input_tokens", 0), d["message"].get("model"))
-                    break
-            if erg or s.st_size <= n:
-                break
-    _KONTEXT[pfad] = ((s.st_size, s.st_mtime_ns), erg)
-    return erg
 
-def _kontext_fenster(tokens):
+class TranscriptStand:
+    """Was der Server aus einem Transcript wissen will. groesster: der höchste Füllstand, der je vorkam (auch preTokens
+    vor /compact) – liegt er über 200k, hat die Session ein 1M-Fenster."""
+    def __init__(self):
+        self.gelesen, self.tokens, self.groesster, self.arbeitet = 0, None, 0, False
+
+    def zeile(self, d):
+        if d.get("isSidechain"):
+            return
+        if d.get("subtype") == "compact_boundary":
+            meta = d.get("compactMetadata") or {}
+            self.groesster = max(self.groesster, meta.get("preTokens") or 0)
+            self.tokens = meta.get("postTokens") or self.tokens
+            return
+        if d.get("type") not in ("user", "assistant"):
+            return  # Metadaten (Titel, Modus …) sagen nichts über die Arbeit
+        m = d.get("message") or {}
+        if d["type"] == "assistant":
+            self.arbeitet = m.get("stop_reason") not in ("end_turn", "stop_sequence")
+            u = m.get("usage")
+            if u:
+                self.tokens = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+                               + u.get("cache_read_input_tokens", 0))
+                self.groesster = max(self.groesster, self.tokens)
+        else:  # Prompt oder Tool-Ergebnis: jetzt ist der Agent dran – außer der Nutzer hat ihn abgebrochen (Esc)
+            inhalt = m.get("content")
+            text = inhalt if isinstance(inhalt, str) else " ".join(
+                x.get("text", "") for x in inhalt or [] if isinstance(x, dict) and x.get("type") == "text")
+            self.arbeitet = not text.startswith("[Request interrupted")
+
+
+_TRANSCRIPT_STAND = {}  # Pfad → TranscriptStand
+
+def transcript_stand(pfad):
+    """TranscriptStand des Transcripts, nachgelesen bis zur letzten vollständigen Zeile; None, wenn es fehlt."""
+    try:
+        groesse = os.path.getsize(pfad)
+    except (OSError, TypeError):
+        return None
+    st = _TRANSCRIPT_STAND.get(pfad)
+    if st is None or groesse < st.gelesen:
+        st = _TRANSCRIPT_STAND[pfad] = TranscriptStand()
+    if groesse > st.gelesen:
+        with open(pfad, "rb") as f:
+            f.seek(st.gelesen)
+            neu = f.read(groesse - st.gelesen)
+        ende = neu.rfind(b"\n") + 1
+        for zeile in neu[:ende].split(b"\n"):
+            try:
+                st.zeile(json.loads(zeile))
+            except (ValueError, AttributeError):
+                pass
+        st.gelesen += ende
+    return st
+
+
+def _kontext_fenster(st):
     if KONF.get("kontext_fenster"):
         return int(KONF["kontext_fenster"])
     try:
         modell = json.load(open(os.path.join(claude_dir(), "settings.json"))).get("model") or ""
     except (OSError, ValueError):
         modell = ""
-    return 1_000_000 if "[1m]" in modell or tokens > 200_000 else 200_000
+    return 1_000_000 if "[1m]" in modell or st.groesster > 200_000 else 200_000
+
 
 _TRANSCRIPTS = {}  # Session-ID → Pfad des Transcripts
 
@@ -159,21 +178,19 @@ def agent_sitzung(waggon):
 def kontext(waggon):
     """{tokens, fenster, prozent, name} der zuletzt horchenden Agenten-Session, solange sie lebt, sonst None."""
     sitzung = agent_sitzung(waggon)
-    erg = _transcript_kontext(sitzung[2]) if sitzung and sitzung[2] else None
-    if not erg:
+    st = transcript_stand(sitzung[2]) if sitzung else None
+    if not st or not st.tokens:
         return None
-    fenster = _kontext_fenster(erg[0])
-    return {"tokens": erg[0], "fenster": fenster, "prozent": round(100 * erg[0] / fenster), "name": sitzung[1],
+    fenster = _kontext_fenster(st)
+    return {"tokens": st.tokens, "fenster": fenster, "prozent": round(100 * st.tokens / fenster), "name": sitzung[1],
             "schwellen": kontext_schwellen()}
 
 
-ARBEITET_S = 60  # so lange nach dem letzten Eintrag im Transcript gilt die Session als beschäftigt
-
 def zuhoerer(waggon):
     """Wer an diesem Waggon zuhört und was er gerade tut, für die Kopfhörer im Waggon und im HUD: {wer, tut}, sonst
-    None. tut: hoert (wartet mit „agent horchen“ auf Fragen), arbeitet (horcht nicht, Transcript in den letzten
-    ARBEITET_S s gewachsen), wartet (Session lebt, sitzt im Terminal). Horcht die Session an einem anderen Waggon,
-    zählt sie hier nicht."""
+    None. tut: hoert (wartet mit „agent horchen“ auf Fragen), arbeitet (die letzte Nachricht im Transcript ist keine
+    fertige Antwort), wartet (Session lebt, Antwort fertig, sitzt im Terminal). Horcht die Session an einem anderen
+    Waggon, zählt sie hier nicht."""
     wer = horcht(waggon)
     if wer:
         return {"wer": wer, "tut": "hoert"}
@@ -186,11 +203,8 @@ def zuhoerer(waggon):
                 return None
         except (OSError, ValueError, IndexError):
             pass
-    try:
-        frisch = time.time() - os.path.getmtime(sitzung[2]) < ARBEITET_S
-    except (OSError, TypeError):
-        frisch = False
-    return {"wer": sitzung[1], "tut": "arbeitet" if frisch else "wartet"}
+    st = transcript_stand(sitzung[2])
+    return {"wer": sitzung[1], "tut": "arbeitet" if st and st.arbeitet else "wartet"}
 
 def kontext_schwellen():
     """[grün bis, orange bei, rot bei, giftlila ab] aus kontext_schwellen; ungültig (nicht 4 aufsteigende Zahlen) → Standard."""
