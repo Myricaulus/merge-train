@@ -92,7 +92,13 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 - Fäden gehören zum Branch; andere Branches nur lesend einblendbar.
 - Ort eines Fadens: eine Zeile oder ein Bereich ab–b der neuen Seite (Umschalt-Klick, `thread --ort pfad:von-bis`); der
   Anfang wandert mit `bereich_anfang_vorwaerts` (`zeilen.py`) mit, markiert von `bereichMarkieren` (`web/review.js`).
-- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, allgemein).
+- Ort eines Fadens auch: ein GitLab-Kommentar (`zu` = `k:<id>` | `h:<key>`, „💬 an Agent“ an Kommentar/Hinweis): der
+  Faden steht in dessen Box (`angehaengt`, `zuSchluessel` in `web/review.js`), Ort aus `faden_zu` (`gespraech.py`);
+  `feedback` zeigt den Kommentar als Ziel (`faden_ziel`), `agent kommentar <Faden-id>` ändert ihn und erledigt den Faden
+  (`faden_nach_kommentar`, `agent_cli.py`).
+- Wer schreibt: `agent_name` (`agent_cli.py`): `--als`, `MERGE_TRAIN_AGENT`, erkannt aus der Umgebung (`AI_AGENT`,
+  `AGENT_UMGEBUNG`), sonst Fehler (`VORSTELLEN`). Neue Harnesses dort eintragen.
+- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, GitLab-Kommentar, allgemein).
 - Ort: `gespraech.py`, `agent_cli.py` (`feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen
@@ -122,6 +128,8 @@ mit Urteil geht Abschließen auch ohne Kommentare, das Urteil gilt nur für ein 
 Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt die Einträge an ihrer Zeile (needle,
 `=`, `line`), mit Details, Status und Siehe-auch. Übernehmen, anpassen & übernehmen, verwerfen. `agent pruefen`
 (auch `--seit` für Review-Updates), `agent zeigen`, `agent kommentar` (draft ändern bzw. neuen daneben).
+- Wer: Feld `agent` der JSON bzw. des Markers, sonst der Agent von `pruefen`/`zeigen` (Akte `hinweis_agenten`); geht
+  beim Übernehmen in den Kommentar mit.
 - Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`--mr`, Feld `mr`, Branch).
 - Ort: `hinweise.py`, `agent_cli.py`, `hinweis_aktion` (`review.py`), Route `api/hinweis`. Format: `docs/agent-hinweise.md`.
 

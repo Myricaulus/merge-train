@@ -13,12 +13,14 @@ Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
   reihenfolge      ids/keys der Box „GitLab-Kommentare“, wie vom Nutzer sortiert
   hinweise         {key: uebernommen | verworfen} für Agent-Hinweise (drafts); fehlt der key, ist er offen
   hinweis_dateien  angemeldete Review-JSONs (agent zeigen)
+  hinweis_agenten  {pfad: Name} der Agent, der die Review-JSON geprüft/angemeldet hat (agent pruefen|zeigen), falls
+                   die JSON selbst kein „agent“ nennt
   struktur         Pfad der Cache-JSON der zuletzt gebauten Seite (struktur_laden)
   todo_id          todo-Eintrag aus „An Agent senden“, wenn niemand zuhörte
   abgeschlossen    Zeit des letzten vollständigen „Review abschließen“
 
 Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erstellt, path, old_path, a (alte Zeile),
-  b (neue Zeile), text, finding/hinweis (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
+  b (neue Zeile), text, finding/hinweis/agent (aus einem übernommenen draft), gitlab_id, gitlab_text, gitlab_art
   (position | allgemein | mr | antwort), gitlab_weg (veröffentlicht), geloescht (beim Abschließen löschen),
   antwort_auf (id einer GitLab-Diskussion: Antwort darauf statt eigener Kommentar),
   gitlab_diskussion (veröffentlicht, von „MR-Daten“: id, note_id, erledigt {wer, zeit} oder None,
@@ -32,6 +34,7 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, ab (erste Zeile, wenn der Faden an den neuen Zeilen
   ab–b hängt), zeile_text (Zeile b), an (Agent, sonst Claude), vom_agenten, see_also,
+  zu („k:<Kommentar-id>“ | „h:<Hinweis-key>“: der Faden hängt an diesem GitLab-Kommentar, Ziel ist dessen Text),
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
   archiv (nach „fertig“ aus der Ansicht genommen). Stufe: faden_status.
   branch: zu welchem Branch der Faden gehört (lokal: branch_von, MR: source_branch) – Seite, Zug, „An Agent senden“

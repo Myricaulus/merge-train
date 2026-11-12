@@ -55,7 +55,7 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
 ## Format
 
 ```json
-{"key": "KEY", "branch": "feature/key-…", "reviewed_commit": "1a2b3c4d", "reviewed_at": "2026-11-09",
+{"key": "KEY", "agent": "Copilot (Claude Sonnet 4.5)", "branch": "feature/key-…", "reviewed_commit": "1a2b3c4d", "reviewed_at": "2026-11-09",
  "notes": "Themen außerhalb der Story",
  "markers": [
    {"finding": "#3", "title": "Stichpunkte zum Thema", "path": "src/A.cs", "needle": "public void Foo(", "text": "English comment for GitLab",
@@ -66,6 +66,10 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
    {"finding": "#7", "text": "General remark (no path → general MR comment)"}]}
 ```
 
+- `agent` (oben, optional auch je Eintrag): wer die Hinweise geschrieben hat, Harness und Modell, z. B.
+  `"Copilot (Claude Sonnet 4.5)"`. Steht auf der Seite am Hinweis („🤖 Copilot (…) #3“) und am übernommenen Kommentar.
+  Fehlt das Feld, gilt der Agent, der `pruefen`/`zeigen` aufruft (erkannt aus der Umgebung oder `--als`). Ist keiner
+  erkennbar, meldet `pruefen` „Achtung: die JSON nennt kein „agent““.
 - `title`: ein paar deutsche Stichpunkte zum Thema für die Kommentarliste links. Ohne `title` zeigt die Liste den Textanfang.
 - `text` ist der fertige englische GitLab-Kommentar, ohne Finding-ID (die steht in `finding` und ist nur lokal).
   Querverweise per Datei- oder Klassenname ohne Zeile, die genaue Stelle gehört in `see_also`. Ändert sich `text`, erscheint der

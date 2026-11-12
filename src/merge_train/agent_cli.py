@@ -6,8 +6,8 @@ from .waggon import Fehler, Waggon, von_bis
 from .git import git, inhalt, kurzpfad, projekt_ordner
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, review_kommentare,
-    struktur_laden)
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
+    kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
@@ -16,6 +16,29 @@ from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
 from .prozess import im_browser
+
+# Wer ruft an? Harnesses setzen Umgebungsvariablen: AI_AGENT (z. B. „claude-code_2-1-322_agent“, Konvention mehrerer
+# Werkzeuge) oder eigene. Was davon nicht erkannt wird, stellt sich mit --als vor (oder MERGE_TRAIN_AGENT).
+AI_AGENT_NAMEN = {"claude-code": "Claude", "claude": "Claude", "cursor": "Cursor", "gemini-cli": "Gemini",
+                  "codex": "Codex", "github-copilot": "Copilot", "copilot": "Copilot"}
+AGENT_UMGEBUNG = (("CLAUDECODE", "Claude"), ("CURSOR_AGENT", "Cursor"), ("GEMINI_CLI", "Gemini"),
+                  ("CODEX_SANDBOX", "Codex"), ("OPENCODE", "opencode"))
+VORSTELLEN = ('merge-train erkennt nicht, welcher Agent du bist – stell dich mit --als vor (Harness und Modell, '
+              'z. B. --als "Copilot (Claude Sonnet 4.5)") oder setze MERGE_TRAIN_AGENT')
+
+
+def agent_name(als=None, sonst=None):
+    """Name des aufrufenden Agenten: --als, MERGE_TRAIN_AGENT, erkannt aus der Umgebung, sonst `sonst`. Ohne alles:
+    Fehler (VORSTELLEN) – auf der Seite soll stehen, wer geschrieben hat, nicht „Agent“."""
+    name = (als or os.environ.get("MERGE_TRAIN_AGENT") or "").strip()
+    if not name:
+        ai = (os.environ.get("AI_AGENT") or "").strip().lower()
+        name = AI_AGENT_NAMEN.get(ai.split("_")[0], ai.split("_")[0]) if ai else ""
+    name = name or next((n for var, n in AGENT_UMGEBUNG if os.environ.get(var)), "") or (sonst or "")
+    if not name:
+        raise Fehler(VORSTELLEN)
+    return name[:40]
+
 
 def gespraech_ziele(name=None):
     """Welche Gespräche meint der Agent? MR-Kennung/URL → dieses; Projekt → dessen lokales Gespräch;
@@ -56,27 +79,61 @@ def zeit_kurz(iso):
         return "?"
 
 
-def faden_nachbarn(k, review):
-    """GitLab-Kommentare und Agent-Hinweise an der Zeile des Fadens (damit der Agent weiß, welchen er ändern soll)."""
+def faden_nachbarn(k, review, ohne=None):
+    """GitLab-Kommentare und Agent-Hinweise an der Zeile des Fadens (damit der Agent weiß, welchen er ändern soll),
+    ohne den, an dem der Faden hängt (ohne: Name aus kommentar_beschreiben)."""
     if not review or not k.get("path"):
         return []
     da = lambda x: x.get("path") == k["path"] and ((k.get("b") and x.get("b") and (k.get("ab") or k["b"]) <= x["b"] <= k["b"]) or (not k.get("b") and k.get("a") and x.get("a") == k["a"]))
     out = []
     for x in review["kommentare"]:
         if da(x) and x["status"] != "loeschen":
-            out.append((f'GitLab-Kommentar {x["id"]}', K_STATUS.get(x["status"], x["status"]), x["text"]))
+            out.append(kommentar_beschreiben("k", x))
     for h in review["hinweise"]:
         if da(h) and h["status"] == "offen":
-            out.append((f'Agent-Hinweis h:{h["key"]}', f'draft, {h["quelle"]} {h["finding"]}'.strip(), h["text"]))
-    return out
+            out.append(kommentar_beschreiben("h", h))
+    return [x for x in out if x[0] != ohne]
+
+
+def kommentar_beschreiben(art, x):
+    """(Name, Stufe, Text) eines GitLab-Kommentars für die Ausgabe: Review-Kommentar (art „k“, aus der Akte oder
+    review_daten) oder Agent-Hinweis („h“)."""
+    if art == "h":
+        stufe = "draft" if x["status"] == "offen" else f'draft, {x["status"]}'
+        return f'Agent-Hinweis h:{x["key"]}', f'{stufe}, {x["quelle"]} {x["finding"]}'.strip(), x["text"]
+    st = x.get("status") or kommentar_status(x)
+    return f'GitLab-Kommentar {x["id"]}', K_STATUS.get(st, st), x["text"]
+
+
+def faden_ziel(waggon, zu, review=None):
+    """Der GitLab-Kommentar, an dem ein Faden hängt (zu „k:<id>“ | „h:<key>“) → (art, eintrag) wie bei
+    umformulieren_ziel_finden, oder None, wenn er weg ist. Ein übernommener Hinweis ist sein Review-Kommentar."""
+    art, _, kid = str(zu or "").partition(":")
+    akte = akte_lesen(waggon)
+    if art == "k":
+        k = kommentar_finden(akte, kid)
+        return ("k", k) if k else None
+    if art != "h":
+        return None
+    if review is None:
+        try:
+            review = review_daten(waggon)
+        except Fehler:
+            return None
+    h = next((h for h in review["hinweise"] if h["key"] == kid), None)
+    if h and h["status"] == "offen":
+        return "h", h
+    k = next((k for k in review_kommentare(akte) if k.get("hinweis") == kid), None)
+    return ("k", k) if k else ("h", h) if h else None
 
 
 K_STATUS = {"neu": "staged", "geaendert": "staged, Änderung an einem gesendeten", "uebertragen": "sent",
             "weg": "sent, in GitLab veröffentlicht"}  # Stufen siehe AGENTS.md
 
 
-def faden_ausgeben(k, wurzel, head, kontext=3, review=None):
-    """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, GitLab-Kommentare/Hinweise dort, Verlauf."""
+def faden_ausgeben(k, wurzel, head, kontext=3, review=None, waggon=None):
+    """Ein Faden für den Agenten: Ort im aktuellen Stand, Code drumherum, der GitLab-Kommentar, an dem er hängt (zu),
+    die übrigen GitLab-Kommentare/Hinweise dort, Verlauf."""
     von = (k.get("refs") or {}).get("head_sha") or head
     b = zeile_vorwaerts(wurzel, von, head, k["path"], k["b"]) if k.get("path") and k.get("b") else None
     ab = bereich_anfang_vorwaerts(wurzel, von, head, k.get("path"), k.get("ab"), b)
@@ -92,7 +149,15 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None):
             out.append(f'  {"→" if (ab or b) <= i <= b else " "} {i:5} │ {zeilen[i - 1]}')
     elif k.get("zeile_text"):
         out.append(f'      damals │ {k["zeile_text"]}')
-    for name, status, text in faden_nachbarn(k, review):
+    ziel = faden_ziel(waggon, k["zu"], review) if k.get("zu") and waggon else None
+    if k.get("zu"):
+        if ziel:
+            name, status, text = kommentar_beschreiben(*ziel)
+            out.append(f'    HÄNGT AN {name} ({status}) – der Wunsch gilt diesem Text:')
+            out.append("      " + text.replace("\n", "\n      "))
+        else:
+            out.append("    hing an einem GitLab-Kommentar, den es nicht mehr gibt")
+    for name, status, text in faden_nachbarn(k, review, ohne=ziel and kommentar_beschreiben(*ziel)[0]):
         out.append(f'    an dieser Zeile: {name} ({status}):')
         out.append("      " + text.replace("\n", "\n      "))
     for m in k["nachrichten"]:
@@ -133,7 +198,7 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                 review = review_daten(waggon)
             except Fehler:
                 pass
-        teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review) + "\n" for k in zeigen]
+        teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review, waggon=waggon) + "\n" for k in zeigen]
         teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
                      "nicht committen." if bis == ARBEITSSTAND else f"den aktuellen Stand von {bis}.") if waggon.kann["committen"]
                      else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
@@ -141,6 +206,8 @@ def faeden_abholen(ziele, alle=False, markieren=True):
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
         if any(waggon.kann["review"] for waggon in ziele):
             teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"')
+            teile.append('Faden „HÄNGT AN“ einem Kommentar: merge-train agent kommentar <Faden-id> "Text" ändert genau diesen '
+                         'und erledigt den Faden – keine Antwort im Faden, außer der Nutzer will etwas erklärt haben')
     return "\n".join(teile) or "(nichts offen)", gesamt
 
 
@@ -171,22 +238,51 @@ def umformulieren_ziel_finden(ziel, ziele=None):
     return treffer[0]
 
 
-def kommentar_umformulieren(ziel, text, ziele=None):
+def kommentar_umformulieren(ziel, text, ziele=None, als=None):
     """GitLab-Kommentar für den Nutzer umformulieren (Regel aus AGENTS.md): ein draft (noch nicht übernommener
     Agent-Hinweis) wird in seiner JSON geändert; zu allem anderen (staged/sent, übernommener/verworfener Hinweis, Faden)
-    kommt ein neuer draft daneben. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Rückgabe: Meldung."""
+    kommt ein neuer draft daneben. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Ein Faden, der an
+    einem Kommentar hängt (zu), meint diesen; danach ist der Faden erledigt und hängt am neuen bzw. geänderten draft.
+    Rückgabe: Meldung."""
     text = (text or "").strip()
     if not text:
         raise Fehler("Kommentartext fehlt")
     waggon, art, x = umformulieren_ziel_finden(ziel, ziele)
+    agent = agent_name(als, sonst=x.get("an") if art == "f" else None)
+    faden = x if art == "f" and x.get("zu") else None
+    if faden:
+        z = faden_ziel(waggon, faden["zu"])
+        if not z:
+            raise Fehler(f'Der Kommentar, an dem [{faden["id"]}] hing, ist weg – im Faden nachfragen (agent antworten)')
+        art, x = z
     if art == "h" and x["status"] == "offen":
-        return hinweis_text_aendern(x, text)
-    return draft_daneben(waggon, art, x, text)
+        meldung, datei, nr = hinweis_text_aendern(x, text)
+    else:
+        meldung, datei, nr = draft_daneben(waggon, art, x, text, agent)
+    return meldung + (faden_nach_kommentar(waggon, faden["id"], datei, nr, agent) if faden else "")
 
 
-def draft_daneben(waggon, art, x, text):
+def faden_nach_kommentar(waggon, fid, datei, nr, agent):
+    """Nach „agent kommentar <Faden-id>“: der Faden hängt jetzt am draft (Marker nr in datei; ein geänderter Text gibt
+    dem Hinweis einen neuen key) und ist erledigt – es sei denn, der Nutzer hat inzwischen nachgelegt."""
+    key = next((h["key"] for h in review_daten(waggon)["hinweise"] if h["json"] == datei and h["nr"] == nr), None)
+    with akte_bearbeiten(waggon) as akte:
+        k = faden_finden(akte, fid)
+        if not k:
+            return ""
+        if key:
+            k["zu"] = "h:" + key
+        neu = faden_ungelesen(k)
+        if neu:
+            return f' · [{fid}] bleibt offen: {len(neu)} neue Nachricht(en) – merge-train agent feedback'
+        k["erledigt"] = {"von": "claude", "zeit": jetzt(), "wer": agent}
+    melden(f"{waggon.name}: {agent} hat den Kommentar geändert")
+    return f" · [{fid}] erledigt"
+
+
+def draft_daneben(waggon, art, x, text, agent=None):
     """Neuer draft (Agent-Hinweis) an der Stelle von x, in der Review-JSON des MR: die des ersetzten Hinweises, sonst
-    die erste angemeldete."""
+    die erste angemeldete. Rückgabe (Meldung, datei, nr des neuen Markers)."""
     akte = akte_lesen(waggon)
     struktur = struktur_laden(akte) or {}
     head = (struktur.get("refs") or {}).get("head_sha")
@@ -195,6 +291,8 @@ def draft_daneben(waggon, art, x, text):
         von = (x.get("refs") or {}).get("head_sha") or head
         b = zeile_vorwaerts(struktur.get("ordner"), von, head, path, b)
     m = {"text": text}
+    if agent:
+        m["agent"] = agent
     fid = x.get("finding")
     if fid:
         m["finding"] = fid
@@ -214,11 +312,12 @@ def draft_daneben(waggon, art, x, text):
     if not datei:
         raise Fehler("Zu diesem MR gibt es keine Review-JSON (Agent-Hinweise) – den neuen Text im Faden vorschlagen")
     daten = json.load(open(datei, encoding="utf-8-sig"))
-    (daten if isinstance(daten, list) else daten.setdefault("markers", [])).append(m)
+    markers = daten if isinstance(daten, list) else daten.setdefault("markers", [])
+    markers.append(m)
     ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
     ort = f"{path}:{b}" if path and b else "allgemein"
     return (f"neuer Agent-Hinweis (draft) bei {ort} in {kurzpfad(datei)} – der Nutzer übernimmt oder verwirft ihn; "
-            "der bisherige Kommentar bleibt unverändert")
+            "der bisherige Kommentar bleibt unverändert", datei, len(markers) - 1)
 
 
 def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
@@ -227,6 +326,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     text = (text or "").strip()
     if not text:
         raise Fehler("Text fehlt")
+    als = agent_name(als)
     if len(ziele) > 1:
         lokal = [waggon for waggon in ziele if waggon.lokal]
         if not lokal:
@@ -236,9 +336,8 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     wurzel, head = quelle(waggon).ort(waggon)
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "branch": quelle(waggon).branch(waggon),
          "refs": {"head_sha": head}, "erstellt": jetzt(),
-         "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True}
-    if als:
-        k["an"] = als
+         "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True,
+         "an": als}
     if ort:
         m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", ort.strip())
         path = pfad_norm(m.group(1))
@@ -265,7 +364,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     with akte_bearbeiten(waggon) as akte:
         faden_anhaengen(akte, k)
     wo = f'{k["path"]}:{k.get("ab") or k["b"]}' + (f'-{k["b"]}' if k.get("ab") else "") if k["b"] else (k["path"] or "allgemein")
-    melden(f"{waggon.name}: {als or 'Claude'} hat einen Thread angelegt ({wo})")
+    melden(f"{waggon.name}: {als} hat einen Thread angelegt ({wo})")
     return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt'
 
 
@@ -289,7 +388,7 @@ def hinweis_text_aendern(h, text):
     except ValueError as e:
         raise Fehler(f"{pfad}: geänderte JSON wäre ungültig ({e}) – nichts geschrieben")
     ersetzen(pfad, neu_roh)
-    return f'Agent-Hinweis (draft) {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})'
+    return f'Agent-Hinweis (draft) {h["finding"] or h["key"]} geändert (text in {kurzpfad(pfad)})', pfad, nr
 
 
 def faden_ungelesen(k):
@@ -317,14 +416,14 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
             raise Fehler(f'In [{k["id"]}] gibt es {len(neu)} neue Nachricht(en), die du noch nicht gelesen hast – '
                                f'erst „merge-train agent feedback“, dann antworten:\n' +
                                "\n".join(f'    Nutzer ({zeit_kurz(m["gesendet"])}): {m["text"]}' for m in neu))
-        wer = als or k.get("an") or None
+        wer = agent_name(als, sonst=k.get("an"))
         if text:
             k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=wer))
         if erledigt:
             k["erledigt"] = {"von": "claude", "zeit": jetzt(), "wer": wer}
         rest = sum(1 for x in faeden_von(akte, quelle(waggon).branch(waggon)) if faden_status(x) == "wartet")
         tid = akte.get("todo_id")
-    melden(f"{waggon.name}: {wer or 'Claude'} hat geantwortet" + (" (erledigt)" if erledigt else ""))
+    melden(f"{waggon.name}: {wer} hat geantwortet" + (" (erledigt)" if erledigt else ""))
     if not rest and todo_offen(tid):
         subprocess.run(["todo", "erledigt", tid, "-n", "Alle Fragen/Feedback in merge-train beantwortet"], capture_output=True)
     return k["id"], rest
@@ -335,11 +434,11 @@ def faeden_horchen(ziele, timeout=0, als=None):
     import atexit, signal, time
     dateien = [horcht_datei(waggon) for waggon in ziele]
     for d in dateien:
-        ersetzen(d, f"{os.getpid()} {jetzt()} {als or 'Claude'}\n")
+        ersetzen(d, f"{os.getpid()} {jetzt()} {als}\n")
     sid, sess = os.environ.get("CLAUDE_CODE_SESSION_ID"), agent_session(os.getpid())
     if sid and sess and re.fullmatch(r"[\w-]+", sid):
         for waggon in ziele:
-            ersetzen(agent_datei(waggon), f"{sess} {sid} {als or 'Claude'}\n")
+            ersetzen(agent_datei(waggon), f"{sess} {sid} {als}\n")
     def weg(*_):
         for d in dateien:
             try:
@@ -417,6 +516,8 @@ def agent_parser():
         p.add_argument("--mr", help="MR-URL, '!42' oder gruppe/projekt!42 (sonst Feld „mr“ oder der offene MR zu „branch“)")
         p.add_argument("--seit", nargs="?", const="", metavar="COMMIT",
                        help="Review-Update: Stand der Einträge seit COMMIT (ohne Wert: reviewed_commit der JSON)")
+        p.add_argument("--als", help="wer die Hinweise geschrieben hat, wenn die JSON kein „agent“ nennt "
+                                     "(Standard: aus der Umgebung erkannt)")
         if name == "zeigen":
             p.add_argument("--nicht-oeffnen", action="store_true", help="Browser nicht öffnen, nur URL ausgeben")
     gespraech = "Gespräch (Fragen/Feedback des Nutzers aus merge-train, lokal oder zu einem MR): "
@@ -432,7 +533,7 @@ def agent_parser():
     p.add_argument("text", nargs="?", default="", help="Antwort (Markdown-artig, mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
-    p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: der gefragte Agent)")
+    p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: aus der Umgebung erkannt, sonst der gefragte Agent)")
     p.set_defaults(aufruf=befehl_antworten)
     p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (draft ändern, sonst neuer draft)",
                        description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines drafts (noch nicht übernommener "
@@ -443,6 +544,7 @@ def agent_parser():
     p.add_argument("ziel", help="h:<key> (draft), Kommentar-id oder Faden-id (Anfang genügt)")
     p.add_argument("text", help="neuer Kommentartext; - = von stdin")
     p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
+    p.add_argument("--als", help="wer den draft schreibt (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_kommentar)
     p = sub.add_parser("thread", help="Gespräch: neuen Thread anlegen (Hinweis, offene Frage, Zusammenfassung)",
                        description=gespraech + "Neuer Thread vom Agenten, an einer Code-Zeile oder allgemein (ohne --ort, z. B. die "
@@ -456,13 +558,14 @@ def agent_parser():
     p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A", "B[|LABEL]"),
                    help="zwei Dateien nebeneinander vergleichen (Popup); mehrfach möglich")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
-    p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: Claude)")
+    p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
                        description=gespraech + "warten, bis der Nutzer „An Agent senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")
     p.add_argument("projekt", nargs="?", help="Projektordner, Name oder MR (Standard: aktuelles Repo samt seinen MRs)")
-    p.add_argument("--als", default="Claude", help="Name, der auf der Seite als Zuhörer erscheint (z. B. Copilot)")
+    p.add_argument("--als", help="Name, der auf der Seite als Zuhörer erscheint (Standard: aus der Umgebung erkannt, "
+                                 "z. B. Claude in Claude Code; sonst Pflicht, z. B. \"Copilot (Claude Sonnet 4.5)\")")
     p.add_argument("--timeout", type=int, default=0, metavar="S", help="nach S Sekunden aufgeben (Exit 1)")
     p.set_defaults(aufruf=befehl_horchen)
     return ap
@@ -473,7 +576,7 @@ def befehl_feedback(o):
 
 
 def befehl_horchen(o):
-    text, n = faeden_horchen(gespraech_ziele(o.projekt), o.timeout, o.als)
+    text, n = faeden_horchen(gespraech_ziele(o.projekt), o.timeout, agent_name(o.als))
     print(text); return 0 if n else 1
 
 
@@ -504,7 +607,7 @@ def befehl_thread(o):
 
 
 def befehl_kommentar(o):
-    print(kommentar_umformulieren(o.ziel, text_von(o), gespraech_ziele(o.projekt) if o.projekt else None)); return 0
+    print(kommentar_umformulieren(o.ziel, text_von(o), gespraech_ziele(o.projekt) if o.projekt else None, o.als)); return 0
 
 
 def befehl_antworten(o):
@@ -566,9 +669,17 @@ def befehl_hinweise(o):
         _, struktur, mr = mr_seite(mr)
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 3
+    vorstellen = None
+    try:
+        agent = str(daten.get("agent") or "").strip() or agent_name(o.als)
+    except Fehler:
+        agent, vorstellen = None, "Achtung: die JSON nennt kein „agent“ – auf der Seite steht dann nur „Agent“. " \
+            "Feld \"agent\" (Harness und Modell) eintragen oder --als angeben."
     with akte_bearbeiten(mr) as akte:
         if o.befehl == "zeigen" and pfad not in akte["hinweis_dateien"]:
             akte["hinweis_dateien"].append(pfad)
+        if agent and not daten.get("agent"):
+            akte.setdefault("hinweis_agenten", {})[pfad] = agent
     head = struktur["refs"].get("head_sha") or ""
     geaendert, seit = None, None
     if o.seit is not None:
@@ -586,6 +697,8 @@ def befehl_hinweise(o):
     abweichend = gl_head and gl_head != head
     if abweichend:
         print(f"Achtung: GitLab steht auf {gl_head[:8]}, der lokale Branch auf {head[:8]} – Branch aktualisieren")
+    if vorstellen:
+        print(vorstellen)
     if geaendert is not None:
         print(f"seit {seit}: {len(geaendert)} Datei(en) geändert")
     schlecht = 0

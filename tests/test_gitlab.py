@@ -11,7 +11,9 @@ SKRIPT = os.path.join(HIER, "..", "merge-train")
 PORT = 8799
 T = tempfile.mkdtemp(prefix="merge-train-test-")
 REPO = os.path.join(T, "repo")
-ENV = dict(os.environ, XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
+AGENT_VARS = ("AI_AGENT", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "OPENCODE", "MERGE_TRAIN_AGENT")
+ohne_agent = lambda env: {k: v for k, v in env.items() if k not in AGENT_VARS}  # kein Harness erkennbar
+ENV = dict(ohne_agent(os.environ), CLAUDECODE="1", XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
            MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/config.toml",
            FAKE_GLAB_REPO=REPO, FAKE_GLAB_STATE=f"{T}/glab", CLAUDE_CONFIG_DIR=f"{T}/claude",
            CLAUDE_CODE_SESSION_ID="sitzung-1")
@@ -375,6 +377,8 @@ def mr_gespraech_test(mr, k, basis, struktur):
     i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
     vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     pruefe(vorher["agenten"] == ["Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Agent aus [agenten] angeboten")
+    pruefe(vorher["hinweise"] and all(h["agent"] == "Claude" for h in vorher["hinweise"]),
+           "Hinweise: JSON ohne agent → wer sie mit agent zeigen angemeldet hat (erkannt: Claude)")
     r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", datei=i_app, a=None, b=11, text="Was macht Zeile 11?"))
     pruefe(r["ok"] and len(r["review"]["faeden"]) == 1 and r["review"]["g_ausstehend"] == 1, "MR-Gespräch: Frage an Copilot angelegt")
     pruefe(len(r["review"]["kommentare"]) == len(vorher["kommentare"]) and r["review"]["ausstehend"] == vorher["ausstehend"],
@@ -394,11 +398,14 @@ def mr_gespraech_test(mr, k, basis, struktur):
            "MR-Gespräch: agent feedback mit MR-Kennung")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", cwd=REPO, env=genv, check=False)
     pruefe(r.returncode == 0 and "gruppe/demo!1" in r.stdout, "MR-Gespräch: agent feedback im Klon findet den MR")
-    r = sh(sys.executable, SKRIPT, "agent", "antworten", f["id"][:6], "Sie loggt.", env=genv, check=False)
+    r = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "Hallo", env=ohne_agent(genv), check=False)
+    pruefe(r.returncode == 2 and "--als" in r.stderr, "Agent ohne Namen: thread verlangt --als")
+    r = sh(sys.executable, SKRIPT, "agent", "antworten", f["id"][:6], "Sie loggt.", env=ohne_agent(genv), check=False)
     pruefe(r.returncode == 0 and "nichts mehr offen" in r.stdout, "MR-Gespräch: agent antworten (sucht in allen Gesprächen)")
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     m = rv["faeden"][0]["nachrichten"][-1]
-    pruefe(rv["faeden"][0]["status"] == "antwort" and m["text"] == "Sie loggt." and m["wer"] == "Copilot", "MR-Gespräch: Antwort von Copilot auf der Seite")
+    pruefe(rv["faeden"][0]["status"] == "antwort" and m["text"] == "Sie loggt." and m["wer"] == "Copilot",
+           "MR-Gespräch: Antwort ohne erkennbaren Agenten unter dem gefragten (Copilot)")
     lauscher = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", mr, "--als", "Copilot", "--timeout", "30"], env=genv,
                                 stdout=subprocess.PIPE, text=True)
     for _ in range(50):
@@ -464,6 +471,37 @@ def mr_gespraech_test(mr, k, basis, struktur):
     open(hw, "w", encoding="utf-8").write(sicher)
     pruefe(sh(sys.executable, SKRIPT, "agent", "kommentar", "gibtsnicht", "x", env=genv, check=False).returncode == 2,
            "Kommentar umformulieren: unbekanntes Ziel")
+    # Faden an einem GitLab-Kommentar (zu): Wunsch gilt dem Kommentartext, geht nie nach GitLab
+    r = post("/api/kommentar", dict(basis, aktion="neu", datei=i_app, a=None, b=11, text="Long original comment."))
+    km = next(x for x in r["review"]["kommentare"] if x["text"] == "Long original comment.")
+    n, ausstehend = len(r["review"]["kommentare"]), r["review"]["ausstehend"]
+    r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", zu="k:" + km["id"], text="kürzer bitte"))
+    fz = next((x for x in r["review"]["faeden"] if x.get("zu") == "k:" + km["id"]), None) if r["ok"] else None
+    pruefe(fz and fz["path"] == "App.cs" and fz["b"] == 11 and len(r["review"]["kommentare"]) == n
+           and r["review"]["ausstehend"] == ausstehend, "Faden am Kommentar: an dessen Zeile, kein Review-Kommentar")
+    pruefe(not post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", zu="k:gibtsnicht", text="x"))["ok"],
+           "Faden am Kommentar: unbekannter Kommentar abgelehnt")
+    post("/api/gespraech", dict(basis, aktion="senden"))
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
+    block = r.stdout.split(f'[{fz["id"]}]')[1].split("── [")[0] if fz and f'[{fz["id"]}]' in r.stdout else ""
+    pruefe(f"HÄNGT AN GitLab-Kommentar {km['id']} (staged)" in block and "Long original comment." in block
+           and block.count(f"GitLab-Kommentar {km['id']}") == 1, "Faden am Kommentar: feedback zeigt den Kommentar als Ziel")
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", fz["id"], "Short comment.", "--als", "Copilot (Test)", env=genv, check=False)
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    h = next((h for h in rv["hinweise"] if h["text"] == "Short comment."), None)
+    fz2 = next(x for x in rv["faeden"] if x["id"] == fz["id"])
+    pruefe(r.returncode == 0 and "erledigt" in r.stdout and h and h["agent"] == "Copilot (Test)" and fz2["zu"] == "h:" + h["key"]
+           and fz2["status"] == "erledigt" and len(fz2["nachrichten"]) == 1,
+           "Faden am Kommentar: agent kommentar legt draft an, Faden hängt dann daran und ist erledigt, ohne Antwort")
+    r = sh(sys.executable, SKRIPT, "agent", "kommentar", fz["id"], "Shorter comment.", env=genv, check=False)
+    rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+    h2 = next((h for h in rv["hinweise"] if h["text"] == "Shorter comment."), None)
+    fz2 = next(x for x in rv["faeden"] if x["id"] == fz["id"])
+    pruefe(r.returncode == 0 and h2 and not any(h["text"] == "Short comment." for h in rv["hinweise"]) and fz2["zu"] == "h:" + h2["key"],
+           "Faden am Kommentar: hängt er an einem draft, wird dessen Text geändert (neuer key, Faden zieht mit)")
+    post("/api/kommentar", dict(basis, aktion="loeschen", id=km["id"]))
+    post("/api/kommentar", dict(basis, gespraech=1, aktion="loeschen", id=fz["id"]))
+    open(hw, "w", encoding="utf-8").write(sicher)
 
 def main():
     r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
@@ -524,6 +562,8 @@ def main():
         pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
         pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
         pruefe("siehe auch" not in r.stdout, "see_also aufgelöst")
+        r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, env=ohne_agent(ENV), check=False)
+        pruefe("kein „agent“" in r.stdout, "pruefen: JSON ohne agent und kein Harness erkennbar → Hinweis")
         # Diff kommt immer vom Branch im Klon: lokale Änderungen und ausgecheckter Branch spielen keine Rolle
         open(f"{REPO}/App.cs", "a").write("// lokal geändert\n")
         sh("git", "-C", REPO, "stash", "-q")

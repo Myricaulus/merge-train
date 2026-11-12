@@ -233,6 +233,19 @@ unter jedem Faden die Kommentare und Agent-Hinweise an dessen Zeile. `agent komm
 es einen neuen Agent-Hinweis an derselben Stelle an. Review-Kommentare entstehen nur durch „übernehmen“: Der Agent
 legt nie selbst welche an, und der alte Kommentar bleibt, bis man ihn selbst löscht.
 
+Direkter geht es mit **„💬 an Agent“** an einem Kommentar oder Agent-Hinweis: Die Nachricht wird ein Faden, der an
+genau diesem Kommentar hängt und darunter steht. Wie jeder Faden geht er nie nach GitLab, wird mit „An Agent senden“
+abgeschickt (oder gesammelt und später per `agent feedback` abgeholt). `feedback` zeigt den Kommentar als Ziel
+(„HÄNGT AN …“), und `agent kommentar <Faden-id> "…"` ändert genau ihn: einen draft direkt, sonst als neuen draft
+daneben. Danach hängt der Faden am draft und ist erledigt, ohne Antwort. Antworten schreibt der Agent nur, wenn man um
+eine Erklärung bittet („erklär mir …“).
+
+**Wer schreibt:** Auf der Seite steht der Name des Agenten (Antworten, Threads, Hinweise). merge-train erkennt ihn aus
+der Umgebung (Claude Code, Cursor, Gemini CLI, Codex, `AI_AGENT`). Andere stellen sich mit `--als "Copilot (Claude Sonnet 4.5)"`
+vor oder setzen `MERGE_TRAIN_AGENT`. Ohne Namen lehnen `thread`, `horchen` und `kommentar` ab, `antworten` nimmt den
+gefragten Agenten. Für Hinweise nennt die Review-JSON den Namen im Feld `agent`. Sonst gilt der Agent, der sie mit
+`agent pruefen|zeigen` angemeldet hat.
+
 ## GitLab nur auf Knopfdruck
 
 Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten (Titel, Beschreibung, Branches,

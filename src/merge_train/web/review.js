@@ -189,8 +189,9 @@
     if (d && d.ok && sofort()) senden();
     return d;
   }
-  function bearbeiten(box, text, speichern, abbruch, extra, mitSofort) {
-    // extra: [[beschriftung, speichern(t)|null, titel]] – null = ausgegraut; mitSofort: Häkchen „sofort senden“
+  function bearbeiten(box, text, speichern, abbruch, extra, mitSofort, haupt) {
+    // extra: [[beschriftung, speichern(t)|null, titel]] – null = ausgegraut; mitSofort: Häkchen „sofort senden“;
+    // haupt: Beschriftung des Hauptknopfs
     const ta = el('textarea', {}),
       alt = [...box.childNodes];
     ta.value = text || '';
@@ -245,7 +246,7 @@
           el(
             'button',
             {class: 'haupt', onclick: () => ok()},
-            extra ? (mitReview ? 'als Review-Kommentar' : 'an ' + agenten()[0]) : 'speichern'
+            haupt || (extra ? (mitReview ? 'als Review-Kommentar' : 'an ' + agenten()[0]) : 'speichern')
           )
         )
       )
@@ -313,7 +314,10 @@
           'GitLab ↗'
         )
       : null;
-    const agent = k.finding ? el('span', {class: 'badge b-agent'}, 'aus Agent ' + k.finding) : null;
+    const agent = k.finding ? el('span', {class: 'badge b-agent'}, 'aus ' + (k.agent || 'Agent') + ' ' + k.finding) : null;
+    const zu = k.zu
+      ? el('span', {class: 'badge', title: ZU_TITEL}, '✎ zum GitLab-Kommentar')
+      : null;
     const ort = !mitOrt
       ? null
       : k.fremd
@@ -323,7 +327,7 @@
       ? el('span', {class: 'badge b-fremd', title: 'Gespräch aus einem anderen Branch'}, k.fremd)
       : null;
     const badge = el('span', {class: 'badge s-' + k.stand}, werZeichen(k.wer), ' ' + standText(k));
-    box.append(el('div', {class: 'kk'}, badge, branch, agent, er, ort, gitlab, kn));
+    box.append(el('div', {class: 'kk'}, badge, branch, agent, zu, er, ort, gitlab, kn));
     if (k.zeile_text && k.problem)
       box.append(
         el(
@@ -337,7 +341,52 @@
     const sa = sieheAuch(k.see_also);
     if (sa) box.append(sa);
     if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten (lange Fäden)
+    if (k.ziel === 'gitlab' && k.kommentar) angehaengt(box, ['k:' + k.kommentar], kn); // eigener, veröffentlicht
     return box;
+  }
+  const ZU_TITEL =
+    'Wunsch an den Agenten zu diesem GitLab-Kommentar: er ändert den Kommentartext (als neuen Agent-Hinweis zum ' +
+    'Übernehmen) und antwortet nur, wenn du nach einer Erklärung fragst – geht nicht nach GitLab';
+  /** Schlüssel, unter denen Fäden an einem GitLab-Kommentar hängen (Faden.zu): Review-Kommentar k:<id>, Hinweis
+   *  h:<key> – ein übernommener Hinweis gehört zu seinem Kommentar. */
+  const zuSchluessel = {
+    kommentar: k => ['k:' + k.id].concat(k.hinweis ? ['h:' + k.hinweis] : []),
+    hinweis: h => ['h:' + h.key],
+    diskussion: k => (k.kommentar ? ['k:' + k.kommentar] : [])
+  };
+  /** Fäden zu diesem GitLab-Kommentar unter die Box, dazu der Knopf „💬 an Agent“ in kn (neuer Faden mit zu). */
+  function angehaengt(box, schluessel, kn) {
+    const fs = faeden().filter(f => schluessel.includes(f.zu));
+    if (fs.length) box.append(el('div', {class: 'anhang'}, ...fs.map(f => fadenBox(f, false))));
+    if (!kn || nurLesen) return;
+    const ag = agenten(),
+      neu = an => t =>
+        fadenAktion({aktion: 'neu', zu: schluessel[0], an, text: t}).then(sofortSenden);
+    kn.append(
+      el(
+        'button',
+        {
+          title: ag.length ? ZU_TITEL : KEIN_AGENT,
+          disabled: ag.length ? null : '',
+          onclick: () => {
+            const b = el('div', {class: 'kbox km'});
+            let a = box.querySelector(':scope>.anhang');
+            if (!a) box.append((a = el('div', {class: 'anhang'})));
+            a.append(b);
+            bearbeiten(
+              b,
+              '',
+              neu(ag[0]),
+              () => b.remove(),
+              ag.slice(1).map(n => ['an ' + n, neu(n), ZU_TITEL]),
+              true,
+              'an ' + ag[0]
+            );
+          }
+        },
+        '💬 an Agent'
+      )
+    );
   }
   /** Knöpfe eines offenen Threads neben „antworten“: erledigt bzw. wieder öffnen (GitLab: nur lösbare), löschen
    *  (nur Fäden – eine GitLab-Diskussion löscht man in GitLab). */
@@ -503,7 +552,7 @@
         'div',
         {class: 'kk'},
         el('span', {class: 'badge ' + cl}, st),
-        k.finding ? el('span', {class: 'badge b-agent'}, 'aus Agent ' + k.finding) : null,
+        k.finding ? el('span', {class: 'badge b-agent'}, 'aus ' + (k.agent || 'Agent') + ' ' + k.finding) : null,
         mitOrt ? ortLink(k) : null,
         kn
       ),
@@ -512,6 +561,7 @@
     const h = k.hinweis && review.hinweise.find(x => x.key === k.hinweis),
       sa = h && sieheAuch(h.see_also);
     if (sa) box.append(sa);
+    angehaengt(box, zuSchluessel.kommentar(k), nurLesen || k.lesen || k.status === 'loeschen' ? null : kn);
     return box;
   }
   function hinweisBox(h, mitOrt) {
@@ -563,7 +613,7 @@
       el(
         'div',
         {class: 'kk'},
-        el('span', {class: 'badge b-agent'}, '🤖 Agent ' + (h.finding || '')),
+        el('span', {class: 'badge b-agent'}, '🤖 ' + (h.agent || 'Agent') + ' ' + (h.finding || '')),
         el('span', {}, h.quelle || ''),
         mitOrt ? ortLink(h) : null,
         h.mehrfach ? el('span', {}, '(passt auf ' + h.mehrfach + ' Zeilen)') : null,
@@ -582,6 +632,7 @@
       );
       box.append(d);
     }
+    angehaengt(box, zuSchluessel.hinweis(h), nurLesen || h.lesen || h.status === 'verworfen' ? null : kn);
     return box;
   }
   function einfuegen(r, inhalt, tab) {
@@ -627,7 +678,13 @@
   function zeichnen() {
     // Kästen mit offenem Eingabefeld bleiben stehen (der Text darin soll nicht verloren gehen), alles andere wird neu
     // gezeichnet. Nach dem Schließen des Felds holt nachholen() den Kasten selbst nach.
-    const felder = [...document.querySelectorAll('.kbox textarea')].map(t => t.closest('.kbox')).filter(Boolean);
+    const aussen = e => {
+      // äußerste Box: ein Feld in einem angehängten Faden hält die Box des Kommentars
+      let b = e && e.closest('.kbox');
+      while (b && b.parentElement && b.parentElement.closest('.kbox')) b = b.parentElement.closest('.kbox');
+      return b;
+    };
+    const felder = [...document.querySelectorAll('.kbox textarea')].map(aussen).filter(Boolean);
     const bleibt = new Set(felder.map(b => b.dataset.id).filter(Boolean)),
       haelt = e => felder.some(b => e === b || e.contains(b));
     zeichnenWartet = felder.length > 0;
@@ -680,7 +737,16 @@
         if (!platz(k, () => kommentarBox(k, false)) && !unter(k, () => kommentarBox(k, false)))
         allgDazu(k, () => kommentarBox(k, true));
     });
-    faeden().forEach(k => {
+    const gezeigt = new Set(
+      [
+        ...review.kommentare.filter(k => !k.antwort_auf).flatMap(zuSchluessel.kommentar),
+        ...(review.diskussionen || []).flatMap(zuSchluessel.diskussion),
+        ...review.hinweise
+          .filter(h => h.status === 'offen' || (review.zeigVerworfen && h.status === 'verworfen'))
+          .flatMap(zuSchluessel.hinweis)
+      ]
+    ); // Fäden an diesen Kommentaren stehen in deren Box (angehaengt)
+    faeden().filter(k => !gezeigt.has(k.zu)).forEach(k => {
       if (!platz(k, () => fadenBox(k, false)) && !unter(k, () => fadenBox(k, false)))
         allgDazu(k, () => fadenBox(k, true));
     });
@@ -767,6 +833,8 @@
       });
     });
   }
+  const KEIN_AGENT =
+    'Kein Agent eingerichtet: [agenten] in der Einstellung oder „merge-train agent horchen“ in einer Session';
   function anKnoepfe(d) {
     // weitere Speichern-Knöpfe „an <Agent>“ (mit Review alle; sonst ist der erste „speichern“)
     const a = mitReview ? agenten() : agenten().slice(1);
@@ -781,7 +849,7 @@
           [
             'an Agent',
             null,
-            'Kein Agent eingerichtet: [agenten] in der Einstellung oder „merge-train agent horchen“ in einer Session'
+            KEIN_AGENT
           ]
         ];
   }

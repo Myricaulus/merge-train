@@ -8,7 +8,7 @@ from .diff_html import zeilenzahl
 from .akte import datei_index
 from .gitlab import mr_ref
 
-HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also"}
+HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also", "agent"}
 
 
 def pfad_norm(p):
@@ -128,6 +128,7 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
             quellen.append({"datei": pfad, "fehler": f"nicht lesbar: {e}", "anzahl": 0}); continue
         tag = str(h.get("tag") or "")
         name = h.get("key") or os.path.basename(pfad)
+        agent = str(h.get("agent") or (akte.get("hinweis_agenten") or {}).get(pfad) or "").strip()  # wer die JSON schrieb
         quellen.append({"datei": pfad, "key": h.get("key"), "notes": h.get("notes"), "anzahl": len(h["markers"]),
                         "reviewed_commit": h.get("reviewed_commit"), "reviewed_at": h.get("reviewed_at"),
                         "failing_tests": h.get("failing_tests"),
@@ -139,6 +140,7 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
             needle = str(m.get("needle") or "")
             basis = {"finding": fid, "text": text, "rationale": m.get("rationale"), "resolved_when": m.get("resolved_when"),
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
+                     "agent": str(m.get("agent") or agent).strip() or None,
                      "json": pfad, "nr": nr,  # Herkunft: für „merge-train agent kommentar h:<key>“
                      "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path),
                      "title": str(m.get("title") or "").strip() or None}

@@ -4,6 +4,7 @@ tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
 .kbox{border:1px solid var(--rand);border-left-width:4px;border-radius:6px;background:var(--kopf);padding:6px 10px;margin:3px 0;max-width:960px;font:13px system-ui,sans-serif}
 .kbox.km{border-left-color:var(--tn)} .kbox.hw{border-left-color:var(--tf)} .kbox.weg{opacity:.55}
 .kbox .kk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:3px}
+.kbox .anhang{margin:6px 0 2px 14px} .kbox .anhang>.kbox{max-width:none}
 .kbox .kt{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg)}
 .knoepfe{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
 .kbox button,#allgemein button{font:12px system-ui,sans-serif;padding:2px 8px;border-radius:5px;border:1px solid var(--rand);background:var(--bg);color:var(--fg);cursor:pointer}

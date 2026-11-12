@@ -57,7 +57,7 @@ def kommentare_fuer_seite(akte, struktur):
         f = struktur["dateien"][i] if i is not None else None
         out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
                     "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
-                    "finding": k.get("finding"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
+                    "finding": k.get("finding"), "agent": k.get("agent"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
                     "antwort_auf": k.get("antwort_auf"), **dict(zip(("stand", "wer"), kommentar_stand(k)))})
     return out
 
@@ -97,7 +97,7 @@ def diskussionen_fuer_seite(akte, struktur):
         erledigt, abgehakt = d.get("erledigt"), diskussion_abgehakt(akte, d)
         stand_, wer = diskussion_stand(akte, d)
         out.append({"id": "gl:" + str(d["id"]), "ziel": "gitlab", "diskussion": d["id"], "kommentar": k["id"] if k else None,
-                    "finding": k.get("finding") if k else None, "text": nachrichten[0]["text"], "path": ort.get("path"),
+                    "finding": k.get("finding") if k else None, "agent": k.get("agent") if k else None, "text": nachrichten[0]["text"], "path": ort.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
                     "stand": stand_, "wer": wer, "loesbar": d.get("loesbar"), "nachrichten": nachrichten + entwuerfe, "links": [],
                     "erledigt": dict(erledigt, von=von(erledigt.get("wer_id"))) if erledigt else None, "abgehakt": abgehakt,
@@ -296,7 +296,7 @@ def kommentar_neu(waggon, akte, eingabe, ansicht):
             return False, "Der Hinweis lässt sich hier keiner Zeile zuordnen – im ganzen MR übernehmen."
         i = h["datei"]
         k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
-                 hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
+                 agent=h.get("agent"), hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
     elif eingabe.get("datei") is not None:
         fehler, ort = zeile_aus_klick(struktur, eingabe, ansicht)
         if fehler:

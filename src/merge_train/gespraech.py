@@ -5,8 +5,8 @@ from .waggon import Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
 from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_stand,
-    faden_status, faeden_von, struktur_laden)
-from .hinweise import see_also_aufloesen
+    faden_status, faeden_von, kommentar_finden, struktur_laden)
+from .hinweise import hinweise_aufloesen, see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
 from .quellen import quelle
@@ -75,7 +75,7 @@ def gespraech_daten(waggon, ansicht=None):
                     "problem": unter, "zeile_text": k.get("zeile_text"), "status": faden_status(k),
                     **dict(zip(("stand", "wer"), faden_stand(k))),
                     "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
-                    "vom_agenten": bool(k.get("vom_agenten")),
+                    "vom_agenten": bool(k.get("vom_agenten")), "zu": k.get("zu"),
                     "see_also": see_also_aufloesen(struktur["ordner"], head, k.get("see_also"), None, k.get("path"))
                     if k.get("see_also") else [],
                     "links": code_links(struktur["ordner"], head, [m["text"] for m in k["nachrichten"]],
@@ -102,7 +102,7 @@ def faden_fremd(k):
             "zeile_text": k.get("zeile_text"), "status": faden_status(k),
             **dict(zip(("stand", "wer"), faden_stand(k))), "nachrichten": k["nachrichten"],
             "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude", "vom_agenten": bool(k.get("vom_agenten")),
-            "see_also": [], "links": [], "lesen": True, "fremd": k.get("branch") or "ohne Branch"}
+            "zu": k.get("zu"), "see_also": [], "links": [], "lesen": True, "fremd": k.get("branch") or "ohne Branch"}
 
 
 def neue_nachricht(von, text, gesendet=False, wer=None):
@@ -113,8 +113,26 @@ def neue_nachricht(von, text, gesendet=False, wer=None):
     return m
 
 
+def faden_zu(waggon, akte, struktur, zu):
+    """Ort eines Fadens, der an einem GitLab-Kommentar hängt (zu = „k:<Kommentar-id>“ oder „h:<Hinweis-key>“): der Ort
+    des Kommentars bzw. des Hinweises. Rückgabe (fehler, felder für den Faden)."""
+    art, _, kid = str(zu).partition(":")
+    if art == "k":
+        x = kommentar_finden(akte, kid)
+        if not x:
+            return "Kommentar nicht mehr vorhanden – Seite neu laden", None
+        return None, {"zu": zu, "refs": x.get("refs") or (struktur or {}).get("refs"), "path": x.get("path"),
+                      "old_path": x.get("old_path"), "a": x.get("a"), "b": x.get("b")}
+    if art == "h" and waggon.kann["review"]:
+        h = next((h for h in hinweise_aufloesen(waggon, akte, struktur)[0] if h["key"] == kid), None)
+        if not h:
+            return "Hinweis nicht mehr vorhanden – Seite neu laden", None
+        return None, {"zu": zu, "path": h["path"] or None, "old_path": h["path"] or None, "a": h["a"], "b": h["b"]}
+    return "zu: k:<Kommentar-id> oder h:<Hinweis-key>", None
+
+
 def faden_neu(waggon, akte, eingabe, text, ansicht):
-    """Neuer Faden des Nutzers (Entwurf), an der geklickten Zeile oder allgemein."""
+    """Neuer Faden des Nutzers (Entwurf), an der geklickten Zeile, an einem GitLab-Kommentar (zu) oder allgemein."""
     if ansicht and ansicht[0] == "commit":
         return False, NUR_LESEN
     if not text:
@@ -125,7 +143,12 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
          "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}
     if eingabe.get("an"):
         k["an"] = str(eingabe["an"])[:40]
-    if eingabe.get("datei") is not None:
+    if eingabe.get("zu"):
+        fehler, felder = faden_zu(waggon, akte, struktur, eingabe["zu"])
+        if fehler:
+            return False, fehler
+        k.update(felder)
+    elif eingabe.get("datei") is not None:
         fehler, ort = zeile_aus_klick(struktur, eingabe, ansicht)
         if fehler:
             return False, fehler if waggon.kann["review"] else fehler.replace("Der MR hat", "Das Projekt hat")
@@ -138,10 +161,10 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
             if not 1 <= ab < ort["b"]:
                 return False, f"Bereich: ab {ab} muss vor Zeile {ort['b']} liegen"
             k["ab"] = ab
-        if ort["b"]:
-            t = inhalt(struktur["ordner"], struktur["refs"]["head_sha"], ort["path"]) or ""
-            zeilen = t.split("\n")
-            k["zeile_text"] = zeilen[ort["b"] - 1] if ort["b"] <= len(zeilen) else None
+    if k["b"]:
+        sha = (k.get("refs") or {}).get("head_sha") or struktur["refs"]["head_sha"]
+        zeilen = (inhalt(struktur["ordner"], sha, k["path"]) or "").split("\n")
+        k["zeile_text"] = zeilen[k["b"] - 1] if k["b"] <= len(zeilen) else None
     faden_anhaengen(akte, k)
     return True, ""
 
