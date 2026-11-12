@@ -19,6 +19,10 @@
 # glab = "glab"               # Befehl, darf Argumente enthalten
 # mr_liste = "reviewer"       # MR-Zug: reviewer | assignee | author | keine
 
+# Weitere Klone der GitLab-Projekte ohne Eintrag unter [repos]: ein MR aus gruppe/metrics-client findet
+# <ordner>/metrics-client (oder <ordner>/gruppe/metrics-client), wenn dessen origin auf genau dieses Projekt zeigt
+# klon_ordner = ["~/workspaces"]   # ein Ordner oder eine Liste
+
 # Agent-Hinweise (jira-review): Dateien, die automatisch zum MR mit passendem „branch“ angezeigt werden
 # hinweise = ["~/workspaces/projekt/tasks/*-review-markers.json"]
 
