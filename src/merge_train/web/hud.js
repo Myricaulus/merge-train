@@ -65,9 +65,9 @@
       weg: 'Server nicht erreichbar',
       neu: 'neuer Server – Seite lädt neu, sobald kein Eingabefeld offen ist'
     }[ledZustand];
-    const zaehler = hudZaehler();
+    const zaehler = hudZaehler().concat(hudFeld() || []); // ✎ gehört zu den Nachrichten
     const zeilen = [
-      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand(), hudFeld()),
+      el('div', {class: 'hud-z'}, el('span', {class: 'hud-led ' + ledZustand, title: ledTitel}), hudStand()),
       App.review &&
       el(
         'div',

@@ -185,8 +185,8 @@ echter Änderung neu, rahmt Neues ein, endet beim Schließen des Tabs. `agent �
 - Ideen zum Ausbau: `docs/ideen.md`.
 
 ### 17. Stellwerk (HUD) und Meldungen
-LED für den Server, Stand von merge-train, ✎ bei einem offenen Eingabefeld (hält Neuladen auf, Klick springt hin:
-`hudFeld`), Zähler, wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
+LED für den Server, Stand von merge-train, Zähler, dahinter ✎ bei einem offenen Eingabefeld (hält Neuladen auf,
+Klick springt hin: `hudFeld`), wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
 Auch auf der Startseite (Güterbahnhof, auch mit Fehler): HUD ohne Zähler und 🔔; Server, Zuhörer und Meldungen aus `api/hud`.
 - Ort: `web/hud.js`, `web/toasts.js`, `kontext` (`zuhoerer.py`), Route `api/hud`.
 - Erweitern: neue Statusanzeigen ins HUD, neue Meldungen über `App.melden`, keine eigenen Banner.
