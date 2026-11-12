@@ -3,7 +3,7 @@
 // Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien; ist erst ein
 // Teil abgehakt, heißt der Knopf „abgeben“ (Teilstand <von>-wip, zählt wie fertig für die Abfahrt).
 // Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
-// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen, hoererSpan.
+// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen.
 // Kopfhörer auf dem Waggondach: wer an dem Waggon zuhört (api/zuhoerer, alle 5 s) und was er gerade tut.
 (() => {
   const {waggon, el} = App;
@@ -18,8 +18,7 @@
     HOERER_TITEL = {
       hoert: wer => wer + ' hört nur hier zu und langweilt sich',
       arbeitet: wer => wer + ' ist grad beschäftigt'
-    },
-    HOERER_TEXT = {hoert: 'hört zu', arbeitet: 'arbeitet'};
+    };
   const zufall = n => {
     n = Math.imul(n ^ (n >>> 15), 2246822519);
     n = Math.imul(n ^ (n >>> 13), 3266489917);
@@ -69,19 +68,6 @@
   }
   setInterval(hoererHolen, 5000);
   setTimeout(hoererHolen, 200);
-  /** Kopfhörer fürs HUD: wer zuhört (z aus zuhoerer) und was er tut, sonst „🎧 –“. */
-  App.hoererSpan = z =>
-    el(
-      'span',
-      {
-        class: 'hud-hoert' + (z ? ' an ' + z.tut : ''),
-        title: z
-          ? HOERER_TITEL[z.tut](z.wer) + (z.tut === 'hoert' ? ' – Fragen gehen direkt an die Session' : '')
-          : 'keine Agenten-Session hört zu'
-      },
-      el('span', {class: 'hoerer', 'data-tut': z ? z.tut : null}, z ? hoererZeichen(z.tut, 0) : '🎧'),
-      z ? ' ' + z.wer + ' ' + HOERER_TEXT[z.tut] : ' –'
-    );
   function naechsterWagen() {
     const i = zugWagen.findIndex(w => w.p === waggon.projekt);
     const offen = zugWagen.filter(w => w.status === 'offen' && !w.abgegeben && w.p !== waggon.projekt);

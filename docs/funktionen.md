@@ -107,10 +107,10 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 
 ### 9. Wer hört zu / Agent benachrichtigen
 Eine Session wartet mit `agent horchen`; sonst startet „senden“ einen Befehl: `todo`-Eintrag, `feedback_befehl` oder
-der Startbefehl aus `[agenten]`. Zeigt im HUD und auf dem Waggondach, wer zuhört und was er tut (`zuhoerer`:
+der Startbefehl aus `[agenten]`. Zeigt im HUD, wer horcht (`horcht`), auf dem Waggondach, wer zuhört und was er tut (`zuhoerer`:
 hoert, arbeitet = letzte Nachricht im Transcript ist keine fertige Antwort; wartet sie im Terminal, nichts), und den
 Kontext-Füllstand der Claude-Session (Fenster 1M, sobald sie je über 200k lag; beides aus `transcript_stand`).
-Die Emojis wechselt ein Takt in `zug.js` (`hoererZeichen`, `hoererSpan` fürs HUD), der Zug fragt `api/zuhoerer` alle 5 s.
+Die Emojis wechselt ein Takt in `zug.js` (`hoererZeichen`), der Zug fragt `api/zuhoerer` alle 5 s.
 - Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet).
 - Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`), `agent_cli.py` (`horchen`), `web/hud.js`, `web/zug.js`.
 - Erweitern: ein neuer Zustellweg kommt in `benachrichtigen`/`feedback_senden`, nicht in die Seite.

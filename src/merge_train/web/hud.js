@@ -4,7 +4,7 @@
 // Braucht von App: el, kann, waggon, melden, serverWeg, review (nur Diff-Seiten). Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
 (() => {
   const {el} = App;
-  const ohneReview = {kommentare: [], hinweise: [], faeden: [], horcht: null, zuhoerer: null, kontext: null};
+  const ohneReview = {kommentare: [], hinweise: [], faeden: [], horcht: null, kontext: null};
   const R = () => App.review || ohneReview;
   // HUD: Stellwerk auf Stelzen rechts neben der Schurre (Zug fährt drunter durch): Server-LED, Stand, Zähler, wer
   // zuhört.
@@ -157,7 +157,16 @@
       ag = el(
         'div',
         {class: 'hud-agent' + (KX && KX.prozent >= SW[3] ? ' gift' : '')},
-        App.hoererSpan(R().zuhoerer)
+        el(
+          'span',
+          {
+            class: 'hud-hoert' + (R().horcht ? ' an' : ''),
+            title: R().horcht
+              ? R().horcht + ' hört zu – Fragen gehen direkt an die Session'
+              : 'keine Agenten-Session hört zu'
+          },
+          R().horcht ? '🎧 ' + R().horcht + ' hört zu' : '🎧 –'
+        )
       );
     if (!KX) return ag;
     const p = Math.min(100, KX.prozent),
@@ -176,7 +185,6 @@
             ' von ' +
             tokenKurz(KX.fenster) +
             ' Tokens' +
-            (R().horcht ? '' : ' (arbeitet gerade, hört nicht zu)') +
             (KX.prozent >= SW[2] ? ' – im Terminal /compact, wenn ein Thema abgeschlossen ist' : '')
         },
         KX.prozent + ' % ctx'
@@ -220,7 +228,6 @@
         version = d.version;
         if (d.meldung) App.melden(d.meldung);
         ohneReview.horcht = d.horcht;
-        ohneReview.zuhoerer = d.zuhoerer;
         ohneReview.kontext = d.kontext;
         ledZustand = 'an';
         serverStand = d.server;

@@ -279,14 +279,13 @@ def api_stand(anfrage, waggon):
 def api_hud(anfrage):
     """HUD der Startseite (ohne Review): Stand des Servers und, wenn sie zu einem Waggon gehört (z. B. „kein lokaler
     Klon“), wer dort zuhört und Meldungen für die Glocke (wie api/stand)."""
-    d = {"server": server_stand(), "version": VERSION, "horcht": None, "zuhoerer": None, "kontext": None}
+    d = {"server": server_stand(), "version": VERSION, "horcht": None, "kontext": None}
     try:
         waggon = schluessel_von(anfrage.daten.get("mr", ""))
     except Fehler:  # Startseite ohne Waggon
         return d
     seite_lebt(waggon)  # offene Seite des Waggons: horchen hört nicht auf
-    return dict(d, horcht=horcht(waggon), zuhoerer=zuhoerer(waggon), kontext=kontext(waggon),
-                meldung=MELDUNGEN.pop(waggon.id, None))
+    return dict(d, horcht=horcht(waggon), kontext=kontext(waggon), meldung=MELDUNGEN.pop(waggon.id, None))
 
 
 @route("GET", "api/zuhoerer", mit_schluessel=False)
