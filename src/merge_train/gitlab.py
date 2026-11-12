@@ -117,6 +117,7 @@ def mr_normalisieren(meta, mr):
 
 
 def lokale_klone(mr):
+    """Klone des MR-Projekts: [repos], der gemerkte Klon aus der Akte, dann gefundene unter klon_ordner."""
     out = []
     for schl in (mr.projekt, f'{mr.host}/{mr.projekt}'):
         if schl in KONF["repos"]:
@@ -124,7 +125,30 @@ def lokale_klone(mr):
     k = akte_lesen(mr).get("klon")
     if k:
         out.append(k)
+    out += klon_suchen(mr.projekt)
     return [o for o in out if os.path.isdir(o)]
+
+
+_REMOTE = {}  # Kandidat aus klon_ordner → Projektpfad seines origin ("" ohne GitLab-Remote), je Serverlauf
+
+
+def klon_suchen(projekt):
+    """Unter jedem Eintrag von klon_ordner: <ordner>/<letzter Teil des Projektpfads> bzw. <ordner>/<ganzer Pfad>,
+    sofern dessen origin auf genau dieses Projekt zeigt (Groß/klein egal)."""
+    ordner = KONF["klon_ordner"]
+    out = []
+    for d in ordner if isinstance(ordner, list) else [ordner]:
+        for kandidat in dict.fromkeys(os.path.join(os.path.expanduser(d), t) for t in (projekt.rsplit("/", 1)[-1], projekt)):
+            if not os.path.exists(os.path.join(kandidat, ".git")):
+                continue
+            if kandidat not in _REMOTE:
+                try:
+                    _REMOTE[kandidat] = remote_info(kandidat)[1]
+                except Fehler:
+                    _REMOTE[kandidat] = ""
+            if _REMOTE[kandidat].lower() == projekt.lower():
+                out.append(kandidat)
+    return out
 
 
 # MR-Daten (Titel, Beschreibung, Branches …) kommen aus dem Cache im Review-Stand. GitLab wird nur auf
@@ -180,7 +204,7 @@ def mr_lokal(mr, meta):
             gruende.append(f"{kurzpfad(o)}: kein gemeinsamer Vorgänger von {ziel} und {quelle}"); continue
         return o, {"base_sha": base, "start_sha": tgt, "head_sha": head}
     raise Fehler("kein lokaler Klon für " + f'{mr.projekt}!{mr.iid}: '
-                       + ("; ".join(gruende) or "unter [repos] eintragen oder „merge-train agent zeigen“ im Repo aufrufen"))
+                       + ("; ".join(gruende) or "unter [repos] eintragen, klon_ordner setzen oder „merge-train agent zeigen“ im Repo aufrufen"))
 
 
 # Die Liste kommt aus dem Cache. GitLab wird nur im Güterbahnhof („↻ MRs“) gefragt.

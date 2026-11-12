@@ -743,5 +743,27 @@ class AktualisierenTest(unittest.TestCase):
             branch_aktualisieren(self.klon, "mr")
 
 
+class KlonSuchenTest(unittest.TestCase):
+    """klon_ordner: <ordner>/<projekt> zählt nur, wenn origin auf genau dieses Projekt zeigt."""
+    def test_finden(self):
+        from merge_train import gitlab
+        from merge_train.einstellungen import KONF
+        d = tempfile.mkdtemp(dir=T)
+        for name, url in (("metrics-client", "git@gitlab.example:Gruppe/Metrics-Client.git"),
+                          ("fremd", "git@gitlab.example:andere/fremd.git")):
+            subprocess.run(["git", "init", "-q", f"{d}/{name}"], check=True)
+            subprocess.run(["git", "-C", f"{d}/{name}", "remote", "add", "origin", url], check=True)
+        alt = KONF["klon_ordner"]
+        try:
+            KONF["klon_ordner"] = d  # ein Eintrag statt Liste geht auch
+            self.assertEqual(gitlab.klon_suchen("gruppe/metrics-client"), [f"{d}/metrics-client"])
+            self.assertEqual(gitlab.klon_suchen("gruppe/fremd"), [])  # gleicher Name, anderes Projekt
+            self.assertEqual(gitlab.klon_suchen("gruppe/gibts-nicht"), [])
+            mr = Waggon(host="gitlab.example", projekt="gruppe/metrics-client", iid=3)
+            self.assertIn(f"{d}/metrics-client", gitlab.lokale_klone(mr))
+        finally:
+            KONF["klon_ordner"] = alt
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -148,7 +148,7 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
 
 ## GitLab-Review
 
-- **Stand**: Lag GitLab beim letzten Holen auf einem anderen Stand als der Klon (`[repos]` oder Repo der Hinweis-Datei),
+- **Stand**: Lag GitLab beim letzten Holen auf einem anderen Stand als der Klon (`[repos]`, `klon_ordner` oder Repo der Hinweis-Datei),
   sagt das ein Hinweis oben.
 - **GitLab-Kommentare** (Liste links): offene Agent-Hinweise (🤖 ●: du bist dran, übernehmen oder verwerfen) und
   eigene bzw. übernommene Kommentare (🤓 ○ Entwurf, ➜ Entwurf in GitLab). Die Reihenfolge
@@ -263,6 +263,7 @@ Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `
 | `mr_liste` | `reviewer,author` | welche MRs der Zug zeigt: `reviewer`, `author`, `assignee` (mehrere mit Komma) oder `keine` |
 | `hinweise` | `[]` | Globs für Agent-Hinweis-Dateien (automatische Zuordnung über `branch`) |
 | `repos` | `{}` | lokale Klone der GitLab-Projekte (Diff und Dateien kommen nur von dort) |
+| `klon_ordner` | `[]` | Ordner (oder Liste), in denen weitere Klone liegen: ein MR aus `gruppe/metrics-client` findet `<ordner>/metrics-client`, wenn dessen origin auf dieses Projekt zeigt – ohne Eintrag unter `[repos]` |
 | `browser` | leer | Browser-Befehl, unter WSL z. B. `wslview` |
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
 | `port`, `leerlauf` | `8771`, `3600` | Port des Servers; nach so vielen Sekunden ohne Anfrage beendet er sich. Offene Seiten fragen alle 4 s, ein kurzer Leerlauf (z. B. `120`, Hintergrund-Tabs drosselt der Browser) beendet ihn also bald nach dem Schließen des Tabs |

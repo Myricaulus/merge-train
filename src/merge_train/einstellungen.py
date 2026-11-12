@@ -24,6 +24,7 @@ STANDARD = {
     "mr_liste": "reviewer,author",  # Zug im GitLab-Modus: reviewer, assignee, author (mehrere mit Komma) | keine
     "hinweise": [],           # Globs für Agent-Hinweis-Dateien, z. B. "~/src/*/tasks/*-review-markers.json"
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)
+    "klon_ordner": [],        # Ordner, in denen Klone liegen: MR von gruppe/projekt → <ordner>/projekt, wenn origin passt
     "browser": "",            # leer: xdg-open, sonst wslview/explorer.exe; unter WSL z. B. "wslview"
     "port": 8771,
     "leerlauf": 3600,         # Server beendet sich nach so vielen Sekunden ohne Anfrage (offene Seiten fragen alle 4 s)
