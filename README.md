@@ -111,9 +111,9 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
 Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ein Review-Kommentar:
 
 1. **Klick auf eine Zeilennummer** (oder „＋ allgemeine Frage“): Die Nachricht ist zunächst ein **Entwurf**.
+   Man kann mehrere sammeln, bearbeiten oder löschen.
    Umschalt-Klick auf eine zweite Zeile derselben Datei macht daraus einen Bereich: Der Faden steht unter der letzten
    Zeile, die Zeilen sind links lila markiert und wandern nach neuen Commits mit. Bei Review-Kommentaren (GitLab) geht das nicht.
-   Man kann mehrere sammeln, bearbeiten oder löschen.
 2. **„Feedback senden“** schickt alle Entwürfe ab. ✓ heißt gesendet, ✓✓ heißt von Claude abgeholt.
 3. Claude holt sie mit `merge-train agent feedback` ab (Ort im aktuellen Stand, Code drumherum, Verlauf), beantwortet
    Fragen bzw. setzt Wünsche auf `claude` um und antwortet je Faden mit `merge-train agent antworten <id> "…"`
