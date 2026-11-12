@@ -90,7 +90,9 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 - Modi: lokal (Agent darf umsetzen und committen bzw. im Arbeitsstand ändern) und MR (privat, nie nach GitLab, nur
   antworten). Mehrere Agenten (Claude, Copilot …) über `[agenten]`.
 - Fäden gehören zum Branch; andere Branches nur lesend einblendbar.
-- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion.
+- Ort eines Fadens: eine Zeile oder ein Bereich ab–b der neuen Seite (Umschalt-Klick, `thread --ort pfad:von-bis`); der
+  Anfang wandert mit `bereich_anfang_vorwaerts` (`zeilen.py`) mit, markiert von `bereichMarkieren` (`web/review.js`).
+- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, allgemein).
 - Ort: `gespraech.py`, `agent_cli.py` (`feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen
