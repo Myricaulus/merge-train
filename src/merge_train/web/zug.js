@@ -1,6 +1,7 @@
 // Der Zug im Kopf: ein Waggon je Projekt/MR (Klick wechselt), „fertig ✓“ (lokale Waggons), weiter zum nächsten (n,
 // Enter), Abfahrt mit Daumen-Regen, wenn der letzte fertig ist. Lokale Waggons klappen mit „▾“ auf (Waggon-Karte):
-// Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien.
+// Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien; ist erst ein
+// Teil abgehakt, heißt der Knopf „abgeben“ (Teilstand <von>-wip, zählt wie fertig für die Abfahrt).
 // Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
 // Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen.
 (() => {
@@ -10,7 +11,7 @@
     String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
   function naechsterWagen() {
     const i = zugWagen.findIndex(w => w.p === waggon.projekt);
-    const offen = zugWagen.filter(w => w.status === 'offen' && w.p !== waggon.projekt);
+    const offen = zugWagen.filter(w => w.status === 'offen' && !w.abgegeben && w.p !== waggon.projekt);
     return offen.find(w => zugWagen.indexOf(w) > i) || offen[0] || null;
   }
   function zugZeichnen() {
@@ -49,7 +50,9 @@
           w.marke ||
             (f
               ? '✓ fertig'
-              : w.gs_neu
+              : w.abgegeben
+                ? '✓ abgegeben'
+                : w.gs_neu
                 ? '💬 ' + w.gs_neu + ' neu'
                 : w.gs
                   ? '💬 ' + w.gs
@@ -73,7 +76,9 @@
           ? `<rect x="${x + 10}" y="${y + 43}" width="${bp}" height="4" class="tp"/>` +
             `<rect x="${x + 10 + bp}" y="${y + 43}" width="${W - 20 - bp}" height="4" class="tm"/>`
           : '';
-      const klassen = `wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${mr ? 'mr' : ''} ${fehlt ? 'fehlt' : ''}`;
+      const klassen =
+        `wg ${akt ? 'akt' : ''} ${f ? 'fertig' : ''} ${w.abgegeben ? 'abgegeben' : ''} ${mr ? 'mr' : ''} ` +
+        (fehlt ? 'fehlt' : '');
       const auf = mr
         ? ''
         : `<g class="auf"><rect x="${x + W - 26}" y="${y + 2}" width="24" height="22" rx="4"/>` +
@@ -89,7 +94,7 @@
    <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>${fuell}
    <text x="${x + 10}" y="${y + 17}" font-weight="600">${name}</text>
    <text x="${x + 10}" y="${y + 35}">${z2}</text>
-   <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f ? 'mf' : 'mo'}">${marke}</text>
+   <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f || w.abgegeben ? 'mf' : 'mo'}">${marke}</text>
    ${balken}${auf}
    <circle cx="${x + 24}" cy="${y + H + 4}" r="6" class="rad"/>
    <circle cx="${x + W - 24}" cy="${y + H + 4}" r="6" class="rad"/></g>
@@ -258,6 +263,7 @@
     if (!w || JSON.stringify(w.fuellung) === JSON.stringify(fuellung)) return;
     w.fuellung = fuellung;
     zugZeichnen();
+    knopfAnpassen();
   };
   if (location.hash === '#laden') {
     const z = document.querySelector('.szene');
@@ -268,6 +274,21 @@
     .forEach(b => b.addEventListener('click', () => location.reload())); // lokal: neue Änderungen
   const fertigKnopf = document.getElementById('fertig');
   const dieserWagen = zugWagen.find(w => w.p === waggon.projekt);
+  /** Teil abgehakt → „abgeben“ (nur die abgehakten Dateien), sonst „fertig ✓“. */
+  function teilAbgabe() {
+    const w = zugWagen.find(w => w.p === waggon.projekt),
+      fu = w && w.fuellung;
+    return !!(fu && fu.fertig > 0 && fu.fertig < fu.dateien);
+  }
+  function knopfAnpassen() {
+    if (!fertigKnopf || fertigKnopf.classList.contains('erledigt')) return;
+    const teil = teilAbgabe();
+    fertigKnopf.textContent = teil ? 'abgeben ⇢' : 'fertig ✓';
+    if (!fertigKnopf.dataset.titel) fertigKnopf.dataset.titel = fertigKnopf.title;
+    fertigKnopf.title = teil
+      ? 'Die abgehakten Dateien als Teilstand abgeben (<von>-wip), der Rest bleibt offen'
+      : fertigKnopf.dataset.titel;
+  }
   function abfahrtFeiern() {
     // letzter Waggon fertig: Zug fährt ab, Daumen-Regen, großer Daumen
     const box = document.getElementById('zug'),
@@ -341,7 +362,9 @@
     } else if (!waggon.dateien) {
       fertigKnopf.style.display = 'none';
     }
+    knopfAnpassen();
     fertigKnopf.addEventListener('click', () => {
+      const teil = teilAbgabe();
       fertigKnopf.disabled = true;
       App.melden('wird übernommen …');
       const review = App.review; // offene Gespräche und ungesendete Fragen: erst nachfragen
@@ -354,7 +377,7 @@
             (o ? o + ' Gespräch(e) noch offen' : '') +
               (o && e ? ', ' : '') +
               (e ? e + (e > 1 ? ' Entwürfe' : ' Entwurf') + ' nicht gesendet' : '') +
-              ' – trotzdem fertig?'
+              (teil ? ' – trotzdem abgeben?' : ' – trotzdem fertig?')
           )
         ) {
           fertigKnopf.disabled = false;
@@ -366,7 +389,7 @@
         fetch('/fertig', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({mr: waggon.id, projekt: waggon.projekt, sha: waggon.sha, k: waggon.k})
+          body: JSON.stringify({mr: waggon.id, projekt: waggon.projekt, sha: waggon.sha, k: waggon.k, teil})
         })
           .then(r => r.json())
           .then(d => {
@@ -376,6 +399,19 @@
               return;
             }
             zugSetzen(d.wagen);
+            const rest = d.wagen.find(w => w.p === waggon.projekt && w.abgegeben);
+            if (rest) {
+              // Teilabgabe: weiter zum nächsten Waggon, sonst fährt der Zug ab und die Seite zeigt den Rest
+              fertigKnopf.textContent = '✓ abgegeben';
+              fertigKnopf.classList.add('erledigt');
+              App.melden(d.text);
+              if (naechsterWagen()) weiterZumNaechsten();
+              else {
+                abfahrtFeiern();
+                setTimeout(() => location.reload(), 3600);
+              }
+              return;
+            }
             fertigKnopf.textContent = '✓ fertig';
             fertigKnopf.classList.add('erledigt');
             weiterZumNaechsten();

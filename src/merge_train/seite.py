@@ -3,7 +3,7 @@ import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
 from .einstellungen import ARBEITSSTAND, KONF, ORDNER, SKRIPT, dateiname, ersetzen, projektname, schluessel
 from .waggon import Waggon, fertig_moeglich, von_bis
-from .git import INHALT, bis_sha, blobs, git, git_commits, inhalt, kurzpfad, origin_voraus, projekt_wurzel, zerlegen
+from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, origin_voraus, projekt_wurzel, wip_name, wip_sha, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
@@ -213,17 +213,18 @@ def projekt_zeiger(projekt):
 
 
 def projekt_seite(wurzel, ansicht=None):
-    """Seite eines lokalen Projekts (bis gegen von ab dem gemeinsamen Vorgänger). Rückgabe (html-pfad, struktur)."""
+    """Seite eines lokalen Projekts (bis gegen von ab dem gemeinsamen Vorgänger bzw. dem Teilstand <von>-wip: diff_basis).
+    Rückgabe (html-pfad, struktur)."""
     projekt = projektname(wurzel)
     von, bis = von_bis(projekt)
     waggon = Waggon(lokal=projekt)
     head = bis_sha(wurzel, bis)
-    refs = {"base_sha": git(wurzel, "merge-base", von, head).strip(), "start_sha": git(wurzel, "rev-parse", von).strip(),
+    refs = {"base_sha": diff_basis(wurzel, von, head), "start_sha": git(wurzel, "rev-parse", von).strip(),
             "head_sha": head}
     praefix = os.path.join(LOKAL_ORDNER, f'{waggon.dateiname}-{von}-{bis}-{head[:12]}-{refs["base_sha"][:12]}'
                            .replace("/", "_"))
     pfad, struktur = seite_bauen(waggon.id, wurzel, refs, praefix,
-                                 lambda *a: projekt_html(projekt, von, bis, *a), ansicht)
+                                 lambda *a: projekt_html(projekt, von, bis, *a, wip=bool(wip_sha(wurzel, von))), ansicht)
     if not ansicht:
         ersetzen(projekt_zeiger(projekt), praefix_json(praefix))
         with akte_bearbeiten(waggon) as akte:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
@@ -240,7 +241,7 @@ def stand_name(wurzel, bis, head):
     return f"{'HEAD' if sauber else 'Arbeitsstand'} {branch}"
 
 
-def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
+def projekt_html(projekt, von, bis, dateien, commits, texte, struktur, wip=False):
     head = struktur["refs"]["head_sha"]
     ans = struktur.get("ansicht")
     todos = sorted(set(re.findall(r"todo:([\w.-]+)", " ".join(c[2] + " " + c[3] for c in commits))))
@@ -259,7 +260,7 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur):
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
     return diff_seite(titel=f"MR {html.escape(projekt)}", sid=Waggon(lokal=projekt).id, lesen=lesen, daten=daten, head=head,
                       dateien=dateien, texte=texte, commits=commits,
-                      h1=f"{html.escape(projekt)}: {html.escape(stand_name(struktur['ordner'], bis, head))} → {html.escape(von)}",
+                      h1=f"{html.escape(projekt)}: {html.escape(stand_name(struktur['ordner'], bis, head))} → {html.escape(wip_name(von) if wip else von)}",
                       fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
                       commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer)
 

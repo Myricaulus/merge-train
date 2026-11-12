@@ -56,6 +56,8 @@ sich wieder entfernen. Die Füllung steht in der Akte des Waggons. Gilt für lok
   und ausrangiert ist. Ein MR, der gestern weggefahren ist und heute neue Änderungen bekommt, kommt teilgefüllt
   wieder.
 
+- **Teilabgabe (lokal, `<von>-wip`), Stand:** umgesetzt (`docs/funktionen.md`, Abschnitt 15). Die Füllung beginnt
+  danach für den Rest wieder bei 0. Das Ausblenden nach der Abfahrt und das Rangiergleis fehlen noch.
 - **Teilabgabe (lokal, `<von>-wip`):** Ein großer Diff muss nicht auf einmal fertig werden. Klickt man auf
   „abgeben“, wenn erst ein Teil der Dateien abgehakt ist, schreibt merge-train die abgehakten Dateien in der
   Fassung aus `bis` als Commit auf `<von>-wip`, also z. B. `reviewed-wip`. Das geschieht per Plumbing, Arbeitsverzeichnis

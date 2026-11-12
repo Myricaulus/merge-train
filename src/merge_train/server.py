@@ -12,7 +12,7 @@ from .beobachter import neue_zeilen, veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
-from .quellen import GITLAB, LOKAL, QUELLEN, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
+from .quellen import GITLAB, LOKAL, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -394,7 +394,8 @@ def api_fertig(anfrage):
     waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
     if not waggon.kann["fertig"]:
         return NICHT_GEFUNDEN
-    ok, text = fertig(waggon.lokal, str(d.get("sha", "")))
+    sha = str(d.get("sha", ""))  # teil: „abgeben“ – nur die abgehakten Dateien (Teilstand <von>-wip)
+    ok, text = abgeben(waggon.lokal, sha, haken_struktur(waggon)) if d.get("teil") else fertig(waggon.lokal, sha)
     return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
 
 

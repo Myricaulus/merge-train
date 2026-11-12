@@ -3,16 +3,18 @@ import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
-from .git import arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, kurzpfad, projekt_wurzel, statistik
+from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, kurzpfad, projekt_wurzel, statistik, wip_name,
+                  wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
 from .gitlab import mr_liste, mr_ref
-from .abhaken import haken_weg
+from .abhaken import abhaken, haken_weg, teil_abgeben
 from .seite import mr_seite, projekt_seite
 
 def runde_laden():
     try:
-        r = json.load(open(RUNDE))
+        with open(RUNDE) as f:
+            r = json.load(f)
     except (FileNotFoundError, ValueError):
         r = {}
     heute = datetime.now().strftime("%Y-%m-%d")
@@ -20,7 +22,8 @@ def runde_laden():
 
 
 def lokal_wagen(stats, wurzeln=None):
-    """Lokale Waggons: offene Projekte + heute fertig gewordene (sofern seitdem nichts Neues kam), absteigend nach Umfang.
+    """Lokale Waggons: offene Projekte (heute teilweise abgegebene mit „abgegeben“) + heute fertig gewordene (sofern seitdem
+    nichts Neues kam), absteigend nach Umfang.
     wurzeln: {projekt: Klon} für den Branch der Fäden."""
     wurzeln = wurzeln or {}
     fertig = runde_laden()
@@ -29,25 +32,72 @@ def lokal_wagen(stats, wurzeln=None):
     wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen]
     wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
     for w in wagen:  # Gespräch: offene Fäden / neue Antworten des Agenten
+        if w["status"] == "offen" and fertig.get(w["p"], {}).get("status") == "abgegeben":
+            w["abgegeben"] = True  # heute ein Teil abgegeben: zählt für die Abfahrt, der Rest bleibt offen
         wurzel = wurzeln.get(w["p"])
         w["gs"], w["gs_neu"] = faeden_zaehlen(Waggon(lokal=w["p"]), branch_von(wurzel) if wurzel else None)
         w["datei"] = "/" + dateiname(w["p"])
     return wagen
 
 
-def fertig(projekt, sha):
-    """von des Projekts auf den gesehenen Stand setzen (den Schlüssel prüft der Server). Rückgabe (ok, text)."""
+def abgabe_pruefen(projekt, sha):
+    """Für „fertig“ und „abgeben“: (Klon, von, bis), sonst Fehler mit dem Grund."""
     repos = {projektname(r): r for r in finde_repos()}
     if projekt not in repos:
-        return False, f"Unbekanntes Projekt: {projekt}"
+        raise Fehler(f"Unbekanntes Projekt: {projekt}")
     wurzel = repos[projekt]
     if not re.fullmatch(r"[0-9a-f]{40}", sha or "") or git(wurzel, "cat-file", "-t", sha, check=False) != "commit\n":
-        return False, "Abgelehnt: unbekannter Stand."
+        raise Fehler("Abgelehnt: unbekannter Stand.")
     von, bis = von_bis(projekt)
     if not fertig_moeglich(projekt):
-        return False, f"„fertig“ geht nur mit lokalen Branches (von = {von}, bis = {bis})."
+        raise Fehler(f"„fertig“ geht nur mit lokalen Branches (von = {von}, bis = {bis}).")
     if git(wurzel, "merge-base", "--is-ancestor", von, sha, check=False) is None:
-        return False, f"{projekt}: {von} ist nicht Vorgänger des gesehenen Stands – nichts geändert."
+        raise Fehler(f"{projekt}: {von} ist nicht Vorgänger des gesehenen Stands – nichts geändert.")
+    return wurzel, von, bis
+
+
+def runde_eintragen(projekt, eintrag, status):
+    """Waggon für heute in RUNDE vermerken (fertig bzw. abgegeben: zählt für die Abfahrt)."""
+    with SPERRE:
+        r = runde_laden()
+        r[projekt] = dict(eintrag, p=projekt, datei=dateiname(projekt), status=status, tag=datetime.now().strftime("%Y-%m-%d"))
+        with open(RUNDE, "w") as f:
+            json.dump(r, f, ensure_ascii=False, indent=1)
+
+
+def abgeben(projekt, sha, struktur):
+    """Teilabgabe: die abgehakten Dateien auf <von>-wip (abhaken.teil_abgeben). Sind damit alle gesehen (gleicher Baum
+    wie der gesehene Stand), wie „fertig“. Rückgabe (ok, text)."""
+    try:
+        wurzel, von, bis = abgabe_pruefen(projekt, sha)
+    except Fehler as e:
+        return False, str(e)
+    if struktur["refs"]["head_sha"] != sha:
+        return False, f"{projekt}: Die Seite zeigt einen älteren Stand – neu laden."
+    waggon = Waggon(lokal=projekt)
+    pfade = abhaken(waggon, struktur)["abgehakt"]
+    if not pfade:
+        return False, "Noch keine Datei abgehakt – nichts abzugeben."
+    _, gleich = teil_abgeben(struktur, von, set(pfade))
+    if gleich:
+        return fertig(projekt, sha)
+    with akte_bearbeiten(waggon) as a:
+        haken_weg(a)
+    runde_eintragen(projekt, statistik(wurzel, von, sha), "abgegeben")
+    text = f"{projekt}: {len(pfade)} von {len(struktur['dateien'])} Datei(en) abgegeben → {wip_name(von)}"
+    melden(text)
+    return True, text
+
+
+def fertig(projekt, sha):
+    """von des Projekts auf den gesehenen Stand setzen (den Schlüssel prüft der Server), den Teilstand <von>-wip
+    löschen. Rückgabe (ok, text)."""
+    try:
+        wurzel, von, bis = abgabe_pruefen(projekt, sha)
+    except Fehler as e:
+        return False, str(e)
+    if wip_sha(wurzel, von):  # vor statistik: die zählt sonst nur den Rest nach dem Teilstand
+        git(wurzel, "branch", "-D", wip_name(von))
     akte = statistik(wurzel, von, sha)
     log = git(wurzel, "log", "--format=%B", f"{von}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
@@ -55,11 +105,7 @@ def fertig(projekt, sha):
     with akte_bearbeiten(Waggon(lokal=projekt)) as a:
         haken_weg(a)
     faeden_archivieren(Waggon(lokal=projekt), branch_von(wurzel))
-    with SPERRE:
-        r = runde_laden()
-        r[projekt] = dict(akte, p=projekt, datei=dateiname(projekt), status="fertig", tag=datetime.now().strftime("%Y-%m-%d"))
-        with open(RUNDE, "w") as f:
-            json.dump(r, f, ensure_ascii=False, indent=1)
+    runde_eintragen(projekt, akte, "fertig")
     erledigt = []
     for t in schliesst:
         ok = subprocess.run(["todo", "erledigt", t, "-n", f"Merge-Request {projekt} angenommen ({sha[:8]})"],

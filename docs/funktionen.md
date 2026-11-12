@@ -55,7 +55,7 @@ hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Dat
 - Datei abhaken: ☐ im Dateikopf, klappt zu und streicht in der Liste durch. Der Haken gilt je Stand der Datei
   (Blob in bis), ein neuer Stand nimmt ihn weg. Gespeichert in der Akte (`abgehakt`), daraus die Füllung des
   Waggons (`fuellung`: Zeilen der abgehakten Dateien / alle, je Datei mindestens `MINDEST`), im Zug als Schüttgut im
-  Kasten. „fertig“ räumt die Haken weg.
+  Kasten. „fertig“ und „abgeben“ (Abschnitt 15) räumen die Haken weg.
   Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
   Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
 - Kontext zwischen Hunks nachladen (▼ 20 / ▲ 20 / alle), auch dort kommentierbar.
@@ -150,10 +150,16 @@ Welche MRs: `mr_liste` (reviewer, author, assignee).
 - Ort: `alle_wagen`/`wagen_fuer` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
   Spec und Ausbauschritte: `docs/gueterbahnhof.md`.
 
-### 15. „fertig“ (lokal)
+### 15. „fertig“ / „abgeben“ (lokal)
 Setzt `von` auf den gesehenen Stand, warnt bei offenen Fäden oder ungesendeten Entwürfen, räumt erledigte Fäden weg.
-Nicht bei `origin/…` oder Arbeitsstand.
-- Ort: `fertig_moeglich` (`waggon.py`), Route `fertig` (`server.py`).
+Nicht bei `origin/…` oder Arbeitsstand. Ist erst ein Teil der Dateien abgehakt, heißt der Knopf „abgeben“: die
+abgehakten Dateien (Fassung aus bis) kommen per Plumbing als Commit auf den Teilstand `<von>-wip` (Arbeitsverzeichnis,
+Index und HEAD bleiben), der Diff läuft danach ab dem Teilstand (`diff_basis`). Hat der Teilstand den Baum von bis,
+ist es „fertig“ (der Teilstand wird gelöscht). Abgegeben zählt für die Abfahrt (RUNDE `abgegeben`, Waggon mit
+gestricheltem grünem Rahmen).
+- Ort: `fertig_moeglich` (`waggon.py`), Route `fertig` (`server.py`, `teil` = abgeben), `fertig`, `abgeben`,
+  `abgabe_pruefen`, `runde_eintragen` (`quellen.py`), `teil_abgeben` (`abhaken.py`), `wip_name`, `wip_sha`,
+  `diff_basis` (`git.py`, auch für `statistik` und `projekt_seite`).
 
 ### 16. Beobachten (Arbeitsstand live)
 `merge-train --beobachten [ordner] [--von REF]`: eigene Instanz mit eigenem Port und Daten, inotify, lädt bei

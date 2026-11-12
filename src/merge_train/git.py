@@ -152,6 +152,22 @@ def bis_sha(wurzel, bis=None):
     return arbeitsstand(wurzel) if bis == ARBEITSSTAND else git(wurzel, "rev-parse", bis).strip()
 
 
+def wip_name(von):
+    """Branch des Teilstands (Teilabgabe, abhaken.teil_abgeben): <von>-wip."""
+    return von + "-wip"
+
+
+def wip_sha(wurzel, von):
+    """sha des Teilstands <von>-wip, None ohne Teilstand."""
+    r = git(wurzel, "rev-parse", "--verify", "-q", wip_name(von) + "^{commit}", check=False)
+    return r.strip() if r else None
+
+
+def diff_basis(wurzel, von, bis):
+    """Basis des Diffs eines lokalen Projekts (bis = sha): der Teilstand <von>-wip, sonst der gemeinsame Vorgänger."""
+    return wip_sha(wurzel, von) or git(wurzel, "merge-base", von, bis).strip()
+
+
 def fehlende_zweige(wurzel, von=None, bis=None):
     """Welche von von/bis (Standard: die des Projekts) es im Klon nicht gibt."""
     if not (von and bis):
@@ -185,7 +201,7 @@ def finde_repos(alle=False):
 
 def statistik(wurzel, von=None, bis=None):
     von, bis = von or von_bis(projektname(wurzel))[0], bis_sha(wurzel, bis)
-    basis = git(wurzel, "merge-base", von, bis).strip()
+    basis = diff_basis(wurzel, von, bis)
     plus = minus = dateien = 0
     for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
         a, b, _ = z.split("\t", 2); dateien += 1

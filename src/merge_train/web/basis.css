@@ -59,6 +59,7 @@ padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px;display:f
 #zug .wg:hover .kasten{stroke:var(--muted)}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}
 #zug .fertig .kasten{fill:var(--dazu);stroke:var(--p)}
+#zug .abgegeben .kasten{stroke:var(--p);stroke-dasharray:6 3}
 #zug text{fill:var(--fg);font:12px system-ui,sans-serif} #zug .klein{fill:var(--muted);font-size:11px}
 #zug .dampf circle{fill:var(--muted);opacity:.35} #zug .schiene{stroke:var(--muted);stroke-width:2;opacity:.6}
 #zug .tp{fill:var(--p)} #zug .tm{fill:var(--m)} #zug .rad{fill:var(--muted)} #zug .lok{fill:var(--muted)}

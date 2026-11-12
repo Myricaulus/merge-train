@@ -801,6 +801,52 @@ class ZweigeTest(unittest.TestCase):
         self.assertEqual(abhaken(wg, st(), "b", False)["fuellung"]["anteil"], 0)
         self.assertEqual(akte_lesen(wg)["fuellung"]["fertig"], 0)
 
+    def test_teilabgabe(self):
+        """„abgeben“: abgehakte Dateien auf <von>-wip (Index und Arbeitsverzeichnis bleiben), Diff danach ab dem Teilstand;
+        ist alles abgegeben, wird von auf bis gesetzt und der Teilstand gelöscht."""
+        from merge_train import git as g, einstellungen as e, quellen as q
+        from merge_train.abhaken import abhaken
+        w = f"{tempfile.mkdtemp(dir=T)}/wipdemo"
+        sh = lambda *a: subprocess.run(["git", "-C", w, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                       capture_output=True, text=True, check=True).stdout
+        os.makedirs(w); sh("init", "-q", "-b", "reviewed")
+        for n in "abc":
+            schreiben(f"{w}/{n}", "1\n")
+        sh("add", "."); sh("commit", "-qm", "basis"); sh("switch", "-qc", "claude")
+        schreiben(f"{w}/a", "2\n"); sh("rm", "-q", "b"); schreiben(f"{w}/d", "neu\n"); sh("add", "."); sh("commit", "-qm", "x")
+        schreiben(f"{w}/c", "ungesichert\n")  # Arbeitsverzeichnis: bleibt, wie es ist
+        alt = (g.PROJEKTE_LISTE[:], dict(e.KONF))
+        try:
+            g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = [w]
+            e.KONF.update(von="reviewed", bis="claude", zweige={})
+            wg = frische_akte("wipdemo")
+            kopf = sh("rev-parse", "claude").strip()
+            st = q.LOKAL.seite(wg)[1]
+            self.assertEqual(sorted(f["neu"] for f in st["dateien"]), ["a", "b", "d"])
+            self.assertFalse(q.abgeben("wipdemo", kopf, st)[0])  # nichts abgehakt
+            abhaken(wg, st, "a"); abhaken(wg, st, "b")
+            ok, text = q.abgeben("wipdemo", kopf, st)
+            self.assertTrue(ok, text)
+            self.assertEqual(sh("rev-parse", "reviewed"), sh("rev-parse", "claude~1"))  # von unverändert
+            self.assertEqual(sh("show", "reviewed-wip:a"), "2\n")
+            self.assertNotIn("b", sh("ls-tree", "--name-only", "reviewed-wip").split())
+            self.assertEqual(sh("status", "--porcelain"), " M c\n")
+            self.assertEqual(g.statistik(w)["dateien"], 1)
+            wagen = q.lokal_wagen([g.statistik(w)])
+            self.assertTrue(wagen[0]["abgegeben"])
+            self.assertNotIn("abgehakt", akte_lesen(wg))
+            st = q.LOKAL.seite(wg)[1]
+            self.assertEqual([f["neu"] for f in st["dateien"]], ["d"])
+            abhaken(wg, st, "d")
+            ok, text = q.abgeben("wipdemo", kopf, st)  # alles abgegeben: wie fertig
+            self.assertTrue(ok, text)
+            self.assertEqual(sh("rev-parse", "reviewed"), sh("rev-parse", "claude"))
+            self.assertEqual(sh("branch", "--list", "reviewed-wip"), "")
+            self.assertEqual(q.lokal_wagen([g.statistik(w)])[0]["status"], "fertig")
+        finally:
+            g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = alt[0]
+            e.KONF.clear(); e.KONF.update(alt[1])
+
     def test_toml_ohne_tomllib(self):
         from merge_train.einstellungen import _toml_einfach
         d = _toml_einfach('lokal = true\n[zweige.merge-train]\nvon = "reviewed"\n[zweige."a/b"]\nbis = "x"\n[repos]\n"g/p" = "~/k"\n')
