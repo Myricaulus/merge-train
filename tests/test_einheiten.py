@@ -779,6 +779,28 @@ class ZweigeTest(unittest.TestCase):
             g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = alt[0]
             e.KONF.clear(); e.KONF.update(alt[1])
 
+    def test_abhaken(self):
+        """Datei abhaken: Haken je Stand der Datei, Füllung nach Zeilen (mindestens MINDEST je Datei)."""
+        from merge_train.abhaken import MINDEST, abhaken
+        w = f"{tempfile.mkdtemp(dir=T)}/haken"
+        sh = lambda *a: subprocess.run(["git", "-C", w, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                       capture_output=True, text=True, check=True).stdout
+        os.makedirs(w); sh("init", "-q"); schreiben(f"{w}/a", "1\n"); sh("add", "a"); sh("commit", "-qm", "a")
+        kopf = lambda: sh("rev-parse", "HEAD").strip()
+        st = lambda: {"ordner": w, "refs": {"head_sha": kopf()}, "dateien": [
+            {"alt": "a", "neu": "a", "status": "geändert", "paare": [[1, None]] * (3 * MINDEST)},
+            {"alt": "b", "neu": "b", "status": "gelöscht", "paare": [[1, None]]}]}
+        wg = frische_akte("haken-demo")
+        self.assertEqual(abhaken(wg, st(), "a", True)["fuellung"], {"anteil": 0.75, "fertig": 1, "dateien": 2})
+        self.assertEqual(abhaken(wg, st(), "b", True)["abgehakt"], ["a", "b"])
+        with self.assertRaises(Fehler):
+            abhaken(wg, st(), "gibtsnicht", True)
+        schreiben(f"{w}/a", "2\n"); sh("commit", "-qam", "b")  # neuer Stand von a: Haken fällt weg
+        r = abhaken(wg, st())
+        self.assertEqual((r["abgehakt"], r["fuellung"]["anteil"]), (["b"], 0.25))
+        self.assertEqual(abhaken(wg, st(), "b", False)["fuellung"]["anteil"], 0)
+        self.assertEqual(akte_lesen(wg)["fuellung"]["fertig"], 0)
+
     def test_toml_ohne_tomllib(self):
         from merge_train.einstellungen import _toml_einfach
         d = _toml_einfach('lokal = true\n[zweige.merge-train]\nvon = "reviewed"\n[zweige."a/b"]\nbis = "x"\n[repos]\n"g/p" = "~/k"\n')

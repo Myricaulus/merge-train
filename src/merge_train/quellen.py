@@ -7,6 +7,7 @@ from .git import arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, ku
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
 from .gitlab import mr_liste, mr_ref
+from .abhaken import haken_weg
 from .seite import mr_seite, projekt_seite
 
 def runde_laden():
@@ -51,6 +52,8 @@ def fertig(projekt, sha):
     log = git(wurzel, "log", "--format=%B", f"{von}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
     git(wurzel, "branch", "-f", von, sha)
+    with akte_bearbeiten(Waggon(lokal=projekt)) as a:
+        haken_weg(a)
     faeden_archivieren(Waggon(lokal=projekt), branch_von(wurzel))
     with SPERRE:
         r = runde_laden()
@@ -279,5 +282,8 @@ def alle_wagen(akt=None):
     for q in QUELLEN:
         if q.an():
             for w in q.wagen(akt):
-                wagen.append(dict(w, quelle=q.name))
+                w = dict(w, quelle=q.name)
+                if w.get("status") == "offen":  # Füllung aus den abgehakten Dateien (abhaken.py)
+                    w["fuellung"] = akte_lesen(Waggon(lokal=w["p"]) if q is LOKAL else Waggon.aus_id(w["p"])).get("fuellung")
+                wagen.append(w)
     return wagen

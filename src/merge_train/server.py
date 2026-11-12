@@ -7,6 +7,7 @@ from .waggon import Fehler, Ungueltig, Waggon
 from .git import ANLASS, anlass, branch_aktualisieren, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
+from .abhaken import abhaken
 from .beobachter import neue_zeilen, veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
@@ -317,7 +318,27 @@ def api_vergleich(anfrage, struktur):
     return vergleich_daten(struktur, anfrage.daten.get("a", ""), anfrage.daten.get("b", ""))
 
 
+def haken_struktur(waggon):
+    """Struktur des ganzen Waggons (abgehakt wird immer im ganzen Diff, auch aus einer Commit-Ansicht)."""
+    struktur = seiten_struktur(waggon.id)
+    if struktur is None:
+        raise Fehler("Seite unbekannt – neu laden")
+    return struktur
+
+
+@route("GET", "api/abgehakt", waggon=True)
+def api_abgehakt(anfrage, waggon):
+    """Abgehakte Dateien beim Laden der Seite, Füllung dabei neu gerechnet (neuer Stand nimmt Haken weg)."""
+    return abhaken(waggon, haken_struktur(waggon))
+
+
 # ---- POST: Aktionen der Seite (alle mit Schlüssel)
+
+@route("POST", "api/abgehakt", waggon=True)
+def api_abhaken(anfrage, waggon):
+    d = anfrage.daten
+    return abhaken(waggon, haken_struktur(waggon), str(d.get("pfad", "")), bool(d.get("an")))
+
 
 def mit_review(waggon, anfrage, ok, text, **mehr):
     """Antwort einer Aktion: bei Erfolg gleich die neuen Daten der Seite mit."""

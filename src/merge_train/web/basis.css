@@ -55,7 +55,7 @@ padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px;display:f
 #wagenkarte .knoepfe{display:flex;gap:8px;margin:2px 0}
 #wagenkarte .knoepfe button{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
 #wagenkarte .knoepfe button:disabled{opacity:.45;cursor:default}
-#zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5}
+#zug .kasten{fill:var(--bg);stroke:var(--rand);stroke-width:1.5} #zug .fuell{fill:#b08a5a;opacity:.45;pointer-events:none}
 #zug .wg:hover .kasten{stroke:var(--muted)}
 #zug .akt .kasten{stroke:var(--tn);stroke-width:3}
 #zug .fertig .kasten{fill:var(--dazu);stroke:var(--p)}
@@ -69,3 +69,5 @@ padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px;display:f
 #meldung{color:var(--muted);font-size:13px}
 .tk{color:var(--tk)} .ts{color:var(--ts)} .tc{color:var(--tc);font-style:italic} .tn{color:var(--tn)} .tt{color:var(--tt)}
 .ta{color:var(--ta)} .tf{color:var(--tf)} .tb{color:var(--tb)} .tv{color:var(--tv)} .to{color:var(--to)}
+
+.datei summary .haken{margin:0 8px 0 0;vertical-align:-2px;cursor:pointer} .datei.abgehakt>summary b{color:var(--muted);text-decoration:line-through} #liste a.abgehakt{opacity:.45;text-decoration:line-through}

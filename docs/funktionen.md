@@ -52,6 +52,12 @@ Was ein Waggon darf, bestimmt seine Quelle: `review` (Kommentare nach GitLab), `
 ### 4. Diff-Seite (gemeinsam für alle Quellen)
 Eine Seite für jeden Waggon: Diff immer aus dem lokalen Git (nie aus der GitLab-API), Syntaxfarben, geänderte Wörter
 hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Datei abhaken.
+- Datei abhaken: ☐ im Dateikopf, klappt zu und streicht in der Liste durch. Der Haken gilt je Stand der Datei
+  (Blob in bis), ein neuer Stand nimmt ihn weg. Gespeichert in der Akte (`abgehakt`), daraus die Füllung des
+  Waggons (`fuellung`: Zeilen der abgehakten Dateien / alle, je Datei mindestens `MINDEST`), im Zug als Schüttgut im
+  Kasten. „fertig“ räumt die Haken weg.
+  Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
+  Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
 - Kontext zwischen Hunks nachladen (▼ 20 / ▲ 20 / alle), auch dort kommentierbar.
 - Große und generierte Dateien erst auf Klick, automatisch, wenn ein Kommentar darin liegt.
 - Achsen: Dateiart (generiert/groß), Darstellung (nebeneinander/inline).

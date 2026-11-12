@@ -1,6 +1,6 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
-// Dateivergleich, Kommentarliste links (sortierbar). Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
-// dateiFesthalten; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
+// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
+// dateiFesthalten, dateiLinks, wagenFuellen; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
 // direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
@@ -683,6 +683,44 @@
         return r;
     }
     return null;
+  }
+
+  // ---- Datei abhaken (☐ im Dateikopf, gilt für den ganzen Waggon): klappt zu, füllt den Waggon (api/abgehakt)
+  function hakenSetzen(r) {
+    if (!r || !r.ok) return r && App.melden(r.text);
+    const ab = new Set(r.abgehakt);
+    dateien.forEach((d, i) => {
+      const c = d.querySelector('summary .haken');
+      if (c) c.checked = ab.has(d.dataset.pfad);
+      d.classList.toggle('abgehakt', ab.has(d.dataset.pfad));
+      App.dateiLinks[i]?.classList.toggle('abgehakt', ab.has(d.dataset.pfad));
+    });
+    App.wagenFuellen(r.fuellung);
+  }
+  if (location.protocol.startsWith('http') && !nurLesen) {
+    dateien.forEach(d => {
+      const c = el('input', {type: 'checkbox', class: 'haken', title: 'Datei abhaken (fertig angesehen): klappt sie zu und füllt den Waggon'});
+      c.addEventListener('click', e => e.stopPropagation());
+      c.addEventListener('change', () => {
+        setTimeout(() => (d.open = !c.checked));
+        fetch('/api/abgehakt', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({mr: waggon.id, k: waggon.k, pfad: d.dataset.pfad, an: c.checked})
+        })
+          .then(r => r.json())
+          .then(hakenSetzen)
+          .catch(() => App.melden('Haken nicht gespeichert – Server weg?'));
+      });
+      d.querySelector('summary').prepend(c);
+    });
+    fetch('/api/abgehakt?' + waggonAbfrage(true))
+      .then(r => r.json())
+      .then(r => {
+        hakenSetzen(r);
+        dateien.forEach(d => d.classList.contains('abgehakt') && (d.open = false));
+      })
+      .catch(() => {});
   }
 
   Object.assign(App, {

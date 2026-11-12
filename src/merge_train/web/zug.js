@@ -1,8 +1,8 @@
 // Der Zug im Kopf: ein Waggon je Projekt/MR (Klick wechselt), „fertig ✓“ (lokale Waggons), weiter zum nächsten (n,
 // Enter), Abfahrt mit Daumen-Regen, wenn der letzte fertig ist. Lokale Waggons klappen mit „▾“ auf (Waggon-Karte):
-// Projektinfos und von/bis des Projekts zur Auswahl (api/projekt).
+// Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien.
 // Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
-// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen.
+// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen.
 (() => {
   const {waggon, el} = App;
   let zugWagen = (window.MR_ZUG || {wagen: []}).wagen; // die Waggons des Zugs (/zug.js bzw. /api/zug)
@@ -78,8 +78,15 @@
         ? ''
         : `<g class="auf"><rect x="${x + W - 26}" y="${y + 2}" width="24" height="22" rx="4"/>` +
           `<text x="${x + W - 14}" y="${y + 18}" text-anchor="middle">▾</text></g>`;
-      s += `<g class="${klassen}" data-i="${i}"><title>${titel}</title>
-   <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>
+      const fa = w.fuellung && !f ? Math.min(1, w.fuellung.anteil) : 0, // Füllung aus den abgehakten Dateien
+        fh = fa ? Math.max(2, Math.round((H - 3) * fa)) : 0,
+        fuell = fh
+          ? `<rect class="fuell" x="${x + 1.5}" y="${y + H - 1.5 - fh}" width="${W - 3}" height="${fh}" rx="3.5"/>`
+          : '';
+      s += `<g class="${klassen}" data-i="${i}"><title>${titel}${
+        fa ? esc(`\nabgehakt: ${w.fuellung.fertig} von ${w.fuellung.dateien} Dateien (${Math.round(fa * 100)} %)`) : ''
+      }</title>
+   <rect class="kasten" x="${x}" y="${y}" width="${W}" height="${H}" rx="5"/>${fuell}
    <text x="${x + 10}" y="${y + 17}" font-weight="600">${name}</text>
    <text x="${x + 10}" y="${y + 35}">${z2}</text>
    <text x="${x + W - 10}" y="${y + 35}" text-anchor="end" class="marke ${f ? 'mf' : 'mo'}">${marke}</text>
@@ -245,6 +252,13 @@
     App.kopfhoeheSetzen?.();
   }
   App.zugSetzen = zugSetzen;
+  /** Füllung des eigenen Waggons nach dem Abhaken (ohne den Zug neu zu laden). */
+  App.wagenFuellen = fuellung => {
+    const w = zugWagen.find(w => w.p === waggon.projekt);
+    if (!w || JSON.stringify(w.fuellung) === JSON.stringify(fuellung)) return;
+    w.fuellung = fuellung;
+    zugZeichnen();
+  };
   if (location.hash === '#laden') {
     const z = document.querySelector('.szene');
     if (z) z.classList.add('laedt');
