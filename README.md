@@ -143,7 +143,7 @@ Der Knopf merkt sich die Wahl.
   Deshalb sitzt der Kopfhörer auch auf dem Dach des Waggons: 🎧, wenn sie zuhört (ab und zu langweilt sie sich
   sichtbar), wackelndes Werkzeug, wenn sie gerade arbeitet.
   In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
-  (`skill/merge-train/SKILL.md`, von `install.sh` nach `~/.claude/skills` verlinkt).
+  (`skill/merge-train/SKILL.md`, bei der [Installation](#installation) verlinkt).
 - **Keine hört zu**: Ist das Werkzeug `todo` installiert (eigenes Werkzeug des Autors, nicht Teil von merge-train und
   nicht veröffentlicht), legt „An Agent senden“ dort einen Eintrag im Projekt an (mit Startprompt), und dessen Panel pulsiert.
   „▶ Session starten“ auf der Seite öffnet ihn mit `todo los` (Konsole im Projekt, Enter startet Claude).
@@ -273,7 +273,7 @@ Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `
 ## Wo liegt was
 
 merge-train hält sich an die Linux-Ordner (XDG): Einstellung, Daten und Cache liegen getrennt. Zum Hineinschauen
-legt `install.sh` im Repo zwei Symlinks an (in `.gitignore`): `config` und `aktenschrank`.
+liegen im Repo zwei Symlinks aus der [Installation](#installation) (in `.gitignore`): `config` und `aktenschrank`.
 
 | Was | Ort | im Repo |
 |---|---|---|
@@ -326,15 +326,18 @@ liegen in `~/.local/share/merge-train/beobachten/<name>-<hash>/`, dein normaler 
 - `merge-train agent …` aus diesem Repo landet von selbst bei der Instanz, solange sie läuft (außer das Repo ist ohnehin im
   normalen Zug). Feedback heißt hier: im Arbeitsverzeichnis umsetzen, nicht committen.
 
-## Auf einen anderen Rechner übertragen (z. B. WSL, nur GitLab)
+## Installation
 
 ```sh
 git clone git@github.com:Myricaulus/merge-train.git ~/merge-train
-~/merge-train/install.sh --nur-gitlab
+~/merge-train/install.idem.sh
 ```
 
-`install.sh` baut `merge-train`, richtet die Git-Hooks fürs Neubauen ein, verlinkt `~/.local/bin/merge-train`, legt die Einstellungen mit `lokal = false` an (unter WSL mit `browser = "wslview"`,
-wenn vorhanden) und prüft `pygments` und `glab`. Danach:
+Das Skript lässt sich beliebig oft aufrufen. Es baut `merge-train` und richtet die Git-Hooks ein (nach
+pull/checkout/rebase `./bauen`, vor commit/push `./testen`, siehe [Tests](#tests)). Es verlinkt
+`~/.local/bin/merge-train`, den Claude-Skill nach `~/.claude/skills/merge-train` und die fish-Vervollständigung. Fehlen
+die Einstellungen, legt es sie an (unter WSL mit `browser = "wslview"`, wenn vorhanden). Dazu kommen die Symlinks
+`config` und `aktenschrank` im Repo. Zuletzt prüft es `pygments` und `glab`. Danach:
 
 1. `glab auth login --hostname <gitlab-host>`. Beim Arbeits-GitLab zusätzlich `gitlab_host` eintragen.
 2. In `~/.config/merge-train/config.toml` die Einträge `hinweise` (z. B. `"~/workspaces/projekt/tasks/*-review-markers.json"`)
@@ -359,8 +362,8 @@ steht in `__init__.py`), CSS und JS in `src/merge_train/web/`. `./bauen` bündel
 ```
 
 `merge-train` ist das gebaute Ergebnis und nicht eingecheckt (`.gitignore`). `~/.local/bin/merge-train` zeigt darauf.
-`install.sh` richtet Git-Hooks ein (post-merge, post-checkout, post-rewrite), die danach `./bauen` ausführen.
-Zum Aktualisieren genügt also ein `git pull`.
+Die Git-Hooks aus der [Installation](#installation) bauen nach pull/checkout/rebase neu, zum Aktualisieren genügt also
+ein `git pull`.
 
 Bausteine:
 
@@ -398,11 +401,13 @@ oder eigener Server mit eigener Konfig (`port = …`, `MERGE_TRAIN_CONFIG=…`),
 ## Tests
 
 ```sh
+./testen                          # nur, was die Änderungen betreffen (pre-commit-Hook); --voll alles, --liste nur zeigen
 python3 tests/test_einheiten.py   # Logik einzeln (Zeilen, Stufen, Akte, Routen, Abschließen gegen GitLab-Fake), < 1 s
 python3 tests/test_gitlab.py      # GitLab-Modus komplett, mit tests/fake-glab statt GitLab
 ```
 
-Die Syntax des Seiten-Skripts prüft `test_gitlab.py` mit `node --check`, ohne node mit `biome`.
+Was `./testen` wann auswählt und wie der pre-push-Hook schon getestete Stände überspringt:
+[`docs/funktionen.md`](docs/funktionen.md#21-tests-mini-ci).
 `./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`), je Seite das Bündel, das sie bekommt.
 Ohne Biome, aber mit node prüft es nur die Syntax der Bündel (`node --check`); Biome gibt es auch über
 `npm install -g @biomejs/biome`. Vorher prüft es mit `werkzeug/app_pruefen.py`, wie die Dateien über `App` zusammenhängen.

@@ -159,7 +159,7 @@ def auswahl(pfade, voll):
         if p == "testen":
             smoke = pruefen = klassen_alle = True
             continue
-        if p == "install.sh":
+        if p.endswith(".idem.sh"):
             continue  # nur sh -n, siehe main
         gruende.append(f"{p}: unbekannt → --voll")
         return True, True, "alle", list(ALLE_TEILE), gruende
@@ -247,8 +247,9 @@ def main():
     seit = args[args.index("--seit") + 1] if "--seit" in args else "HEAD"
     pfade = geaendert(seit)
     pruefen, smoke, klassen, teile, gruende = auswahl(pfade, voll)
-    if "install.sh" in pfade:
-        gruende.append("install.sh: sh -n")
+    idem = [p for p in pfade if p.endswith(".idem.sh") and os.path.exists(p)]
+    if idem:
+        gruende.append(" ".join(idem) + ": sh -n")
     for g in gruende:
         print("•", g)
     plan = [x for x in (pruefen and "pruefen", smoke and "Smoke",
@@ -257,11 +258,11 @@ def main():
     if "--liste" in args:
         print("\n".join(plan) or "nichts zu testen")
         return
-    if not plan and "install.sh" not in pfade:
+    if not plan and not idem:
         print("✓ nichts zu testen (" + (f"{len(pfade)} Datei(en), keine im Code" if pfade else "keine Änderungen") + ")")
         return
-    if "install.sh" in pfade:
-        schritt("install.sh (sh -n)", ["sh", "-n", "install.sh"])
+    for p in idem:
+        schritt(f"{p} (sh -n)", ["sh", "-n", p])
     if pruefen:
         schritt("pruefen", [sys.executable, "pruefen"])
     if not smoke:

@@ -1,11 +1,7 @@
 #!/bin/sh
-# merge-train auf diesem Rechner einrichten.
-#   ./install.sh             lokaler Projekt-Diff + GitLab
-#   ./install.sh --nur-gitlab  nur GitLab-MRs (lokal = false), z. B. unter WSL
+# merge-train auf diesem Rechner einrichten (beliebig oft aufrufbar).
 set -e
 HIER=$(cd "$(dirname "$0")" && pwd)
-NUR_GITLAB=0
-[ "$1" = "--nur-gitlab" ] && NUR_GITLAB=1
 
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' || { echo "Python ≥ 3.8 nötig"; exit 1; }
 
@@ -18,7 +14,7 @@ for h in post-merge post-checkout post-rewrite; do
   if [ -e "$HOOKS/$h" ] && ! grep -q "merge-train: bauen" "$HOOKS/$h"; then
     echo "• $HOOKS/$h gibt es schon – dort selbst \"./bauen\" ergänzen"; continue
   fi
-  printf '#!/bin/sh\n# merge-train: bauen (von install.sh)\ncd "$(git rev-parse --show-toplevel)" && ./bauen >/dev/null || true\n' > "$HOOKS/$h"
+  printf '#!/bin/sh\n# merge-train: bauen (von install.idem.sh)\ncd "$(git rev-parse --show-toplevel)" && ./bauen >/dev/null || true\n' > "$HOOKS/$h"
   chmod +x "$HOOKS/$h"
 done
 echo "✓ Git-Hooks: nach pull/checkout/rebase wird merge-train neu gebaut"
@@ -28,7 +24,7 @@ for h in pre-commit:./testen pre-push:"./testen --push"; do
   if [ -e "$HOOKS/$name" ] && ! grep -q "merge-train: testen" "$HOOKS/$name"; then
     echo "• $HOOKS/$name gibt es schon – dort selbst \"$befehl\" ergänzen"; continue
   fi
-  printf '#!/bin/sh\n# merge-train: testen (von install.sh; überspringen: git commit/push --no-verify)\ncd "$(git rev-parse --show-toplevel)" && exec %s\n' "$befehl" > "$HOOKS/$name"
+  printf '#!/bin/sh\n# merge-train: testen (von install.idem.sh; überspringen: git commit/push --no-verify)\ncd "$(git rev-parse --show-toplevel)" && exec %s\n' "$befehl" > "$HOOKS/$name"
   chmod +x "$HOOKS/$name"
 done
 echo "✓ Git-Hooks: vor commit ./testen (nur Betroffenes), vor push ./testen --push (ungetestete Stände voll)"
@@ -52,9 +48,6 @@ KONF="${XDG_CONFIG_HOME:-$HOME/.config}/merge-train/config.toml"
 if [ ! -e "$KONF" ]; then
   mkdir -p "$(dirname "$KONF")"
   cp "$HIER/config.example.toml" "$KONF"
-  if [ $NUR_GITLAB = 1 ]; then
-    sed -i 's/^# lokal = true/lokal = false/' "$KONF"
-  fi
   if grep -qi microsoft /proc/version 2>/dev/null && command -v wslview >/dev/null; then
     sed -i 's/^# browser = ""/browser = "wslview"/' "$KONF"
   fi

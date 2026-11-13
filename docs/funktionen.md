@@ -211,8 +211,8 @@ Kleiner Server auf `127.0.0.1:8771`, Routen-Tabelle mit gemeinsamer Fehler- und 
 
 ### 20. Einstellungen und Installation
 `~/.config/merge-train/config.toml` (Vorlage `config.example.toml`), Ersatzparser ohne `tomllib`, Log der
-Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für WSL), Git-Hooks bauen neu.
-- Ort: `einstellungen.py`, `install.sh`.
+Anfragen an git und GitLab (`log_tage`). Installation: README, Abschnitt „Installation“.
+- Ort: `einstellungen.py`, `install.idem.sh`.
 - Erweitern: neue Schalter in `einstellungen.py` mit Standard, dazu Zeile in der README-Tabelle und in
   `config.example.toml`.
 
@@ -220,7 +220,7 @@ Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für 
 `./testen` wählt nach den geänderten Dateien aus: `./pruefen` (JS/CSS), Smoke (Bau nach `tests/bau/`, Import aller
 Module), Klassen von `tests/test_einheiten.py` (automatisch aus den Imports der Testdatei und von `src/`), Teile von
 `tests/test_gitlab.py` (`gitlab`, `lokal`, `horchen`, `arbeitsstand`, `gemischt`). Läuft als pre-commit-Hook, `--push`
-als pre-push-Hook (beide von `install.sh`): jeder gepushte Stand, dessen Tree-ID nicht im Merkzettel
+als pre-push-Hook: jeder gepushte Stand, dessen Tree-ID nicht im Merkzettel
 `.git/merge-train-getestet` steht, läuft `--voll`, genau dieser Stand (sonst im Temp-Worktree); ein grünes `--voll` auf
 sauberem Stand trägt ein. Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
 - Ort: `testen`, `MODUL_TEILE` darin, `TEILE` in `tests/test_gitlab.py`.

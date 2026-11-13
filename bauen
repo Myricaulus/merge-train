@@ -7,7 +7,7 @@
 
 Das Ergebnis ist ein Python-Zip (zipapp): eine Datei, die python3 direkt startet. Ohne Bauen läuft auch `python3 src`.
 Die gebaute Datei ist nicht eingecheckt (.gitignore). ~/.local/bin/merge-train zeigt darauf; die Git-Hooks
-aus install.sh bauen nach pull/checkout/rebase neu. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
+aus install.idem.sh bauen nach pull/checkout/rebase neu. Geschrieben wird nur bei einer Änderung (der Server startet bei neuer mtime neu).
 """
 import io, os, sys, zipfile
 
