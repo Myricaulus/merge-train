@@ -568,7 +568,9 @@ def main():
         pruefe(f"http://127.0.0.1:{PORT}/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
         pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
         pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
-        pruefe("siehe auch" not in r.stdout, "see_also aufgelöst")
+        pruefe(": FEHLT:" not in "".join(z for z in r.stdout.splitlines() if "siehe auch" in z), "see_also aufgelöst")
+        pruefe("Achtung: Stand abc des Reviews nicht im Klon" in r.stdout,
+               "see_also: reviewed_commit fehlt im Klon → Warnung, kein Fehler")
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", hw, env=ohne_agent(ENV), check=False)
         pruefe("kein „agent“" in r.stdout, "pruefen: JSON ohne agent und kein Harness erkennbar → Hinweis")
         # Diff kommt immer vom Branch im Klon: lokale Änderungen und ausgecheckter Branch spielen keine Rolle

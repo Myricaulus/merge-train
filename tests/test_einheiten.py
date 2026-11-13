@@ -16,11 +16,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from merge_train.waggon import Fehler, Waggon
 from merge_train.git import branch_aktualisieren, origin_voraus, zerlegen
-from merge_train.zeilen import (alt_zeile, bereich_anfang_vorwaerts, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts,
+from merge_train.zeilen import (alt_zeile, bereich_anfang_vorwaerts, bereich_vorwaerts, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts,
                                 zurueck_diffs)
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
 from merge_train.hinweise import needle_zeilen, see_also_aufloesen
-from merge_train.review import Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen
+from merge_train.review import (Schritt, abschluss_planen, entwuerfe_abgleichen, gitlab_reihenfolge, schritt_eintragen,
+                                vergleich_daten)
 from merge_train.einstellungen import DATEN, schluessel
 from merge_train.zuhoerer import transcript_stand
 from merge_train.akte import akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, faeden_von, kommentar_anhaengen
@@ -150,6 +151,16 @@ class Zeilen(unittest.TestCase):
         with open(pfad, "a") as f:
             f.write('{"type": "user", "message": {"content": "halbe Zei')  # noch nicht fertig geschrieben
         self.assertFalse(transcript_stand(pfad).arbeitet)
+
+    def test_bereich_vorwaerts(self):
+        v = lambda z, e=None: bereich_vorwaerts(REPO, A, B, "a.txt", z, e)
+        self.assertEqual(v(5, 7), (5, 7, False))     # über allen Änderungen
+        self.assertEqual(v(11, 13), (12, 14, False))  # unter der Einfügung: nur verschoben
+        self.assertEqual(v(11), (12, None, False))
+        self.assertEqual(v(9, 12), (9, 13, True))    # Einfügung im Bereich
+        self.assertEqual(v(14, 16), (15, 16, True))  # Zeile 15 im Bereich gelöscht
+        self.assertEqual(v(3), (3, None, True))      # geändert
+        self.assertEqual(bereich_vorwaerts(REPO, A, C, "a.txt", 5, 7), (5, 7, True))  # Datei weg
 
     def test_bereich_wandert_mit(self):
         v = lambda ab, b_neu: bereich_anfang_vorwaerts(REPO, A, B, "a.txt", ab, b_neu)
@@ -307,6 +318,30 @@ class Hinweise(unittest.TestCase):
                                                          "needle nicht gefunden", "diff: fehlt.txt nicht im MR-Stand"])
         self.assertEqual(see_also_aufloesen(REPO, B, {"path": "a.txt", "diff": True}, "")[0]["problem"],
                          "diff: Hinweis hat keine eigene Datei – Pfad angeben")
+
+    def test_see_also_seit_review(self):
+        """Zeilen beziehen sich auf reviewed_commit: verschoben → umgerechnet, im Bereich geändert → Warnung."""
+        r = see_also_aufloesen(REPO, B, ["a.txt:11-13", "a.txt:9-12", {"path": "a.txt", "needle": "z12"},
+                                         {"path": "a.txt", "line": 11, "end": 13, "diff": "a.txt:3-4"}], "", seit=A[:8])
+        kurz = [(x["zeile"], x["bis"], x["warnung"]) for x in r]
+        self.assertEqual(kurz[0], (12, 14, None))
+        self.assertEqual(kurz[1], (9, 13, f"Bereich seit dem Review ({A[:8]}) geändert"))
+        self.assertEqual(kurz[2], (13, None, None))  # needle: schon im neuen Stand gesucht, nichts umzurechnen
+        self.assertEqual((r[3]["vergleich"], r[3]["vzeile"], r[3]["vbis"]), ("a.txt", 3, 4))
+        self.assertEqual(r[3]["warnung"], f"diff a.txt: Bereich seit dem Review ({A[:8]}) geändert")
+        self.assertEqual(see_also_aufloesen(REPO, B, ["a.txt:11"], "", seit=B)[0]["zeile"], 11)  # gleicher Stand
+        self.assertIn("nicht im Klon", see_also_aufloesen(REPO, B, ["a.txt:11"], "", seit="deadbeef")[0]["warnung"])
+
+    def test_vergleich_bereiche(self):
+        st = {"ordner": REPO, "refs": {"base_sha": A, "head_sha": B}}
+        r = vergleich_daten(st, "a.txt", "a.txt", (2, 4), (12, 14))
+        self.assertTrue(r["ok"])
+        self.assertEqual((r["a"], r["b"], r["plus"], r["minus"]), ([2, 4], [12, 14], 3, 3))
+        self.assertIn('<td class="n">2</td>', r["html"])   # Nummern der Datei, nicht des Ausschnitts
+        self.assertIn('<td class="n">14</td>', r["html"])
+        self.assertIn("Bereiche sind gleich", vergleich_daten(st, "a.txt", "a.txt", (5, 7), (5, 7))["html"])
+        ganz = vergleich_daten(st, "a.txt", "bleibt.txt")
+        self.assertEqual((ganz["a"], ganz["b"], ganz["plus"], ganz["minus"]), (None, None, 1, 20))
 
 
 # ---- Akte: Speichern, Ablehnen, kaputte Datei, Sperre

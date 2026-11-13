@@ -76,6 +76,20 @@ def bereich_anfang_vorwaerts(ordner, von, bis, pfad, ab, b_neu):
     return neu if neu and neu < b_neu else None
 
 
+def bereich_vorwaerts(ordner, von, bis, pfad, z, e=None):
+    """Zeile z bzw. Bereich z–e (Stand von) → Stand bis. Rückgabe (z, e, geaendert): nur verschoben → neue Nummern,
+    geaendert False; eine Zeile darin geändert, gelöscht oder eingefügt → geaendert True, Nummern so gut es geht."""
+    e = e or z
+    neu = [zeile_vorwaerts(ordner, von, bis, pfad, i) for i in range(z, e + 1)]
+    da = [(i, n) for i, n in enumerate(neu) if n]
+    if not da:
+        return z, (e if e > z else None), True
+    geaendert = len(da) < len(neu) or da[-1][1] - da[0][1] != e - z
+    anf = max(1, da[0][1] - da[0][0])  # geänderte Zeilen am Rand gehören weiter dazu
+    end = da[-1][1] + len(neu) - 1 - da[-1][0]
+    return anf, (end if end > anf else None), geaendert
+
+
 def zeile_vorwaerts(ordner, von, bis, pfad, b):
     """Zeile b (Stand von) → Zeile im Stand bis. None = Zeile seitdem geändert oder Datei weg."""
     if von == bis or not b:

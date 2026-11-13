@@ -1,5 +1,5 @@
 """Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
-import hashlib, os, re, threading
+import hashlib, os, re, tempfile, threading
 from datetime import datetime
 from .waggon import Fehler, Ungueltig, Waggon
 from .einstellungen import KONF, jetzt
@@ -238,8 +238,9 @@ def zeilen_daten(struktur, pfad, von, bis):
                        for i in range(von, bis + 1)]}
 
 
-def vergleich_daten(struktur, a, b):
-    """Zwei Dateien des MR-Stands gegeneinander (see_also mit "diff"): ganze Dateien nebeneinander als Tabelle."""
+def vergleich_daten(struktur, a, b, bereich_a=None, bereich_b=None):
+    """Zwei Dateien des MR-Stands gegeneinander (see_also mit "diff") nebeneinander als Tabelle: ganz oder nur je ein
+    Bereich (von, bis); die Zeilennummern bleiben die der Dateien."""
     head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
@@ -248,11 +249,28 @@ def vergleich_daten(struktur, a, b):
     for p, t in ((a, ta), (b, tb)):
         if t is None:
             return {"ok": False, "text": f"{p} gibt es im Stand {head[:8]} nicht"}
-    roh = git(struktur["ordner"], "diff", "--no-color", "--no-ext-diff", "-U1000000", f"{head}:{a}", f"{head}:{b}", check=False)
+    teile = []
+    for t, bereich in ((ta, bereich_a), (tb, bereich_b)):
+        zeilen = t.splitlines(keepends=True)
+        von, bis = bereich if bereich and bereich[0] else (1, len(zeilen))
+        von = max(1, min(von, len(zeilen) or 1)); bis = max(von, min(bis or von, len(zeilen)))
+        teile.append((von, bis, "".join(zeilen[von - 1:bis])))
+    with tempfile.TemporaryDirectory() as tmp:
+        pa, pb = os.path.join(tmp, "a"), os.path.join(tmp, "b")
+        for pfad, (_, _, text) in ((pa, teile[0]), (pb, teile[1])):
+            with open(pfad, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+        roh = git(struktur["ordner"], "diff", "--no-index", "--no-color", "--no-ext-diff", "-U1000000", pa, pb,
+                  check=False, ok=(0, 1))
     dateien = zerlegen(roh or "")
-    d = dateien[0] if dateien else {"hunks": [], "binaer": False, "plus": 0, "minus": 0, "leer": "beide Dateien sind gleich"}
+    teil = bereich_a or bereich_b
+    d = dateien[0] if dateien else {"hunks": [], "binaer": False, "plus": 0, "minus": 0,
+                                    "leer": f"beide {'Bereiche' if teil else 'Dateien'} sind gleich"}
+    for h in d["hunks"]:  # Nummern der Ausschnitte → Nummern in den Dateien
+        h["a"] += teile[0][0] - 1; h["b"] += teile[1][0] - 1
     d.update(alt=a, neu=b)
-    return {"ok": True, "sha": head, "plus": d["plus"], "minus": d["minus"], "html": datei_tabelle(d, ta, tb)}
+    return {"ok": True, "sha": head, "plus": d["plus"], "minus": d["minus"], "html": datei_tabelle(d, ta, tb),
+            "a": [teile[0][0], teile[0][1]] if bereich_a else None, "b": [teile[1][0], teile[1][1]] if bereich_b else None}
 
 
 def zeile_aus_klick(struktur, d, ansicht):

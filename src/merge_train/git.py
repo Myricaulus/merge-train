@@ -42,15 +42,16 @@ def aussen_log(quelle, wo, was, dauer, ergebnis):
         pass
 
 
-def git(ordner, *a, check=True, env=None):
+def git(ordner, *a, check=True, env=None, ok=(0,)):
+    """git -C ordner …: stdout, None bei einem Exit-Code außerhalb ok (check: Ausnahme). ok=(0, 1) für diff --no-index."""
     t0 = time.time()
     r = subprocess.run(["git", "-C", ordner, *a], capture_output=True,
                        text=True, errors="replace", env=env)
     aussen_log("git", os.path.basename(str(ordner).rstrip("/")), "git " + " ".join(a)[:200], time.time() - t0,
-               f"exit {r.returncode}" if r.returncode else f"ok {len(r.stdout)} B")
-    if check and r.returncode:
+               f"exit {r.returncode}" if r.returncode not in ok else f"ok {len(r.stdout)} B")
+    if check and r.returncode not in ok:
         raise subprocess.CalledProcessError(r.returncode, a, r.stdout, r.stderr)
-    return r.stdout if r.returncode == 0 else None
+    return r.stdout if r.returncode in ok else None
 
 
 def zerlegen(diff):

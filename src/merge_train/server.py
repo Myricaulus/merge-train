@@ -327,7 +327,13 @@ def api_datei(anfrage, struktur):
 
 @route("GET", "api/vergleich", struktur=True)
 def api_vergleich(anfrage, struktur):
-    return vergleich_daten(struktur, anfrage.daten.get("a", ""), anfrage.daten.get("b", ""))
+    d = anfrage.daten
+    def bereich(seite):
+        try:
+            return int(d[seite + "_von"]), int(d.get(seite + "_bis") or d[seite + "_von"])
+        except (KeyError, ValueError):
+            return None
+    return vergleich_daten(struktur, d.get("a", ""), d.get("b", ""), bereich("a"), bereich("b"))
 
 
 def haken_struktur(waggon):

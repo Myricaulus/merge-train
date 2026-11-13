@@ -83,6 +83,13 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
   Mit `"diff": true` wird daraus ein Dateivergleich (Link mit ⇄): Das Popup zeigt die Datei des Hinweises (`path` des
   Markers) und die verlinkte Datei nebeneinander, Unterschiede markiert, mit ↑/↓ von Unterschied zu Unterschied. Mit
   `"diff": "pfad"` wird stattdessen gegen diese Datei verglichen. Gedacht für Kopien („nahezu identisch zu …“).
+  Bereichsvergleich für Code, der nur stellenweise wiederholt wird: `"diff": "pfad:von-bis"` vergleicht nur diesen
+  Bereich, und mit `line`/`needle` + `end` am Eintrag nur dessen Bereich, z. B.
+  `{"path": "Alt.cs", "line": 27, "end": 62, "diff": "Neu.cs:28-62", "label": "gleiche Prüfungen"}`. Die
+  Zeilennummern im Popup bleiben die der Dateien. Ohne Bereich wird wie bisher die ganze Datei verglichen.
+  Zeilenangaben (nicht `needle`) beziehen sich auf `reviewed_commit`: Hat sich der Branch seitdem bewegt, rechnet
+  merge-train sie auf den MR-Stand um. Ist im Bereich selbst etwas geändert worden, zeigt die Seite ⚠ am Link und
+  `pruefen` meldet „siehe auch …: Achtung: …“ (kein Fehler, Exit-Code unverändert).
   Die Verweise gehören **nicht** zum GitLab-Kommentar.
 - `problem`, `decision`, `status` und weitere Felder erscheinen unter „Details“, `status` zusätzlich als Etikett.
 - Oben optional `"mr": "<MR-URL>"`.

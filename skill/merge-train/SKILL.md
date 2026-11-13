@@ -154,7 +154,7 @@ merge-train agent thread - <<'EOF'                         # general thread (no 
 …
 EOF
 #   --siehe <pfad>[:<zeile>[-<bis>]][|Label]   "see also" link (repeatable)
-#   --vergleich <A> <B>[|Label]                two files side by side in a popup (repeatable)
+#   --vergleich <A>[:von-bis] <B>[:von-bis][|Label]   two files (or just these line ranges) side by side in a popup (repeatable)
 #   -p <MR|Projekt>                            other conversation (default: current repo, local before MR)
 ```
 

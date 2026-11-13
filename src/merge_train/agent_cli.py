@@ -9,7 +9,7 @@ from .diff_html import zeilenzahl
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
     kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
-from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, pfad_norm, see_also_aufloesen
+from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
 from .quellen import quelle
 from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, seite_datei, todo_offen
@@ -339,12 +339,12 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
          "path": None, "old_path": None, "a": None, "b": None, "nachrichten": [], "erledigt": None, "vom_agenten": True,
          "an": als}
     if ort:
-        m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", ort.strip())
-        path = pfad_norm(m.group(1))
+        path, z, e = ort_lesen(ort)
+        path = pfad_norm(path)
         t = inhalt(wurzel, head, path)
         if t is None:
             raise Fehler(f"{path} gibt es im Stand {head[:8]} nicht")
-        ab, b = (int(m.group(2)), int(m.group(3))) if m.group(3) else (None, int(m.group(2)) if m.group(2) else None)
+        ab, b = (z, e) if e else (None, z)
         zeilen = t.split("\n")
         for z in (ab, b):
             if z and not 1 <= z <= zeilenzahl(t):
@@ -555,8 +555,8 @@ def agent_parser():
                    help="Zeile oder Bereich im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon); einmal je Thread")
     p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
                    help="Siehe-auch-Link (mehrfach möglich)")
-    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A", "B[|LABEL]"),
-                   help="zwei Dateien nebeneinander vergleichen (Popup); mehrfach möglich")
+    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][|LABEL]"),
+                   help="zwei Dateien (bzw. mit VON-BIS nur diese Bereiche) nebeneinander vergleichen (Popup); mehrfach möglich")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
@@ -588,12 +588,12 @@ def text_von(o):
 def siehe_eintrag(angabe, diff=None):
     """--siehe/--vergleich „pfad[:zeile[-bis]][|label]“ → see_also-Eintrag wie in den Hinweis-Dateien."""
     angabe, _, label = angabe.partition("|")
-    m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", angabe.strip())
-    eintrag = {"path": m.group(1)}
-    if m.group(2):
-        eintrag["line"] = int(m.group(2))
-    if m.group(3):
-        eintrag["end"] = int(m.group(3))
+    pfad, zeile, bis = ort_lesen(angabe)
+    eintrag = {"path": pfad}
+    if zeile:
+        eintrag["line"] = zeile
+    if bis:
+        eintrag["end"] = bis
     if label.strip():
         eintrag["label"] = label.strip()
     if diff:
@@ -710,6 +710,8 @@ def befehl_hinweise(o):
         for s in h["see_also"]:
             if s["problem"]:
                 print(f'{"":<5}   siehe auch {s["path"] or "-"}: FEHLT: {s["problem"]}'); schlecht += 1
+            elif s["warnung"]:
+                print(f'{"":<5}   siehe auch {s["path"]}: Achtung: {s["warnung"]}')
     if o.befehl == "zeigen":
         im_browser("/mr/" + mr.id, nur_url=o.nicht_oeffnen)
     if schlecht:

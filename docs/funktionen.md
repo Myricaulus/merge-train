@@ -78,15 +78,18 @@ umgerechnet; wo das nicht geht, stehen sie unter dem Dateinamen mit Grund.
 ### 6. Zeilen umrechnen (alt ↔ neu, Stand ↔ Stand)
 Ordnet Zeilen zwischen alter und neuer Seite eines Diffs und zwischen zwei Ständen zu. Darauf beruhen: Fäden wandern
 nach neuen Commits mit, Kommentare in Commit-Ansichten, fremde GitLab-Diskussionen auf dem Stand der Seite.
-- Ort: `zeilen.py` (`alt_zeile`, `im_diff`, `zeile_vorwaerts`, `paare_und_hunks`).
+- Ort: `zeilen.py` (`alt_zeile`, `im_diff`, `zeile_vorwaerts`, `bereich_vorwaerts`, `paare_und_hunks`).
 - Erweitern: Jede neue „gehört diese Zeile noch hierher?“-Frage geht über diese Funktionen.
 
 ### 7. Code-Verweise und Popup
 `pfad`, `pfad:zeile`, `pfad:von-bis`, Siehe-auch-Einträge und Dateivergleiche (⇄) öffnen ein Popup: Diff der Datei,
-wenn sie im Diff liegt, sonst den Inhalt. Dateivergleich zeigt zwei Dateien nebeneinander.
-- Achsen: Verweisart (Zeile, Bereich, needle, Vergleich), Herkunft (Agent-Hinweis, Nachricht, Thread des Agenten).
-- Ort: `see_also_aufloesen` (`hinweise.py`), `code_links` (`gespraech.py`), `popup`/`sieheAuch`/`ortLink` in
-  `web/diff.js`; Route `api/vergleich`.
+wenn sie im Diff liegt, sonst den Inhalt. Dateivergleich zeigt zwei Dateien nebeneinander, ganz oder je einen Bereich.
+Zeilenangaben der Agent-Hinweise werden von `reviewed_commit` auf den MR-Stand umgerechnet, Änderungen im Bereich als
+`warnung` (⚠) gemeldet.
+- Achsen: Verweisart (Zeile, Bereich, needle, Vergleich, Bereichsvergleich), Herkunft (Agent-Hinweis, Nachricht, Thread
+  des Agenten).
+- Ort: `ort_lesen`, `ort_mitziehen`, `see_also_aufloesen` (`hinweise.py`), `code_links` (`gespraech.py`),
+  `vergleich_daten` (`review.py`), `popup`/`sieheAuch`/`ortLink`/`vergleich` in `web/diff.js`; Route `api/vergleich`.
 
 ### 8. Gespräch mit Agenten (Fäden an Zeilen)
 Fragen und Wünsche an einer Zeile oder allgemein; erst Entwurf, dann „senden“; Antworten, erledigen, wieder öffnen.

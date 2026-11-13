@@ -2,8 +2,8 @@
 import glob, hashlib, json, os, re
 from .einstellungen import KONF
 from .waggon import Fehler
-from .git import inhalt
-from .zeilen import alt_zeile, im_diff
+from .git import git, inhalt
+from .zeilen import alt_zeile, bereich_vorwaerts, im_diff
 from .diff_html import zeilenzahl
 from .akte import datei_index
 from .gitlab import mr_ref
@@ -16,44 +16,77 @@ def pfad_norm(p):
     return p[2:] if p.startswith("./") else p
 
 
-def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None):
+def ort_lesen(s):
+    """„pfad“, „pfad:zeile“ oder „pfad:von-bis“ → (pfad, zeile|None, bis|None)."""
+    m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", str(s).strip())
+    if not m:
+        return "", None, None
+    return m.group(1), int(m.group(2)) if m.group(2) else None, int(m.group(3)) if m.group(3) else None
+
+
+def ort_mitziehen(ordner, seit, head, path, zeile, bis):
+    """Zeilenangabe aus dem Stand seit (reviewed_commit) auf head umrechnen. Rückgabe (zeile, bis, warnung|None)."""
+    if not (seit and head and zeile) or head.startswith(seit):
+        return zeile, bis, None
+    if git(ordner, "cat-file", "-e", f"{seit}^{{commit}}", check=False) is None:
+        return zeile, bis, f"Stand {seit} des Reviews nicht im Klon – Zeilen evtl. veraltet"
+    z, e, geaendert = bereich_vorwaerts(ordner, seit, head, path, zeile, bis)
+    return z, e, (f"{'Bereich' if bis else 'Zeile'} seit dem Review ({seit[:8]}) geändert" if geaendert else None)
+
+
+def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None):
     """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label", "diff"}
     → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars.
-    "diff": true vergleicht die eigene Datei des Hinweises mit dieser (Popup nebeneinander), "diff": "pfad" eine andere."""
+    "diff": true vergleicht die eigene Datei des Hinweises mit dieser (Popup nebeneinander), "diff": "pfad" bzw.
+    "pfad:von-bis" eine andere (bzw. nur deren Bereich); mit "end" vergleicht die Gegenseite nur ihren Bereich.
+    seit (reviewed_commit): Zeilenangaben (nicht needle) beziehen sich auf diesen Stand und werden auf head
+    umgerechnet; ist dazwischen etwas im Bereich geändert, steht das in „warnung“ (kein Fehler)."""
     if isinstance(eintraege, (str, dict)):
         eintraege = [eintraege]
     out = []
     for e in eintraege if isinstance(eintraege, list) else []:
         if isinstance(e, str):
-            m = re.fullmatch(r"(.+?)(?::(\d+)(?:-(\d+))?)?", e.strip())
-            e = {"path": m.group(1), "line": int(m.group(2)) if m.group(2) else None,
-                 "end": int(m.group(3)) if m.group(3) else None} if m else {}
+            p, z, b = ort_lesen(e)
+            e = {"path": p, "line": z, "end": b}
         if not isinstance(e, dict):
             continue
-        path, zeile, problem = pfad_norm(e.get("path")), None, None
+        path, zeile, problem, warnung = pfad_norm(e.get("path")), None, None, None
         if isinstance(e.get("line"), int) and e["line"] > 0:
             zeile = e["line"]
+        bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
         if not path:
             problem = "kein Pfad"
         elif head:
             t = inhalt(ordner, head, path)
             if t is None:
                 problem = "Datei nicht im MR-Stand"
-            elif zeile and zeile > zeilenzahl(t):
-                problem = f"Zeile {zeile} gibt es nicht ({zeilenzahl(t)} Zeilen)"
-            elif not zeile and e.get("needle"):
+            elif zeile:
+                zeile, bis, warnung = ort_mitziehen(ordner, seit, head, path, zeile, bis)
+                if zeile > zeilenzahl(t):
+                    problem = f"Zeile {zeile} gibt es nicht ({zeilenzahl(t)} Zeilen)"
+            elif e.get("needle"):
                 z = needle_zeilen(t, str(e["needle"]), tag)
                 zeile = z[0] if z else None
                 problem = None if z else "needle nicht gefunden"
-        bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
-        gegen = None
+                if zeile and isinstance(e.get("end"), int) and e["end"] > zeile:
+                    bis = e["end"]
+        gegen = gz = gb = None
         if e.get("diff"):
-            gegen = pfad_norm(e["diff"]) if isinstance(e["diff"], str) else eigene
+            gegen, gz, gb = ort_lesen(e["diff"]) if isinstance(e["diff"], str) else (eigene, None, None)
+            gegen = pfad_norm(gegen)
+            tg = inhalt(ordner, head, gegen) if head and gegen else None
             if not gegen:
                 problem = problem or "diff: Hinweis hat keine eigene Datei – Pfad angeben"
-            elif head and not problem and inhalt(ordner, head, gegen) is None:
+            elif head and not problem and tg is None:
                 problem = f"diff: {gegen} nicht im MR-Stand"
-        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem, "vergleich": gegen})
+            elif tg is not None and gz:
+                gb = gb if gb and gb > gz else None
+                gz, gb, w = ort_mitziehen(ordner, seit, head, gegen, gz, gb)
+                warnung = warnung or (w and f"diff {gegen}: {w}")
+                if gz > zeilenzahl(tg):
+                    problem = problem or f"diff: Zeile {gz} gibt es in {gegen} nicht ({zeilenzahl(tg)} Zeilen)"
+        out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem,
+                    "warnung": warnung, "vergleich": gegen, "vzeile": gz, "vbis": gb})
     return out
 
 
@@ -142,7 +175,8 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
                      "extra": {k: v for k, v in m.items() if k not in HINWEIS_FELDER}, "path": path, "quelle": name,
                      "agent": str(m.get("agent") or agent).strip() or None,
                      "json": pfad, "nr": nr,  # Herkunft: für „merge-train agent kommentar h:<key>“
-                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path),
+                     "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path,
+                                                     str(h.get("reviewed_commit") or "") or None),
                      "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None
             if not path:

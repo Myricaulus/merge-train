@@ -427,23 +427,35 @@
             (s.label ? s.label + ' · ' : '') + wo + ' (' + s.problem + ')'
           );
         const name = s.label || s.path.split('/').pop() + (s.zeile ? ':' + s.zeile + (s.bis ? '-' + s.bis : '') : '');
-        return s.vergleich
-          ? el(
-              'a',
-              {
-                class: 'vgl',
-                title: 'Vergleich nebeneinander: ' + s.vergleich + ' ⇄ ' + s.path,
-                onclick: () => vergleich(s.vergleich, s.path, s.label)
-              },
-              '⇄ ' + name
-            )
-          : el('a', {title: wo, onclick: () => popup(s.path, s.zeile, s.label, s.bis)}, name);
+        // Vergleich: je Seite nur ihr Bereich, wenn einer angegeben ist (B: zeile–bis des Eintrags, A: vzeile–vbis)
+        const va = s.vergleich && [s.vergleich, s.vzeile, s.vbis],
+          vb = s.vergleich && [s.path, s.bis ? s.zeile : null, s.bis],
+          link = s.vergleich
+            ? el(
+                'a',
+                {
+                  class: 'vgl',
+                  title: 'Vergleich nebeneinander: ' + bereichText(va) + ' ⇄ ' + bereichText(vb),
+                  onclick: () => vergleich(va, vb, s.label)
+                },
+                '⇄ ' + name
+              )
+            : el('a', {title: wo, onclick: () => popup(s.path, s.zeile, s.label, s.bis)}, name);
+        return s.warnung ? el('span', {}, link, el('span', {class: 'warn', title: s.warnung}, ' ⚠')) : link;
       })
     );
   }
-  function vergleich(a, b, label) {
-    schliessen(); // see_also mit "diff": zwei Dateien des MR-Stands nebeneinander
-    const kurz = p => p.split('/').pop(),
+  /** [pfad, von, bis] → „pfad“ bzw. „pfad:von-bis“ */
+  function bereichText(x) {
+    return x[0] + (x[1] ? ':' + x[1] + (x[2] ? '-' + x[2] : '') : '');
+  }
+  function vergleich(va, vb, label) {
+    schliessen(); // see_also mit "diff": zwei Dateien (bzw. Bereiche) des MR-Stands nebeneinander
+    const a = va[0],
+      b = vb[0],
+      kurz = x => bereichText([x[0].split('/').pop(), x[1], x[2]]),
+      bereich = (seite, x) =>
+        x[1] ? '&' + seite + '_von=' + x[1] + '&' + seite + '_bis=' + (x[2] || x[1]) : '',
       info = el('span', {class: 'sub'}, 'lädt …'),
       pb = el('div', {class: 'pb'}),
       kn = el('span', {class: 'knoepfe'});
@@ -455,7 +467,7 @@
         el(
           'div',
           {class: 'pk'},
-          el('b', {title: a + ' ⇄ ' + b}, (label ? label + ' – ' : '') + kurz(a) + ' ⇄ ' + kurz(b)),
+          el('b', {title: bereichText(va) + ' ⇄ ' + bereichText(vb)}, (label ? label + ' – ' : '') + kurz(va) + ' ⇄ ' + kurz(vb)),
           info,
           kn
         ),
@@ -463,7 +475,10 @@
       )
     );
     kn.append(el('button', {title: 'schließen (Esc)', onclick: schliessen}, '✕'));
-    fetch('/api/vergleich?' + waggonAbfrage(true) + '&a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b))
+    fetch(
+      '/api/vergleich?' + waggonAbfrage(true) + '&a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) +
+        bereich('a', va) + bereich('b', vb)
+    )
       .then(r => r.json())
       .catch(() => ({ok: false, text: 'merge-train-Server nicht erreichbar'}))
       .then(r => {
@@ -473,7 +488,9 @@
           pb.append(el('div', {class: 'warn'}, r.text));
           return;
         }
-        pb.append(el('div', {class: 'vkopf'}, el('span', {title: a}, a), el('span', {title: b}, b)));
+        const ka = bereichText([a, ...(r.a || [])]),
+          kb = bereichText([b, ...(r.b || [])]);
+        pb.append(el('div', {class: 'vkopf'}, el('span', {title: ka}, ka), el('span', {title: kb}, kb)));
         const t = document.createElement('div');
         t.innerHTML = r.html;
         pb.append(...t.childNodes);
