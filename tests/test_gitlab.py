@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Ende-zu-Ende-Test des GitLab-Modus mit tests/fake-glab (kein echtes GitLab nötig).
 
-Aufruf:  python3 tests/test_gitlab.py [--behalten]
-Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, freie Ports), startet einen eigenen Server.
+Aufruf:  python3 tests/test_gitlab.py [teil …] [--behalten]     (Teile: gitlab lokal horchen arbeitsstand gemischt; ohne = alle)
+Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, freie Ports, Ersatz für todo und notify-send), baut merge-train
+dorthin (oder nimmt MERGE_TRAIN_SKRIPT) und startet eigene Server. Welche Teile bei welcher Änderung laufen: ./testen.
 """
 import glob, json, os, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
-SKRIPT = os.path.join(HIER, "..", "merge-train")
+# Teil → Teile, die er voraussetzt (gemischt braucht das Projekt aus lokal und den MR aus gitlab)
+TEILE = {"gitlab": [], "lokal": [], "horchen": ["lokal"], "arbeitsstand": [], "gemischt": ["gitlab", "lokal"]}
+AUSWAHL = set(TEILE)
 def freier_port():
     """Freier Port vom System: feste Ports stoßen mit liegengebliebenen Servern (andere Sessions, abgebrochene Läufe)."""
     with socket.socket() as s:
@@ -17,13 +20,17 @@ def freier_port():
 
 PORT, PORT_LOKAL, PORT_GEMISCHT = freier_port(), freier_port(), freier_port()  # GitLab-Modus, lokal_test, gemischt_test
 T = tempfile.mkdtemp(prefix="merge-train-test-")
+# eigener Bau im Repo (tests/bau/, ignoriert), nicht ./merge-train: der Server des Nutzers bleibt unberührt, und der
+# HUD-Stand (git log am Ort des Skripts) stimmt trotzdem
+SKRIPT = os.environ.get("MERGE_TRAIN_SKRIPT") or os.path.join(HIER, "bau", f"merge-train-{os.getpid()}")
 REPO = os.path.join(T, "repo")
 AGENT_VARS = ("AI_AGENT", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "OPENCODE", "MERGE_TRAIN_AGENT")
 ohne_agent = lambda env: {k: v for k, v in env.items() if k not in AGENT_VARS}  # kein Harness erkennbar
 ENV = dict(ohne_agent(os.environ), CLAUDECODE="1", XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
            MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/config.toml",
            FAKE_GLAB_REPO=REPO, FAKE_GLAB_STATE=f"{T}/glab", CLAUDE_CONFIG_DIR=f"{T}/claude",
-           CLAUDE_CODE_SESSION_ID="sitzung-1")
+           CLAUDE_CODE_SESSION_ID="sitzung-1",
+           PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")  # todo, notify-send: Ersatz
 fehler = []
 
 def pruefe(bed, text):
@@ -193,11 +200,7 @@ def lokal_test():
     c1 = g("rev-parse", "HEAD")
     open(f"{proj}/a.py", "a").write("y = 1\n")
     g("commit", "-qam", "Zweiter Schritt")
-    os.makedirs(f"{T}/bin"); os.makedirs(f"{T}/todo/offen")
-    open(f"{T}/bin/todo", "w").write(FAKE_TODO); os.chmod(f"{T}/bin/todo", 0o755)
-    open(f"{T}/bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/bin/notify-send", 0o755)  # keine Desktop-Meldungen
-    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal",
-               PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/lokal.toml", XDG_CACHE_HOME=f"{T}/cache-lokal")
     open(env["MERGE_TRAIN_CONFIG"], "w").write(f'lokal = true\ngitlab = false\nprojekte = "{T}/Projects"\nport = {PORT_LOKAL}\nbrowser = "true"\n')
     srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
     try:
@@ -223,8 +226,9 @@ def lokal_test():
         pruefe('id="ansicht"' in s2 and 'id="d1"' not in s2 and 'data-b="41"' in s2 and 'data-b="20"' not in s2,
                "lokal: Seit-Ansicht zeigt nur den zweiten Schritt")
         gespraech_test(proj, env, k, hol, g)
-        horchen_waise_test(proj, env, k, hol)
-        horchen_seite_zu_test(proj, env, k, hol)
+        if "horchen" in AUSWAHL:
+            horchen_waise_test(proj, env, k, hol)
+            horchen_seite_zu_test(proj, env, k, hol)
     finally:
         srv.terminate(); srv.wait()
 
@@ -299,6 +303,17 @@ def gespraech_test(proj, env, k, hol, g):
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
     f1 = next(x for x in rv["faeden"] if x["id"] == fid)
     pruefe(f1["b"] == 22 and f1["im_diff"], "Gespräch: nach neuem Commit steht der Faden an Zeile 22")
+    haken = f"{proj}/.git/hooks/pre-push"  # fertig = git push . claude:reviewed: ein scheiternder Hook ändert nichts
+    open(haken, "w").write("#!/bin/sh\necho 'Test rot' >&2\nexit 1\n"); os.chmod(haken, 0o755)
+    reviewed = g("rev-parse", "reviewed")
+    try:
+        post_l("/fertig", {"projekt": "proj", "sha": g("rev-parse", "claude"), "k": k})
+        r = {"ok": True}
+    except urllib.error.HTTPError as e:
+        r = json.loads(e.read())
+    pruefe(not r["ok"] and "Test rot" in r["text"] and g("rev-parse", "reviewed") == reviewed,
+           "fertig: pre-push-Hook scheitert → Meldung mit seiner Ausgabe, reviewed unverändert")
+    os.remove(haken)
     r = post_l("/fertig", {"projekt": "proj", "sha": g("rev-parse", "claude"), "k": k})
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
     pruefe(r["ok"] and not rv["faeden"], "Gespräch: fertig räumt erledigte Fäden weg")
@@ -345,8 +360,7 @@ def horchen_seite_zu_test(proj, env, k, hol):
 
 def gemischt_test(mr):
     """Beide Quellen an: ein Zug mit lokalen Waggons und MRs, jede Seite mit den Knöpfen ihrer Quelle."""
-    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/gemischt.toml", PATH=f"{T}/bin:" + os.environ["PATH"],
-               TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/gemischt.toml")
     open(env["MERGE_TRAIN_CONFIG"], "w").write(
         f'lokal = true\ngitlab = true\nglab = "{sys.executable} {HIER}/fake-glab"\nprojekte = "{T}/Projects"\n'
         f'port = {PORT_GEMISCHT}\nbrowser = "true"\n')
@@ -380,7 +394,7 @@ def gemischt_test(mr):
 
 def mr_gespraech_test(mr, k, basis, struktur):
     """Fragen an einen Agenten zum MR: eigene Datei, nie im Review, agent feedback/antworten/horchen mit MR-Kennung."""
-    genv = dict(ENV, PATH=f"{T}/gl-bin:" + os.environ["PATH"])
+    genv = dict(ENV, PATH=f"{T}/gl-bin:" + ENV["PATH"])
     i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
     vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     pruefe(vorher["agenten"] == ["Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Agent aus [agenten] angeboten")
@@ -510,30 +524,15 @@ def mr_gespraech_test(mr, k, basis, struktur):
     post("/api/kommentar", dict(basis, gespraech=1, aktion="loeschen", id=fz["id"]))
     open(hw, "w", encoding="utf-8").write(sicher)
 
-def main():
-    r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen")], capture_output=True, text=True)
-    pruefe(r.returncode == 0, "merge-train aus src/ gebaut")
-    # Syntaxfehler im Seiten-Skript legen die ganze Seite lahm, ohne dass ein Test es merkt: node --check, sonst biome
-    pruefer = (["node", "--check"] if shutil.which("node") else
-               ["biome", "lint", "--only=correctness/noUnreachable"] if shutil.which("biome") else None)
-    if pruefer:
-        m = alles_laden(SKRIPT)
-        js = os.path.join(T, "seite.js")
-        open(js, "w", encoding="utf-8").write("const MR={};" + m["JS"])
-        r = subprocess.run(pruefer + [js], capture_output=True, text=True)
-        meldung = (r.stderr + r.stdout).strip()
-        pruefe(r.returncode == 0, f"Seiten-Skript ohne Syntaxfehler ({pruefer[0]})" + (": " + meldung[:300] if r.returncode else ""))
-    else:
-        print("—    Seiten-Skript nicht geprüft (weder node noch biome)")
+def gitlab_test():
+    """GitLab-Modus: agent pruefen/zeigen, MR-Seite, Review abschließen, Gespräch zum MR (mit tests/fake-glab)."""
     repo_anlegen()
-    os.makedirs(f"{T}/config/merge-train")
     open(ENV["MERGE_TRAIN_CONFIG"], "w").write(
         f'lokal = false\nglab = "{sys.executable} {HIER}/fake-glab"\nport = {PORT}\nbrowser = "true"\n'
         f'hinweise = ["{REPO}/tasks/*-review-markers.json"]\n'
         f'[agenten]\nCopilot = "{T}/gl-bin/copilot {{prompt}}"\n')  # Gespräch zum MR: Ersatz-Agent schreibt den Prompt mit
     os.makedirs(f"{T}/gl-bin")
     open(f"{T}/gl-bin/copilot", "w").write(f'#!/bin/sh\necho "$1" > {T}/copilot.prompt\n'); os.chmod(f"{T}/gl-bin/copilot", 0o755)
-    open(f"{T}/gl-bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/gl-bin/notify-send", 0o755)
     hw = f"{REPO}/tasks/DEMO-1-review-markers.json"
     json.dump({"key": "DEMO-1", "branch": "feature", "reviewed_commit": "abc", "tag": "TODO REVIEW DEMO-1",
                "notes": "Team-Thema: Logging", "failing_tests": {"#1": "AppTest.Neu"},
@@ -931,15 +930,43 @@ def main():
         json.dump([{"path": "Neu.cs", "needle": "class Neu", "text": "#9 Old format"}], open(alt, "w"))
         r = sh(sys.executable, SKRIPT, "agent", "pruefen", alt, "--mr", "https://gitlab.example.com/gruppe/demo/-/merge_requests/1", check=False)
         pruefe(r.returncode == 0 and "#9" in r.stdout and "Neu.cs:2" in r.stdout, "Altformat und --mr")
-        lokal_test()
-        arbeitsstand_test()
-        gemischt_test(mr)
     finally:
-        srv.terminate()
+        srv.terminate(); srv.wait()
+
+def main():
+    teile = [a for a in sys.argv[1:] if not a.startswith("--")] or list(TEILE)
+    unbekannt = [t for t in teile if t not in TEILE]
+    if unbekannt:
+        sys.exit(f"unbekannte Teile: {' '.join(unbekannt)} – es gibt: {' '.join(TEILE)}")
+    for t in list(teile):
+        teile += [v for v in TEILE[t] if v not in teile]
+    if not os.environ.get("MERGE_TRAIN_SKRIPT"):
+        r = subprocess.run([sys.executable, os.path.join(HIER, "..", "bauen"), "--ziel", SKRIPT], capture_output=True, text=True)
+        pruefe(r.returncode == 0, "merge-train aus src/ gebaut (in den Testordner)")
+    os.makedirs(f"{T}/config/merge-train"); os.makedirs(f"{T}/bin"); os.makedirs(f"{T}/todo/offen")
+    open(f"{T}/bin/todo", "w").write(FAKE_TODO); os.chmod(f"{T}/bin/todo", 0o755)
+    open(f"{T}/bin/notify-send", "w").write("#!/bin/sh\n"); os.chmod(f"{T}/bin/notify-send", 0o755)  # keine Desktop-Meldungen
+    global AUSWAHL
+    AUSWAHL = set(teile)
+    try:
+        if "gitlab" in teile:
+            gitlab_test()
+        if "lokal" in teile:
+            lokal_test()
+        if "arbeitsstand" in teile:
+            arbeitsstand_test()
+        if "gemischt" in teile:
+            gemischt_test("gitlab.example.com/gruppe/demo/1")
+        print("Teile:", " ".join(t for t in TEILE if t in teile))
+    finally:
         if "--behalten" in sys.argv:
             print("Testordner:", T)
         else:
             shutil.rmtree(T, ignore_errors=True)
+        if not os.environ.get("MERGE_TRAIN_SKRIPT"):
+            for f in (SKRIPT, SKRIPT + ".neu"):
+                if os.path.exists(f):
+                    os.remove(f)
     print(f"\n{len(fehler)} Fehler" if fehler else "\nalles ok")
     return 1 if fehler else 0
 

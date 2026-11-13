@@ -43,14 +43,17 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 
 ## Tests
 
-`./pruefen` lintet `src/merge_train/web/*.js|css` mit Biome (Regeln in `biome.json`); ohne Biome, aber mit node nur die Syntax
-(`node --check`). Nicht
-`biome lint src/merge_train/web` direkt: `App` und `MR` sind Globale aus dem Bündel, einzeln geprüft gibt es falsche
-„undeclared“.
+**Keine eigenen Testläufe: ändern → committen.** Der pre-commit-Hook ruft `./testen` auf, das nur prüft, was die
+Änderungen betreffen. Der pre-push-Hook (auch `git push .` von „fertig“) ruft `./testen --push` auf: Stände, die noch
+nicht voll getestet sind, laufen voll. Ein Commit, der scheitert (Exit ≠ 0), zeigt die
+Fehler: beheben, wieder committen. Nicht `--no-verify`. Den Auto-Neustart und das Neuladen der Seite nicht prüfen, die
+sieht der Nutzer im HUD. Eigene Läufe nur auf Anfrage oder beim Arbeiten an den Tests selbst
+(`./testen --liste` zeigt die Auswahl, `python3 tests/test_gitlab.py <teil>` einen Teil).
 
-`python3 tests/test_einheiten.py` (schnell, zuerst; Akte, Routen, Abschließen gegen ein GitLab-Fake), dann `python3 tests/test_gitlab.py` (GitLab-Modus mit `tests/fake-glab`, Port 8799).
-Die Einzeltests rufen Funktionen beim Namen auf, `test_gitlab.py` über `alles_laden` auch – beim Umbenennen mitziehen. Den Server des Nutzers (Port 8771)
-nur mit `merge-train --stopp` beenden, eine eigene Instanz mit `merge-train --beobachten --stopp [ordner]`.
+Neues Modul in `src/merge_train/`: in `MODUL_TEILE` in `testen` eintragen. Die Einzeltests rufen Funktionen beim Namen auf,
+`test_gitlab.py` über `alles_laden` auch: beim Umbenennen mitziehen. `biome lint src/merge_train/web` nicht direkt
+aufrufen (`App` und `MR` sind Globale aus dem Bündel), sondern `./pruefen`. Den Server des Nutzers (Port 8771) nur mit
+`merge-train --stopp` beenden, eine eigene Instanz mit `merge-train --beobachten --stopp [ordner]`.
 
 ## Gespräch im lokalen Modus
 

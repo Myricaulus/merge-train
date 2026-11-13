@@ -32,7 +32,7 @@
       {
         class:
           'toast' +
-          (/fehler|abgelehnt|ungültig|nicht (erreichbar|abrufbar|gefunden|möglich)|startet nicht|gibt es nicht/i.test(
+          (/fehler|abgelehnt|ungültig|nicht (erreichbar|abrufbar|gefunden|möglich)|nicht gesetzt|startet nicht|gibt es nicht/i.test(
             text
           )
             ? ' warn'

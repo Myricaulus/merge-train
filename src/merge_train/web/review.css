@@ -138,7 +138,7 @@ body.mit-hud #rvstand{display:none}
 .toast{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:var(--bg);color:var(--fg);
  border:1px solid var(--tn);border-left:5px solid var(--tn);box-shadow:0 6px 24px #0006;font-size:13px;transition:opacity .4s,transform .4s}
 .toast.warn{border-color:var(--m)} .toast.weg{opacity:0;transform:translateX(30px)}
-.toast span{flex:1} .toast button,.nl-kopf button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:13px}
+.toast span{flex:1;white-space:pre-line} .toast button,.nl-kopf button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:13px}
 #nachrichten{position:fixed;right:16px;bottom:16px;z-index:60;width:42px;height:42px;border-radius:50%;border:1px solid var(--rand);
  background:var(--kopf);color:var(--fg);font-size:18px;cursor:pointer;box-shadow:0 3px 12px #0005}
 #nachrichten.neu::after{content:attr(data-n);position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;border-radius:9px;

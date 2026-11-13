@@ -3,7 +3,7 @@ import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
-from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, kurzpfad, projekt_wurzel, statistik, wip_name,
+from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, kurzpfad, projekt_wurzel, statistik, wip_name,
                   wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
@@ -96,12 +96,18 @@ def fertig(projekt, sha):
         wurzel, von, bis = abgabe_pruefen(projekt, sha)
     except Fehler as e:
         return False, str(e)
-    if wip_sha(wurzel, von):  # vor statistik: die zählt sonst nur den Rest nach dem Teilstand
-        git(wurzel, "branch", "-D", wip_name(von))
-    akte = statistik(wurzel, von, sha)
+    alt = git(wurzel, "rev-parse", von).strip()
     log = git(wurzel, "log", "--format=%B", f"{von}..{sha}")
     schliesst = sorted(set(re.findall(r"closes\s+todo:([\w.-]+)", log, flags=re.I)))
-    git(wurzel, "branch", "-f", von, sha)
+    # git push . statt branch -f: nur Fast-Forward, und der pre-push-Hook des Repos läuft (merge-train: ./testen,
+    # bis ~20 s). Zuerst, damit ein Fehlschlag nichts verändert hat.
+    try:
+        git_oder_fehler(wurzel, "push", "-q", ".", f"{sha}:refs/heads/{von}", rest=1500)  # Hook-Ausgabe mitnehmen
+    except Fehler as e:
+        return False, f"{projekt}: {von} nicht gesetzt – {e}"
+    if wip_sha(wurzel, von):  # vor statistik: die zählt sonst nur den Rest nach dem Teilstand
+        git(wurzel, "branch", "-D", wip_name(von))
+    akte = statistik(wurzel, alt, sha)
     with akte_bearbeiten(Waggon(lokal=projekt)) as a:
         haken_weg(a)
     faeden_archivieren(Waggon(lokal=projekt), branch_von(wurzel))

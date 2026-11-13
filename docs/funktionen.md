@@ -171,7 +171,9 @@ Welche MRs: `mr_liste` (reviewer, author, assignee).
   Spec und Ausbauschritte: `docs/gueterbahnhof.md`.
 
 ### 15. „fertig“ / „abgeben“ (lokal)
-Setzt `von` auf den gesehenen Stand, warnt bei offenen Fäden oder ungesendeten Entwürfen, räumt erledigte Fäden weg.
+Setzt `von` auf den gesehenen Stand (`git push . <sha>:<von>`: nur Fast-Forward, der pre-push-Hook des Repos läuft,
+bei merge-train selbst `./testen --push`, bis ~20 s; die Seite zeigt dann „⏳ prüft …“, ein Fehlschlag ändert nichts
+und meldet die Ausgabe des Hooks), warnt bei offenen Fäden oder ungesendeten Entwürfen, räumt erledigte Fäden weg.
 Nicht bei `origin/…` oder Arbeitsstand. Ist erst ein Teil der Dateien abgehakt, heißt der Knopf „abgeben“: die
 abgehakten Dateien (Fassung aus bis) kommen per Plumbing als Commit auf den Teilstand `<von>-wip` (Arbeitsverzeichnis,
 Index und HEAD bleiben), der Diff läuft danach ab dem Teilstand (`diff_basis`). Hat der Teilstand den Baum von bis,
@@ -213,6 +215,17 @@ Anfragen an git und GitLab (`log_tage`). `install.sh` (auch `--nur-gitlab` für 
 - Ort: `einstellungen.py`, `install.sh`.
 - Erweitern: neue Schalter in `einstellungen.py` mit Standard, dazu Zeile in der README-Tabelle und in
   `config.example.toml`.
+
+### 21. Tests (Mini-CI)
+`./testen` wählt nach den geänderten Dateien aus: `./pruefen` (JS/CSS), Smoke (Bau nach `tests/bau/`, Import aller
+Module), Klassen von `tests/test_einheiten.py` (automatisch aus den Imports der Testdatei und von `src/`), Teile von
+`tests/test_gitlab.py` (`gitlab`, `lokal`, `horchen`, `arbeitsstand`, `gemischt`). Läuft als pre-commit-Hook, `--push`
+als pre-push-Hook (beide von `install.sh`): jeder gepushte Stand, dessen Tree-ID nicht im Merkzettel
+`.git/merge-train-getestet` steht, läuft `--voll`, genau dieser Stand (sonst im Temp-Worktree); ein grünes `--voll` auf
+sauberem Stand trägt ein. Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
+- Ort: `testen`, `MODUL_TEILE` darin, `TEILE` in `tests/test_gitlab.py`.
+- Erweitern: neues Modul in `MODUL_TEILE` eintragen (fehlt es, laufen alle Teile); neuer Teil in `TEILE`, `ALLE_TEILE`
+  und `main()` von `test_gitlab.py`. Tests rufen nie das echte `todo`/`notify-send` (Ersatz in `bin/` des Testordners).
 
 ## Stände der Listen (wer ist dran)
 

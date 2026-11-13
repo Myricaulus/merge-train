@@ -3,6 +3,7 @@
 
   ./bauen            src/ (__main__.py, Paket merge_train/ samt web/) zu einer ausführbaren Datei bündeln → ./merge-train
   ./bauen --pruefen  nur vergleichen: Exit 1, wenn ./merge-train nicht zum Stand in src/ passt
+  ./bauen --ziel P   nach P bauen statt ./merge-train (Tests: der laufende Server des Nutzers bleibt unberührt)
 
 Das Ergebnis ist ein Python-Zip (zipapp): eine Datei, die python3 direkt startet. Ohne Bauen läuft auch `python3 src`.
 Die gebaute Datei ist nicht eingecheckt (.gitignore). ~/.local/bin/merge-train zeigt darauf; die Git-Hooks
@@ -13,6 +14,8 @@ import io, os, sys, zipfile
 HIER = os.path.dirname(os.path.realpath(__file__))
 SRC = os.path.join(HIER, "src")
 ZIEL = os.path.join(HIER, "merge-train")
+if "--ziel" in sys.argv:
+    ZIEL = os.path.abspath(sys.argv[sys.argv.index("--ziel") + 1])
 
 
 def bauen():
@@ -43,6 +46,7 @@ def main():
     if alt == neu:
         print("merge-train ist aktuell")
         return
+    os.makedirs(os.path.dirname(ZIEL), exist_ok=True)
     tmp = ZIEL + ".neu"
     with open(tmp, "wb") as f:
         f.write(neu)

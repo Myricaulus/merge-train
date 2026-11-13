@@ -448,6 +448,13 @@
         }
       }
       if (location.protocol.startsWith('http')) {
+        // „fertig“ setzt von per git push . – ein pre-push-Hook des Repos (merge-train selbst: ./testen) kann dauern
+        const warten = teil
+          ? 0
+          : setTimeout(() => {
+              fertigKnopf.textContent = '⏳ prüft …';
+              App.melden('fertig: git push . – der pre-push-Hook des Repos läuft (merge-train: Tests, bis ~20 s) …');
+            }, 1500);
         fetch('/fertig', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -455,8 +462,10 @@
         })
           .then(r => r.json())
           .then(d => {
+            clearTimeout(warten);
             if (!d.ok) {
               fertigKnopf.disabled = false;
+              knopfAnpassen();
               App.melden(d.text);
               return;
             }
@@ -480,7 +489,9 @@
             if (!naechsterWagen()) abfahrtFeiern();
           })
           .catch(() => {
+            clearTimeout(warten);
             fertigKnopf.disabled = false;
+            knopfAnpassen();
             App.melden('merge-train-Server nicht erreichbar – merge-train erneut aufrufen');
           });
         return;

@@ -252,12 +252,12 @@ def ref_sha(ordner, name, remote_zuerst=False):
     return None
 
 
-def git_oder_fehler(ordner, *a):
-    """git wie git(), ein Fehlschlag wird zum Fehler mit der Meldung von git (für die Seite)."""
+def git_oder_fehler(ordner, *a, rest=300):
+    """git wie git(), ein Fehlschlag wird zum Fehler mit der Meldung von git (für die Seite, die letzten rest Zeichen)."""
     try:
         return git(ordner, *a)
     except subprocess.CalledProcessError as e:
-        raise Fehler(f"git {a[0]} in {kurzpfad(ordner)}: {(e.stderr or e.output or '').strip()[-300:]}")
+        raise Fehler(f"git {a[0]} in {kurzpfad(ordner)}: {((e.stderr or '') + (e.output or '')).strip()[-rest:]}")
 
 
 def origin_voraus(ordner, sha, ziel):

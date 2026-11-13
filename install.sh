@@ -22,6 +22,16 @@ for h in post-merge post-checkout post-rewrite; do
   chmod +x "$HOOKS/$h"
 done
 echo "✓ Git-Hooks: nach pull/checkout/rebase wird merge-train neu gebaut"
+# Mini-CI: vor jedem Commit testet ./testen, was die Änderungen betreffen, vor dem Push alles (--voll)
+for h in pre-commit:./testen pre-push:"./testen --push"; do
+  name=${h%%:*}; befehl=${h#*:}
+  if [ -e "$HOOKS/$name" ] && ! grep -q "merge-train: testen" "$HOOKS/$name"; then
+    echo "• $HOOKS/$name gibt es schon – dort selbst \"$befehl\" ergänzen"; continue
+  fi
+  printf '#!/bin/sh\n# merge-train: testen (von install.sh; überspringen: git commit/push --no-verify)\ncd "$(git rev-parse --show-toplevel)" && exec %s\n' "$befehl" > "$HOOKS/$name"
+  chmod +x "$HOOKS/$name"
+done
+echo "✓ Git-Hooks: vor commit ./testen (nur Betroffenes), vor push ./testen --push (ungetestete Stände voll)"
 
 mkdir -p "$HOME/.local/bin"
 ln -sf "$HIER/merge-train" "$HOME/.local/bin/merge-train"

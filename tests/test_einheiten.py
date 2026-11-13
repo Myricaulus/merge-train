@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Einzeltests für die Logik von merge-train – ohne Server und ohne glab, in unter einer Sekunde. Laufen gegen src/.
 
-Aufruf:  python3 tests/test_einheiten.py      (vor tests/test_gitlab.py)
+Aufruf:  python3 tests/test_einheiten.py [Klasse …]     (vor tests/test_gitlab.py; welche Klassen wann: ./testen)
 
 Für Zeilen-Arithmetik, Diff-Zerlegung und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an. Akten liegen
 im Temp-Ordner (XDG_DATA_HOME), GitLab ersetzt ein Fake für review.glab.
@@ -12,6 +12,10 @@ T = tempfile.mkdtemp(prefix="merge-train-einheiten-")
 open(f"{T}/leer.toml", "w").close()
 os.environ.update(MERGE_TRAIN_CONFIG=f"{T}/leer.toml", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
                   XDG_CONFIG_HOME=f"{T}/config")  # nie die Einstellung oder Daten des Nutzers lesen
+os.makedirs(f"{T}/bin")
+for _p in ("notify-send", "todo"):  # keine Desktop-Meldungen, keine todo-Einträge des Nutzers
+    open(f"{T}/bin/{_p}", "w").write("#!/bin/sh\nexit 1\n" if _p == "todo" else "#!/bin/sh\n"); os.chmod(f"{T}/bin/{_p}", 0o755)
+os.environ.update(PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from merge_train.waggon import Fehler, Waggon

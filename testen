@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Mini-CI: testet nur, was die Änderungen betreffen. Läuft als pre-commit-Hook (./testen) und pre-push-Hook (--push).
+
+  ./testen              Änderungen gegen HEAD (Index, Arbeitsverzeichnis, neue Dateien)
+  ./testen --seit REF   Änderungen seit REF (z. B. origin/main)
+  ./testen --voll       alles: ./pruefen, alle Einzeltests, alle Teile von tests/test_gitlab.py
+  ./testen --liste      nur zeigen, was laufen würde
+  ./testen --push       pre-push (Zeilen von git auf stdin): jeder gepushte Commit, dessen Baum noch nicht voll getestet
+                        ist, läuft --voll, und zwar genau dieser Stand (in einem Temp-Worktree, wenn er nicht der saubere
+                        Arbeitsstand ist). Auch `git push . claude:reviewed` („fertig“) und `git push origin reviewed:main`.
+
+Merkzettel: Ein grünes --voll auf einem sauberen Stand trägt dessen Baum (Tree-ID) in .git/merge-train-getestet ein;
+derselbe Inhalt gilt dann als getestet, egal unter welchem Commit oder Branch.
+
+Auswahl:
+  • web/*.js|css, web.py, pruefen, biome.json, werkzeug/  → ./pruefen
+  • Python in src/                → Bau nach tests/bau/ und Import aller Module (Smoke)
+                                    + die Klassen von tests/test_einheiten.py, deren Module (samt allem, was diese aus
+                                      src/ importieren) sich geändert haben – automatisch aus den Imports ermittelt
+                                    + die Teile von tests/test_gitlab.py laut MODUL_TEILE (unbekanntes Modul: alle)
+  • tests/…                       → die geänderte Testdatei ganz
+  • docs/, *.md, skill/ …         → nichts
+  • alles andere                  → --voll
+Ausgabe nur bei Fehlern ausführlich, sonst eine Zeile je Schritt. Exit 1 beim ersten Fehler.
+"""
+import ast, os, subprocess, sys, tempfile, time
+
+HIER = os.path.dirname(os.path.realpath(__file__))
+SRC = os.path.join(HIER, "src", "merge_train")
+TESTS = os.path.join(HIER, "tests")
+
+# Modul in src/merge_train → Teile von tests/test_gitlab.py, die es von außen (Server, CLI) prüfen.
+# [] = Einzeltests genügen. Teile setzen ggf. andere voraus (TEILE in test_gitlab.py).
+MODUL_TEILE = {
+    "__init__": ["lokal"], "__main__": ["lokal"],
+    "abhaken": ["lokal"], "agent_cli": ["gitlab", "lokal", "arbeitsstand"], "akte": [], "ansichten": ["lokal"],
+    "beobachter": ["lokal"], "cli": ["lokal", "gitlab"], "diff_html": ["lokal"], "einstellungen": ["lokal", "gitlab"],
+    "gespraech": ["lokal", "arbeitsstand", "gitlab"], "git": ["lokal", "arbeitsstand"], "gitlab": ["gitlab", "gemischt"],
+    "hinweise": ["gitlab"], "instanz": [], "prozess": ["lokal"], "quellen": ["lokal", "arbeitsstand", "gemischt"],
+    "review": ["gitlab"], "seite": ["lokal", "gitlab", "gemischt"], "server": ["lokal", "gitlab"], "syntax": ["lokal"],
+    "waggon": ["lokal", "gitlab"], "web": [], "zeilen": [], "zuhoerer": ["lokal", "horchen"],
+}
+ALLE_TEILE = ["gitlab", "lokal", "horchen", "arbeitsstand", "gemischt"]
+NICHTS = ("docs/", "skill/", "completions/", "perf/", "README.md", "AGENTS.md", "CLAUDE.md", "refactor.md", ".gitignore",
+          "config.example.toml")
+
+
+def git(*a):
+    return subprocess.run(["git", "-C", HIER, *a], capture_output=True, text=True).stdout.split("\n")
+
+
+def geaendert(seit):
+    pfade = git("diff", "--name-only", seit) + git("ls-files", "--others", "--exclude-standard")
+    return sorted({p for p in pfade if p})
+
+
+def importe(baum, paket_namen):
+    """Namen → Modul aus `from merge_train.x import …`, `from merge_train import x`, `from .x import …`, `from . import x`."""
+    namen = {}
+    for k in ast.walk(baum):
+        if isinstance(k, ast.ImportFrom):
+            mod = k.module or ""
+            if mod.startswith("merge_train."):
+                mod = mod[len("merge_train."):]
+            elif mod == "merge_train" or (k.level and not mod):
+                mod = ""
+            elif not k.level:
+                continue
+            for a in k.names:
+                ziel = mod or a.name
+                if ziel in paket_namen:
+                    namen[a.asname or a.name] = ziel
+    return namen
+
+
+def modul_graph():
+    """Modul → alle Module, die es (auch über andere) aus src/ importiert, sich selbst eingeschlossen."""
+    module = {f[:-3] for f in os.listdir(SRC) if f.endswith(".py")} | {"__main__"}
+    direkt = {}
+    for m in module:
+        pfad = os.path.join(SRC, m + ".py") if m != "__main__" else os.path.join(HIER, "src", "__main__.py")
+        direkt[m] = set(importe(ast.parse(open(pfad, encoding="utf-8").read()), module).values()) if os.path.exists(pfad) else set()
+    huelle = {}
+    for m in module:
+        gesehen, offen = set(), [m]
+        while offen:
+            x = offen.pop()
+            if x not in gesehen:
+                gesehen.add(x); offen += direkt.get(x, ())
+        huelle[m] = gesehen
+    return module, huelle
+
+
+def einheiten_klassen(module, huelle):
+    """Testklasse → Module aus src/, die sie (über Hilfsfunktionen der Testdatei und Imports in src/) erreicht."""
+    baum = ast.parse(open(os.path.join(TESTS, "test_einheiten.py"), encoding="utf-8").read())
+    namen = importe(baum, module)
+    oben = {k.name: k for k in baum.body if isinstance(k, (ast.FunctionDef, ast.ClassDef))}
+    for k in baum.body:  # globale Werte wie DIFF = zerlegen(…) zählen mit
+        if isinstance(k, ast.Assign):
+            for z in k.targets:
+                for n in ast.walk(z):
+                    if isinstance(n, ast.Name):
+                        oben.setdefault(n.id, k)
+
+    def direkt(knoten):
+        mods, hilfen = set(), set()
+        for k in ast.walk(knoten):
+            n = k.id if isinstance(k, ast.Name) else None
+            if n in namen:
+                mods.add(namen[n])
+            elif n in oben and oben[n] is not knoten:
+                hilfen.add(n)
+        return mods, hilfen
+
+    def erreicht(name, gesehen):
+        mods, hilfen = direkt(oben[name])
+        for h in hilfen - gesehen:
+            mods |= erreicht(h, gesehen | {h})
+        return mods
+
+    klassen = {}
+    for name, k in oben.items():
+        if isinstance(k, ast.ClassDef) and any(isinstance(b, ast.Attribute) and b.attr == "TestCase" for b in k.bases):
+            klassen[name] = set().union(*(huelle.get(m, {m}) for m in erreicht(name, {name}))) if erreicht(name, {name}) else None
+    return klassen
+
+
+def auswahl(pfade, voll):
+    """(pruefen?, smoke?, Einzeltest-Klassen oder 'alle', Teile, Gründe)."""
+    module, huelle = modul_graph()
+    if voll:
+        return True, True, "alle", list(ALLE_TEILE), ["--voll"]
+    pruefen = smoke = False
+    geaenderte_module, klassen_alle, teile, gruende = set(), False, set(), []
+    for p in pfade:
+        if p.startswith(NICHTS) or (p.endswith(".md") and "/" not in p):
+            continue
+        if p.startswith("src/merge_train/web/") or p in ("pruefen", "biome.json") or p.startswith("werkzeug/"):
+            pruefen = True
+            continue
+        if p.startswith("src/") and p.endswith(".py"):
+            smoke = True
+            m = os.path.basename(p)[:-3]
+            geaenderte_module.add(m)
+            if m == "web":
+                pruefen = True
+            if m in MODUL_TEILE:
+                teile |= set(MODUL_TEILE[m])
+            else:
+                teile |= set(ALLE_TEILE); gruende.append(f"{m}.py fehlt in MODUL_TEILE (./testen) → alle Teile")
+            continue
+        if p == "tests/test_einheiten.py":
+            smoke = klassen_alle = True
+            continue
+        if p in ("tests/test_gitlab.py", "tests/fake-glab", "bauen"):
+            smoke = True; teile |= set(ALLE_TEILE)
+            continue
+        if p == "testen":
+            smoke = pruefen = klassen_alle = True
+            continue
+        if p == "install.sh":
+            continue  # nur sh -n, siehe main
+        gruende.append(f"{p}: unbekannt → --voll")
+        return True, True, "alle", list(ALLE_TEILE), gruende
+    if klassen_alle:
+        klassen = "alle"
+    else:
+        alle = einheiten_klassen(module, huelle)
+        klassen = sorted(k for k, mods in alle.items() if mods is None or mods & geaenderte_module) if geaenderte_module else []
+        if len(klassen) == len(alle):
+            klassen = "alle"
+    return pruefen, smoke, klassen, [t for t in ALLE_TEILE if t in teile], gruende
+
+
+def merkzettel():
+    return os.path.join(HIER, git("rev-parse", "--git-common-dir")[0], "merge-train-getestet")
+
+
+def getestet():
+    try:
+        return set(open(merkzettel()).read().split())
+    except OSError:
+        return set()
+
+
+def eintragen(baum):
+    alte = [z for z in (open(merkzettel()).read().split() if os.path.exists(merkzettel()) else []) if z != baum]
+    open(merkzettel(), "w").write("\n".join((alte + [baum])[-200:]) + "\n")
+
+
+def sauber():
+    return not any(git("status", "--porcelain"))
+
+
+def push(zeilen):
+    """pre-push: jeden gepushten Stand, der noch nicht voll getestet ist, voll testen (genau diesen Stand)."""
+    shas = []
+    for z in zeilen:
+        teile = z.split()
+        if len(teile) == 4 and set(teile[1]) != {"0"} and teile[1] not in shas:
+            shas.append(teile[1])
+    schon = getestet()
+    for sha in shas:
+        baum = git("rev-parse", sha + "^{tree}")[0]
+        if baum in schon:
+            print(f"✓ {sha[:8]} schon voll getestet")
+            continue
+        if baum == git("rev-parse", "HEAD^{tree}")[0] and sauber():
+            r = subprocess.run([sys.executable, os.path.join(HIER, "testen"), "--voll"], cwd=HIER)
+        else:
+            with tempfile.TemporaryDirectory(prefix="merge-train-push-") as tmp:
+                ort = os.path.join(tmp, "baum")
+                subprocess.run(["git", "-C", HIER, "worktree", "add", "-q", "--detach", ort, sha], check=True)
+                try:
+                    print(f"• {sha[:8]} im Temp-Worktree", flush=True)
+                    r = subprocess.run([sys.executable, os.path.join(ort, "testen"), "--voll"], cwd=ort)
+                finally:
+                    subprocess.run(["git", "-C", HIER, "worktree", "remove", "--force", ort], capture_output=True)
+        if r.returncode:
+            sys.exit(1)
+        eintragen(baum)  # auch wenn das testen dieses Stands noch keinen Merkzettel kannte
+        schon.add(baum)
+
+
+def schritt(titel, argv, env=None):
+    t0 = time.time()
+    r = subprocess.run(argv, capture_output=True, text=True, cwd=HIER, env=env)
+    dauer = f"{time.time() - t0:.1f} s"
+    if r.returncode:
+        print(f"✗ {titel} ({dauer})\n")
+        aus = (r.stdout + r.stderr).strip().splitlines()
+        fehl = [z for z in aus if z.startswith(("FEHL", "FAIL", "ERROR", "Traceback")) or "Error" in z]
+        print("\n".join(aus[-60:]) if not fehl or len(aus) <= 60 else "\n".join(fehl + ["…"] + aus[-30:]))
+        sys.exit(1)
+    print(f"✓ {titel} ({dauer})")
+
+
+def main():
+    args = sys.argv[1:]
+    for v in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_EDITOR"):
+        os.environ.pop(v, None)  # aus dem Hook: sonst arbeiten die git-Aufrufe der Tests in ihren Temp-Repos mit unserem Index
+    if "--push" in args:
+        return push(sys.stdin.read().splitlines())
+    voll = "--voll" in args
+    baum = git("rev-parse", "HEAD^{tree}")[0] if voll and sauber() else None  # vor dem Lauf: danach eintragen
+    seit = args[args.index("--seit") + 1] if "--seit" in args else "HEAD"
+    pfade = geaendert(seit)
+    pruefen, smoke, klassen, teile, gruende = auswahl(pfade, voll)
+    if "install.sh" in pfade:
+        gruende.append("install.sh: sh -n")
+    for g in gruende:
+        print("•", g)
+    plan = [x for x in (pruefen and "pruefen", smoke and "Smoke",
+                        klassen and ("Einzeltests: " + (klassen if klassen == "alle" else " ".join(klassen))),
+                        teile and ("test_gitlab: " + " ".join(teile))) if x]
+    if "--liste" in args:
+        print("\n".join(plan) or "nichts zu testen")
+        return
+    if not plan and "install.sh" not in pfade:
+        print("✓ nichts zu testen (" + (f"{len(pfade)} Datei(en), keine im Code" if pfade else "keine Änderungen") + ")")
+        return
+    if "install.sh" in pfade:
+        schritt("install.sh (sh -n)", ["sh", "-n", "install.sh"])
+    if pruefen:
+        schritt("pruefen", [sys.executable, "pruefen"])
+    if not smoke:
+        return
+    bau = os.path.join(TESTS, "bau", f"merge-train-{os.getpid()}")
+    with tempfile.TemporaryDirectory(prefix="merge-train-smoke-") as tmp:
+        open(f"{tmp}/leer.toml", "w").close()
+        env = dict(os.environ, MERGE_TRAIN_CONFIG=f"{tmp}/leer.toml", XDG_CACHE_HOME=f"{tmp}/cache",
+                   XDG_DATA_HOME=f"{tmp}/data", XDG_CONFIG_HOME=f"{tmp}/config", MERGE_TRAIN_SKRIPT=bau)
+        try:
+            schritt("Smoke: Bau und Import aller Module", [sys.executable, "-c",
+                    "import subprocess, sys, importlib, pkgutil\n"
+                    "subprocess.run([sys.executable, 'bauen', '--ziel', sys.argv[1]], check=True, capture_output=True)\n"
+                    "sys.path.insert(0, sys.argv[1]); import merge_train\n"
+                    "for i in pkgutil.iter_modules(merge_train.__path__): importlib.import_module('merge_train.' + i.name)",
+                    bau], env)
+            if klassen:
+                schritt("Einzeltests" + ("" if klassen == "alle" else f" ({len(klassen)} Klassen)"),
+                        [sys.executable, "tests/test_einheiten.py"] + ([] if klassen == "alle" else klassen))
+            if teile:
+                schritt("test_gitlab: " + " ".join(teile), [sys.executable, "tests/test_gitlab.py", *teile], env)
+            if baum:
+                eintragen(baum)
+        finally:
+            for f in (bau, bau + ".neu"):
+                if os.path.exists(f):
+                    os.remove(f)
+
+
+if __name__ == "__main__":
+    main()
