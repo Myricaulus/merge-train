@@ -721,6 +721,14 @@ def lesen(pfad):
         return f.read()
 
 
+class AgentArgsTest(unittest.TestCase):
+    def test_optionen_hinten(self):
+        """Vorfall 2026-11-13: antworten <id> --erledigt "Text" – Optionen auch hinter den Positionsargumenten."""
+        from merge_train.agent_cli import agent_args
+        _, o = agent_args(["antworten", "abc", "--erledigt", "Text"])
+        self.assertEqual((o.befehl, o.id, o.erledigt, o.text), ("antworten", "abc", True, "Text"))
+
+
 class AktualisierenTest(unittest.TestCase):
     """branch_aktualisieren: vorspulen, nach Force-Push neu setzen, eigene Commits und Änderungen schützen."""
     def setUp(self):

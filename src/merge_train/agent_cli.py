@@ -816,9 +816,17 @@ def befehl_hinweise(o):
     return 3 if abweichend else 0
 
 
-def agent_main(argv):
+def agent_args(argv):
+    """argv → (Parser, Namespace). Optionen gehen auch hinter den Positionsargumenten (antworten <id> --erledigt "…")."""
     ap = agent_parser()
-    o = ap.parse_args(argv)
+    sub = next(a for a in ap._actions if isinstance(a, argparse._SubParsersAction))
+    if argv and argv[0] in sub.choices:
+        return ap, sub.choices[argv[0]].parse_intermixed_args(argv[1:], argparse.Namespace(befehl=argv[0]))
+    return ap, ap.parse_args(argv)
+
+
+def agent_main(argv):
+    ap, o = agent_args(argv)
     if not o.befehl:
         ap.print_help(); return 2
     if o.aufruf is befehl_hinweise:  # meldet seine Fehler selbst (Exit 2 bzw. 3)

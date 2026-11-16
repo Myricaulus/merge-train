@@ -175,8 +175,12 @@ EOF
   a unique file name; best in backticks, like `Foo.cs:42`).
 - Don't open threads for things the user already decided in the conversation, and don't open a thread per file
   you touched – only where there is something to read, decide or check.
-- `thread` prints the id; leave it to the user to close the threads. If it fails with "kein Gespräch" (repo not in
-  merge-train), report in the console as before.
+- Measure `--ort` ranges, don't estimate them: start and end from `grep -n` (signature, `return`, closing brace),
+  near the end of a file check `wc -l`. merge-train rejects lines past the end of the file.
+- `thread` prints the id; leave it to the user to close the threads. If it fails with "kein Gespräch" or "Projekt …
+  nicht gefunden", the repo is not in merge-train: tell the user that its folder belongs under `projekte` in the
+  merge-train config (the message names the file; changes take effect without a restart), and report in the console
+  until it is there.
 
 ## Listen
 

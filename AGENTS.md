@@ -60,3 +60,8 @@ aufrufen (`App` und `MR` sind Globale aus dem Bündel), sondern `./pruefen`. Den
 Der Nutzer stellt Fragen und Wünsche zum Code direkt in merge-train (siehe README, „Gespräch mit Claude“).
 Abholen mit `merge-train agent feedback`, antworten mit `merge-train agent antworten <id> "…"` (`--erledigt`, wenn
 umgesetzt). Soll die Session zuhören: `merge-train agent horchen` im Hintergrund starten und nach jeder Ausgabe neu starten.
+
+## Vorfälle
+
+Neue Berichte liegen in `vorfaelle/` (gitignored), abgearbeitete mit dem Block „Umgesetzt“ in `docs/vorfaelle/`
+(siehe [`docs/vorfaelle/README.md`](docs/vorfaelle/README.md)).

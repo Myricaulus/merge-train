@@ -1,7 +1,7 @@
 """Alles, was das lokale git fragt: Aufruf mit Protokoll, Diff zerlegen, Arbeitsstand, Repos finden, Dateiinhalte."""
 import glob, hashlib, os, re, shutil, subprocess, threading, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, KONF, ORDNER, PROJEKTE, PROJEKTE_LISTE, dateiname, projektname
+from .einstellungen import ARBEITSSTAND, KONF, KONFIG_DATEI, ORDNER, PROJEKTE, PROJEKTE_LISTE, dateiname, projektname
 from .waggon import Fehler, von_bis, zweige_gewaehlt
 
 ANLASS = threading.local()  # wofür die Anfrage ist (Server: Pfad/Aktion, CLI: Befehl) – nur fürs Log
@@ -394,5 +394,6 @@ def projekt_wurzel(projekt):
     """Klon des lokalen Projekts mit diesem Namen (auch, wenn ihm gerade ein Branch fehlt)."""
     wurzel = next((r for r in finde_repos(alle=True) if projektname(r) == projekt), None)
     if not wurzel:
-        raise Fehler(f"Projekt {projekt} nicht gefunden")
+        raise Fehler(f"Projekt {projekt} nicht gefunden – den Ordner unter „projekte“ in {kurzpfad(KONFIG_DATEI)} "
+                     "eintragen (greift ohne Neustart)")
     return wurzel
