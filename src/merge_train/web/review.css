@@ -24,7 +24,7 @@ body.diffseite td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
 #meldung a{color:var(--tn)}
 tr.lu td{background:var(--hk);color:var(--muted);padding:2px 8px;font:12px system-ui,sans-serif}
 .spaet button,tr.lu button,#popup button{font:12px system-ui,sans-serif;padding:0 8px;margin-left:6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}
-#popup button:disabled{opacity:.4;cursor:default}
+
 tr.blink td{animation:blink 1.8s ease-out} @keyframes blink{0%,30%{background:var(--akt)}}
 /* Faden an einem Bereich ab–b (Strich links an den Zeilennummern), im Entwurf noch blau */
 tr.bereich td.n{box-shadow:inset 3px 0 0 var(--tf)} tr.bereich-neu td.n{box-shadow:inset 3px 0 0 var(--tn);background:var(--akt)}
@@ -100,7 +100,7 @@ details.kliste>div{max-height:30vh;overflow-y:auto;overflow-x:hidden}
 /* Stände (App.STAENDE): Farbe = wer dran ist */
 .s-entwurf,.s-gitlab_entwurf{color:var(--tb)} .s-dran{color:var(--tf);font-weight:600} .s-wartet{color:var(--tn)} .s-erledigt{color:var(--p)} .b-fremd{color:var(--p);border-style:dashed}
 #feedback,#starten,#prompt{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer}
-#feedback:not(:disabled){background:var(--tn);color:var(--bg)} #feedback:disabled{opacity:.45;cursor:default;border-color:var(--rand);color:var(--muted)}
+#feedback:not(:disabled){background:var(--tn);color:var(--bg)}
 .gs .msg:has(textarea){width:100%;max-width:none}
 .kopfknoepfe{margin-left:auto;display:flex;gap:8px;align-items:center} .kopfknoepfe #fertig,.kopfknoepfe #abschliessen{margin-left:0}
 label.sofort{font-size:12px;color:var(--muted);margin-right:6px;cursor:pointer;user-select:none} label.sofort input{vertical-align:middle;margin:0 3px 0 0}

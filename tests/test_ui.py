@@ -224,6 +224,9 @@ def teil_eingabe(b, f):
     assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick auf „sofort senden“ schließt die Box"
     b.klicken("#ui-box label.sofort input")
     assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick aufs Häkchen schließt die Box"
+    stil = b.js("(() => { const k = document.createElement('button'); k.disabled = true; document.querySelector('#ui-box .knoepfe')"
+                ".append(k); const st = getComputedStyle(k), w = [st.borderTopStyle, st.cursor]; k.remove(); return w; })()")
+    assert stil == ["dashed", "not-allowed"], f"ausgegrauter Knopf nicht deutlich: {stil}"
     b.klicken("#ui-box .kk > span")
     assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick in den Rahmen schließt die Box"
     b.js("(() => { const td = [...document.querySelectorAll('main td.c')].reverse().find(td => td.offsetParent &&"
