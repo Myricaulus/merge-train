@@ -56,11 +56,12 @@ def bauen(t, ref):
 
 
 class Server:
-    def __init__(self, ordner, repo, port):
+    def __init__(self, ordner, repo, port, konfig=None, umgebung=None):
+        """konfig: Inhalt der config.toml (Standard: lokal, nur repo); umgebung: zusätzliche Variablen."""
         self.port, self.ordner = port, ordner
-        open(os.path.join(ordner, "config.toml"), "w").write(
+        open(os.path.join(ordner, "config.toml"), "w").write(konfig or
             f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\nfeedback_befehl = "true"\n')
-        self.umgebung = dict(os.environ, MERGE_TRAIN_CONFIG=os.path.join(ordner, "config.toml"),
+        self.umgebung = dict(os.environ, **(umgebung or {}), MERGE_TRAIN_CONFIG=os.path.join(ordner, "config.toml"),
                              XDG_CACHE_HOME=os.path.join(ordner, "cache"), XDG_DATA_HOME=os.path.join(ordner, "data"),
                              XDG_CONFIG_HOME=os.path.join(ordner, "config"))
         self.umgebung.pop("MERGE_TRAIN_INSTANZ", None)

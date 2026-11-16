@@ -397,7 +397,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     genv = dict(ENV, PATH=f"{T}/gl-bin:" + ENV["PATH"])
     i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
     vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
-    pruefe(vorher["agenten"] == ["Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Agent aus [agenten] angeboten")
+    pruefe(vorher["agenten"] == ["Claude", "Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Claude (immer) und Agent aus [agenten] angeboten")
     pruefe(vorher["hinweise"] and all(h["agent"] == "Claude" for h in vorher["hinweise"]),
            "Hinweise: JSON ohne agent → wer sie mit agent zeigen angemeldet hat (erkannt: Claude)")
     r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", datei=i_app, a=None, b=11, text="Was macht Zeile 11?"))

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """UI-Tests im echten Browser: Knöpfe der Diff-Seite klicken und prüfen, was beim Server ankommt.
 
-  python3 tests/test_ui.py [teil …]      Teile: senden, vorschau, zuletzt (Standard: alle)
+  python3 tests/test_ui.py [fall[:teil] …]      Fälle: lokal, ohne, mr, mr-ohne (Standard: alle mit allen Teilen)
 
-Baut den Arbeitsstand aus src/ in einen Temp-Ordner, legt das Test-Repo aus werkzeug/seiten_vergleich.py an, startet
-einen eigenen Server (eigener Port und Daten, nie der des Nutzers) und ein frisches headless Chromium (DevTools über
---remote-debugging-pipe, ohne Node). Ohne Chromium: übersprungen (Exit 0, mit Hinweis).
+Fälle: lokal (Test-Repo aus werkzeug/seiten_vergleich.py, „senden“ startet einen Befehl), ohne (dasselbe, aber kein
+Agent eingerichtet), mr (MR !1 über tests/fake-glab, Agent Claude aus [agenten]), mr-ohne (MR ohne Agent). Baut den Arbeitsstand aus src/ in
+einen Temp-Ordner, startet je Fall einen eigenen Server (eigener Port und Daten, nie der des Nutzers) und ein frisches
+headless Chromium (DevTools über --remote-debugging-pipe, ohne Node). Ohne Chromium: übersprungen (Exit 0).
 JS-Fehler auf der Seite (Runtime.exceptionThrown) lassen jeden Teil scheitern.
 """
-import glob, json, os, shutil, sys, tempfile, time, urllib.request
+import glob, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 
 HIER = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path[:0] = [os.path.join(HIER, "werkzeug"), os.path.join(HIER, "perf")]
 from cdp_messung import Pipe  # noqa: E402
-from seiten_vergleich import Server, bauen, test_repo  # noqa: E402
-
-MR = "projekt:probe"
+from seiten_vergleich import Server, bauen, git, test_repo  # noqa: E402
 
 
 def chromium():
@@ -53,6 +52,9 @@ class Browser:
             time.sleep(0.1)
         raise AssertionError(f"wurde nicht wahr: {ausdruck} (Meldung der Seite: {self.js('App.meldung.textContent')!r})")
 
+    def tippen(self, text):
+        self.c.rufen("Input.insertText", {"text": text}, sitzung=self.s)
+
     def klicken(self, selektor):
         """Echter Mausklick auf die Mitte des Elements (trifft nur, was sichtbar und nicht verdeckt ist)."""
         r = self.js(f"(() => {{ const e = document.querySelector({json.dumps(selektor)}); if (!e) return null;"
@@ -80,103 +82,216 @@ class Browser:
         self.c.zu()
 
 
-def entwurf(srv, text="Warum mal zwei?"):
-    d = srv.post("/api/kommentar", {"mr": MR, "aktion": "neu", "text": text})
-    assert d.get("ok"), d
+class Fall:
+    """Ein Server mit einer Seite: mr = Kennung für die API, pfad = URL der Seite."""
+    def __init__(self, srv, mr, pfad, startet):
+        self.srv, self.mr, self.pfad, self.startet = srv, mr, pfad, startet
+
+    def faeden(self):
+        q = urllib.parse.urlencode({"mr": self.mr, "k": self.srv.schluessel})
+        return json.loads(urllib.request.urlopen(self.srv.url(f"/api/review?{q}")).read())["faeden"]
+
+    def gesendet(self):
+        return [m for k in self.faeden() for m in k["nachrichten"] if m["von"] == "ich" and m.get("gesendet")]
+
+    def gesendet_warten(self, n, timeout=8):
+        ende = time.time() + timeout
+        while time.time() < ende:
+            if len(self.gesendet()) >= n:
+                return
+            time.sleep(0.1)
+        raise AssertionError(f"nach {timeout} s nicht {n} gesendet: {self.faeden()}")
+
+    def entwurf(self, text):
+        d = self.srv.post("/api/kommentar", {"mr": self.mr, "aktion": "neu", "gespraech": 1, "an": "Claude", "text": text})
+        assert d.get("ok"), d
 
 
-def faeden(srv):
-    return json.loads(urllib.request.urlopen(srv.url(f"/api/review?mr={MR}&k={srv.schluessel}")).read())["faeden"]
+def fall_lokal(t, port, agent=True):
+    ordner = bauen(t, None)
+    repo = test_repo(t)
+    konfig = f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\n' + ('feedback_befehl = "true"\n' if agent else "")
+    return Fall(Server(ordner, repo, port, konfig), "projekt:probe", "/probe.html", agent)
 
 
-def gesendet(srv):
-    return [m for k in faeden(srv) for m in k["nachrichten"] if m["von"] == "ich" and m.get("gesendet")]
+def fall_mr(t, port, agent=True):
+    ordner = bauen(t, None)
+    repo = os.path.join(t, "mr-repo")
+    os.makedirs(os.path.join(repo, "tasks"))
+    git(repo, "init", "-q", "-b", "main"); git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t")
+    git(repo, "remote", "add", "origin", "git@gitlab.example.com:gruppe/demo.git")
+    open(os.path.join(repo, "App.cs"), "w").write("".join(f"// Zeile {i}\n" for i in range(1, 31)))
+    git(repo, "add", "-A"); git(repo, "commit", "-qm", "Start"); git(repo, "checkout", "-qb", "feature")
+    open(os.path.join(repo, "App.cs"), "w").write("".join(f"// Zeile {i}{' neu' if i == 10 else ''}\n" for i in range(1, 31)))
+    git(repo, "add", "App.cs"); git(repo, "commit", "-qm", "Neu")
+    hw = os.path.join(repo, "tasks", "DEMO-1-review-markers.json")
+    json.dump({"key": "DEMO-1", "branch": "feature", "agent": "Claude",
+               "markers": [{"path": "App.cs", "needle": "Zeile 10 neu", "text": "Hinweis"}]}, open(hw, "w"))
+    os.makedirs(os.path.join(t, "glab"))
+    konfig = (f'lokal = false\nglab = "{sys.executable} {HIER}/tests/fake-glab"\nport = {port}\nleerlauf = 300\n'
+              f'browser = "true"\nhinweise = ["{repo}/tasks/*-review-markers.json"]\n' + ('[agenten]\nClaude = "true"\n' if agent else ""))
+    srv = Server(ordner, repo, port, konfig, {"FAKE_GLAB_REPO": repo, "FAKE_GLAB_STATE": os.path.join(t, "glab")})
+    subprocess.run([sys.executable, os.path.join(ordner, "merge-train"), "agent", "zeigen", hw, "--nicht-oeffnen"],
+                   env=dict(srv.umgebung, MERGE_TRAIN_AGENT="Claude"), capture_output=True, check=True, cwd=repo)
+    return Fall(srv, "gitlab.example.com/gruppe/demo/1", "/mr/gitlab.example.com/gruppe/demo/1", agent)
 
 
-def gesendet_warten(srv, n, timeout=8):
-    ende = time.time() + timeout
-    while time.time() < ende:
-        if len(gesendet(srv)) >= n:
-            return
-        time.sleep(0.1)
-    raise AssertionError(f"nach {timeout} s nicht {n} gesendet: {faeden(srv)}")
+FAELLE = {"lokal": fall_lokal, "ohne": lambda t, port: fall_lokal(t, port, agent=False), "mr": fall_mr,
+          "mr-ohne": lambda t, port: fall_mr(t, port, agent=False)}
 
 
-def seite(b, srv, vorher=False):
-    b.laden(srv.url("/probe.html"))
-    b.js(f"localStorage.promptVorher = {'1' if vorher else chr(39) * 2}")
-    b.laden(srv.url("/probe.html"))
-    b.warten_bis("!document.getElementById('feedback').disabled")
+def seite(b, f, vorher=False, sofort=False):
+    b.laden(f.srv.url(f.pfad))
+    b.js(f"localStorage.promptVorher = {'1' if vorher else chr(39) * 2}; localStorage.sofort = {'1' if sofort else chr(39) * 2}")
+    b.laden(f.srv.url(f.pfad))
+    b.warten_bis("typeof App.zeichnen === 'function' || document.getElementById('feedback')")
 
 
-def teil_senden(b, srv):
-    """„An Agent senden“ schickt den Entwurf ab (ohne Vorschau)."""
-    entwurf(srv)
-    seite(b, srv)
-    b.klicken("#feedback")
-    gesendet_warten(srv, 1)
-
-
-def teil_vorschau(b, srv):
-    """Mit „vor dem Senden zeigen“: erst der Dialog mit dem Prompt, abbrechen sendet nichts, „senden“ schon."""
-    entwurf(srv, "Vorschau bitte")
-    vorher = len(gesendet(srv))
-    seite(b, srv, vorher=True)
-    b.klicken("#feedback")
+def dialog_text(b):
     b.warten_bis("document.querySelector('dialog.prompt-dialog[open] pre')")
-    assert "merge-train" in b.js("document.querySelector('dialog.prompt-dialog pre').textContent")
-    b.js("[...document.querySelectorAll('dialog.prompt-dialog button')].find(x => x.textContent === 'abbrechen').click()")
+    return b.js("[...document.querySelectorAll('dialog.prompt-dialog summary, dialog.prompt-dialog pre')]"
+                ".map(x => x.textContent).join('\\n')")
+
+
+def dialog_zu(b, knopf):
+    b.js(f"[...document.querySelectorAll('dialog.prompt-dialog button')].find(x => x.textContent === '{knopf}').click()")
     b.warten_bis("!document.querySelector('dialog.prompt-dialog')")
+
+
+def teil_senden(b, f):
+    """„An Agent senden“ schickt den Entwurf ab (ohne Vorschau)."""
+    vorher = len(f.gesendet())
+    f.entwurf("Warum mal zwei?")
+    seite(b, f)
+    assert b.js("[...document.querySelectorAll('label.sofort')].some(l => !l.closest('.kbox'))"), "kein „sofort senden“ im Kopf"
+    b.warten_bis("!document.getElementById('feedback').disabled")
+    b.klicken("#feedback")
+    f.gesendet_warten(vorher + 1)
+
+
+def teil_vorschau(b, f):
+    """Mit „vor dem Senden zeigen“: erst der Dialog mit dem Text beim Abholen (auch ohne Agent), abbrechen sendet
+    nichts, „senden“ schon."""
+    f.entwurf("Vorschau bitte")
+    vorher = len(f.gesendet())
+    seite(b, f, vorher=True)
+    b.warten_bis("!document.getElementById('feedback').disabled")
+    b.klicken("#feedback")
+    text = dialog_text(b)
+    assert "Vorschau bitte" in text and "beim Abholen" in text, text
+    assert ("Startprompt" in text) == f.startet, text
+    dialog_zu(b, "abbrechen")
     time.sleep(1)
-    assert len(gesendet(srv)) == vorher, "abbrechen hat gesendet"
+    assert len(f.gesendet()) == vorher, "abbrechen hat gesendet"
     b.klicken("#feedback")
     b.warten_bis("document.querySelector('dialog.prompt-dialog[open] .pd-senden')")
     b.klicken("dialog.prompt-dialog .pd-senden")
-    gesendet_warten(srv, vorher + 1)
+    f.gesendet_warten(vorher + 1)
 
 
-def teil_zuletzt(b, srv):
-    """„📨“ zeigt, was zuletzt an den Agenten ging (hier: der Startprompt aus feedback_befehl)."""
-    entwurf(srv, "Und was kam an?")
-    vorher = len(gesendet(srv))
-    seite(b, srv)
+def teil_zuletzt(b, f):
+    """„📨“ nach dem Senden: was noch nicht abgeholt ist (so bekommt es der Agent) und ggf. der Startprompt."""
+    f.entwurf("Und was kam an?")
+    vorher = len(f.gesendet())
+    seite(b, f)
+    b.warten_bis("!document.getElementById('feedback').disabled")
     b.klicken("#feedback")
-    gesendet_warten(srv, vorher + 1)
+    f.gesendet_warten(vorher + 1)
     b.klicken("#prompt")
-    b.warten_bis("document.querySelector('dialog.prompt-dialog[open] pre')")
-    text = b.js("document.querySelector('dialog.prompt-dialog pre').textContent")
-    assert "merge-train agent feedback" in text, text
-    assert "Startprompt" in b.js("document.querySelector('dialog.prompt-dialog summary').textContent")
+    text = dialog_text(b)
+    assert "Und was kam an?" in text and "noch nicht abgeholt" in text, text
+    assert ("Startprompt" in text) == f.startet, text
+    dialog_zu(b, "schließen")
 
 
-TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt}
+def neue_box(b):
+    """Klick auf die Nummer der ersten sichtbaren Zeile der neuen Seite: neue Eingabebox."""
+    assert b.js("(() => { document.getElementById('ui-zeile')?.removeAttribute('id');"
+                "const td = [...document.querySelectorAll('main tr[data-b] td.n')].find(td => td.offsetParent &&"
+                " td.textContent.trim() === td.closest('tr').dataset.b); if (td) td.id = 'ui-zeile'; return !!td; })()"), \
+        "keine sichtbare Zeile mit Nummer"
+    b.klicken("#ui-zeile")
+    b.warten_bis("document.activeElement && document.activeElement.matches('main .kbox textarea')")
+    b.js("document.getElementById('ui-box')?.removeAttribute('id'); document.activeElement.closest('.kbox').id = 'ui-box'")
+
+
+def teil_eingabe(b, f):
+    """Leere Eingabebox: Klicks im Rahmen (Beschriftung „sofort senden“, Häkchen) lassen sie offen, ein Klick daneben
+    schließt sie."""
+    seite(b, f)
+    neue_box(b)
+    b.klicken("#ui-box label.sofort")
+    assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick auf „sofort senden“ schließt die Box"
+    b.klicken("#ui-box label.sofort input")
+    assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick aufs Häkchen schließt die Box"
+    b.klicken("#ui-box .kk > span")
+    assert b.js("!!document.querySelector('#ui-box textarea')"), "Klick in den Rahmen schließt die Box"
+    b.js("(() => { const td = [...document.querySelectorAll('main td.c')].reverse().find(td => td.offsetParent &&"
+         " !td.closest('.kbox')); td.scrollIntoView({block: 'center'}); td.id = 'ui-daneben'; })()")
+    b.klicken("#ui-daneben")
+    b.warten_bis("!document.querySelector('#ui-box textarea')")
+
+
+def teil_faden(b, f):
+    """Neue Frage an einer Zeile mit „sofort senden“: der Knopf „an Claude“ legt den Faden an und sendet ihn."""
+    vorher = len(f.gesendet())
+    seite(b, f, sofort=True)
+    neue_box(b)
+    b.tippen("Frage aus der Box")
+    knopf = b.js("(() => { const bs = [...document.querySelectorAll('#ui-box button')], k = bs.find(x => x.textContent === 'an Claude') || (App.kann.review ? null : bs.find(x => x.classList.contains('haupt')));"
+                 "if (k) k.id = 'an-claude'; return !!k; })()")
+    assert knopf, "kein Knopf „an Claude“: " + str(b.js("[...document.querySelectorAll('#ui-box button')].map(x => x.textContent)"))
+    b.klicken("#an-claude")
+    f.gesendet_warten(vorher + 1)
+
+
+def teil_loeschen(b, f):
+    """Faden löschen, während darin ein Antwort-Feld offen ist: der Faden verschwindet trotzdem."""
+    f.entwurf("Gleich weg")
+    seite(b, f)
+    b.js("window.confirm = () => true")
+    sel = "[...document.querySelectorAll('.kbox.gs')].find(x => x.textContent.includes('Gleich weg'))"
+    b.warten_bis(sel)
+    b.js(f"(() => {{ const k = {sel}; [...k.querySelectorAll('button')].find(x => /antworten/.test(x.textContent)).click(); }})()")
+    b.warten_bis(f"{sel}.querySelector('textarea')")
+    b.js(f"[...{sel}.querySelectorAll('button')].find(x => x.textContent === '🗑' && x.title.startsWith('ganzes')).click()")
+    b.warten_bis(f"!{sel}")
+
+
+TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
+         "faden": teil_faden, "loeschen": teil_loeschen}
 
 
 def main():
-    teile = sys.argv[1:] or list(TEILE)
-    unbekannt = [t for t in teile if t not in TEILE]
-    if unbekannt:
-        sys.exit(f"unbekannte Teile: {' '.join(unbekannt)} (bekannt: {' '.join(TEILE)})")
+    plan = {}
+    for fall, _, teil in [a.partition(":") for a in sys.argv[1:]] or [(fall, "", "") for fall in FAELLE]:
+        plan.setdefault(fall, []).extend([teil] if teil else list(TEILE))
+    plan = list(plan.items())
+    falsch = [f"{fall}:{t}" for fall, ts in plan for t in ts if fall not in FAELLE or t not in TEILE]
+    if falsch:
+        sys.exit(f"unbekannt: {' '.join(falsch)} (Fälle: {' '.join(FAELLE)}; Teile: {' '.join(TEILE)})")
     exe = chromium()
     if not exe:
         print("test_ui: kein Chromium gefunden – übersprungen")
         return 0
     t = tempfile.mkdtemp(prefix="merge-train-ui-")
-    srv = Server(bauen(t, None), test_repo(t), 8797)
-    b = Browser(exe)
     gescheitert = 0
-    try:
-        for name in teile:
-            try:
-                TEILE[name](b, srv)
-                f = b.fehler()
-                assert not f, "JS-Fehler: " + " | ".join(f)
-                print(f"✓ {name}")
-            except AssertionError as e:
-                gescheitert += 1
-                print(f"✗ {name}: {e}  (JS-Fehler: {b.fehler() or 'keine'})")
-    finally:
-        b.zu(); srv.zu()
+    for i, (fall, teile) in enumerate(plan):
+        os.makedirs(os.path.join(t, fall))
+        f = FAELLE[fall](os.path.join(t, fall), 8797 + i)
+        b = Browser(exe)
+        try:
+            for name in teile:
+                try:
+                    TEILE[name](b, f)
+                    fehler = b.fehler()
+                    assert not fehler, "JS-Fehler: " + " | ".join(fehler)
+                    print(f"✓ {fall}:{name}")
+                except AssertionError as e:
+                    gescheitert += 1
+                    print(f"✗ {fall}:{name}: {e}  (JS-Fehler: {b.fehler() or 'keine'})")
+        finally:
+            b.zu(); f.srv.zu()
     if gescheitert:
         print(f"Server-Log und Daten: {t}")
         return 1

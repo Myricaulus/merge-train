@@ -263,20 +263,21 @@ def zustellweg(waggon, namen=("Claude",)):
     return ("todo" if shutil.which("todo") else None), None, []
 
 
-def prompt_vorschau(waggon):
-    """Was der Agent bekäme, wenn jetzt gesendet würde ({weg, wer, text}), None, wenn ihn nichts erreicht. Bei horchen
-    die Ausgabe von horchen mit den Entwürfen als gesendet (nichts wird gespeichert), sonst der Startprompt."""
+def prompt_vorschau(waggon, entwuerfe=True):
+    """Was beim Agenten ankäme: [{weg, wer, text}], [] wenn nichts auf ihn wartet. Immer der Text beim Abholen
+    (horchen/feedback, nichts wird gespeichert; entwuerfe: Entwürfe zählen als gesendet), mit entwuerfe davor der
+    Startprompt, falls „senden“ den Agenten startet oder einen todo-Eintrag anlegt."""
     from .agent_cli import faeden_abholen
     namen = list(dict.fromkeys(k.get("an") or "Claude" for k in faeden_von(akte_lesen(waggon), quelle(waggon).branch(waggon))
                                for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))) or ["Claude"]
     weg, wer, _ = zustellweg(waggon, namen)
-    if weg is None:
-        return None
-    if weg == "horchen":
-        text = faeden_abholen([waggon], markieren=False, vorschau=True)[0]
-    else:
-        text = quelle(waggon).prompt(waggon, quelle(waggon).ort(waggon)[0])
-    return {"weg": weg, "wer": wer, "text": text}
+    text, n = faeden_abholen([waggon], markieren=False, vorschau=entwuerfe)
+    if not n:
+        return []
+    abholen = {"weg": "horchen", "wer": wer, "text": text} if weg == "horchen" else {"weg": "abholen", "wer": None, "text": text}
+    if not entwuerfe or weg not in ("start", "todo"):
+        return [abholen]
+    return [{"weg": weg, "wer": wer, "text": quelle(waggon).prompt(waggon, quelle(waggon).ort(waggon)[0])}, abholen]
 
 
 def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):

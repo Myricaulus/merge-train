@@ -135,8 +135,8 @@
       return d.aktion === 'antworten' ? p.then(sofortSenden) : p;
     };
   }
-  // wen man fragen kann (lokal mindestens Claude)
-  const agenten = () => (review.agenten && review.agenten.length ? review.agenten : mitReview ? [] : ['Claude']);
+  // wen man fragen kann (mindestens Claude, auch ohne Zuhörer: abholen mit „agent feedback“)
+  const agenten = () => (review.agenten && review.agenten.length ? review.agenten : ['Claude']);
   function neuSpeichern(d) {
     // neuer Kommentar: mit Review als Review-Kommentar, sonst als Frage an den ersten Agenten
     return t =>
@@ -214,10 +214,15 @@
         zeichnen();
       });
     };
-    ta.addEventListener('blur', e => {
-      // neues, leeres Feld: beim Wegklicken zu (nicht, wenn der Fokus auf einen Knopf derselben Box geht)
-      if (ta.isConnected && !text && !ta.value.trim() && !(e.relatedTarget && box.contains(e.relatedTarget))) zu();
-    });
+    // neues, leeres Feld: ein Klick außerhalb des Rahmens schließt es, innerhalb (Häkchen, Beschriftung …) nicht
+    const draussen = e => {
+      if (!ta.isConnected) return document.removeEventListener('pointerdown', draussen, true);
+      if (!text && !ta.value.trim() && !box.contains(e.target)) {
+        document.removeEventListener('pointerdown', draussen, true);
+        zu();
+      }
+    };
+    document.addEventListener('pointerdown', draussen, true);
     ta.addEventListener('keydown', e => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -407,8 +412,14 @@
           'button',
           {
             title: 'ganzes Gespräch löschen',
-            onclick: () => {
-              if (confirm('Ganzes Gespräch löschen?')) senden({aktion: 'loeschen'});
+            onclick: e => {
+              if (!confirm('Ganzes Gespräch löschen?')) return;
+              const box = e.target.closest('.kbox');
+              senden({aktion: 'loeschen'}).then(d => {
+                if (!d || !d.ok) return;
+                box.querySelectorAll('textarea').forEach(t => t.remove()); // offenes Feld hält den Faden nicht mehr
+                zeichnen();
+              });
             }
           },
           '🗑'
@@ -856,6 +867,8 @@
     }
   } // „Prompt vor dem Senden zeigen“, bleibt gespeichert
   const WEGE = {
+    abholen: () => 'beim Abholen (agent feedback bzw. horchen)',
+    wartet: () => 'gesendet, noch nicht abgeholt – so bekommt es der Agent beim Abholen',
     horchen: p => 'über „agent horchen“ an ' + (p.wer || 'die Session'),
     feedback: () => 'über „agent feedback“',
     start: p => 'als Startprompt für ' + (p.wer || 'den Agenten'),
@@ -898,13 +911,7 @@
       post('/api/gespraech', {aktion: 'vorschau'}).then(d => {
         if (!d.ok) return senden(true); // kein Agent erreichbar: senden meldet, wie es weitergeht
         App.melden('');
-        promptDialog(
-          d.prompts,
-          d.prompts[0].weg === 'horchen'
-            ? 'Vorschau – so holt die Session die Nachrichten ab (Stand jetzt)'
-            : 'Vorschau – damit startet der Agent',
-          () => senden(true)
-        );
+        promptDialog(d.prompts, 'Vorschau – das bekommt der Agent (Stand jetzt)', () => senden(true));
       });
       return;
     }
@@ -919,6 +926,8 @@
     });
   }
   if (feedbackKnopf) {
+    if (!mitReview)
+      feedbackKnopf.before(el('label', {class: 'sofort', title: SOFORT_TITEL}, sofortHaken(), ' sofort senden'));
     feedbackKnopf.addEventListener('click', senden);
     promptKnopf.addEventListener('click', () =>
       post('/api/gespraech', {aktion: 'prompt'}).then(d =>

@@ -35,9 +35,10 @@ def wagen_daten(waggon, ansicht=None):
 
 
 def gespraech_agenten(waggon):
-    """Namen, an die man im GitLab-Modus fragen kann: eingerichtete [agenten] und wer gerade zuhört."""
+    """Namen, an die man fragen kann: Claude (immer, auch ohne Zuhörer: dann holt eine Session mit „agent feedback“
+    ab, todo / feedback_befehl), eingerichtete [agenten] und wer gerade zuhört."""
     namen = list(KONF.get("agenten") or {})
-    if waggon.kann["committen"] and "Claude" not in namen:  # lokal ist Claude immer da (todo / feedback_befehl)
+    if "Claude" not in namen:
         namen.insert(0, "Claude")
     wer = horcht(waggon)
     return namen + ([wer] if wer and wer not in namen else [])

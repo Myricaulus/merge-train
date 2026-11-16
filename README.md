@@ -212,7 +212,9 @@ Im Kommentar-Editor gibt es neben „als Review-Kommentar“ je Agent einen Knop
 als eigene Fäden in der Review-Datei des MR und gehen **nie** nach GitLab („Review abschließen“ überspringt sie).
 „An Agent senden“ schickt die Entwürfe ab, die Antworten erscheinen als Gespräch an der Zeile.
 
-Aktiv sind die Knöpfe nur für Agenten aus `[agenten]` in der Einstellung oder wenn gerade einer zuhört (sonst ausgegraut):
+„an Claude“ gibt es immer, wie im lokalen Modus: Hört niemand zu und ist nichts eingerichtet, bleiben die Fragen
+gesendet liegen, bis eine Session sie mit `merge-train agent feedback <MR>` abholt („📨“ zeigt, was sie dann bekommt).
+Weitere Agenten kommen aus `[agenten]` in der Einstellung oder dazu, wenn gerade einer zuhört:
 
 ```toml
 [agenten]

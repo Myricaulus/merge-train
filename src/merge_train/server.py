@@ -382,14 +382,16 @@ def session_starten_aktion(anfrage, waggon):
 
 
 def prompt_aktion(anfrage, waggon):
-    """vorschau: was der Agent beim Senden bekäme; prompt: was er zuletzt bekommen hat."""
+    """vorschau: was der Agent beim Senden bekäme; prompt: was gesendet, aber noch nicht abgeholt ist, und was er
+    zuletzt bekommen hat."""
     vorher = anfrage.daten.get("aktion") == "vorschau"
     try:
-        p = [x for x in [prompt_vorschau(waggon)] if x] if vorher else prompt_lesen(waggon)
+        p = prompt_vorschau(waggon) if vorher else \
+            [dict(x, weg="wartet") for x in prompt_vorschau(waggon, entwuerfe=False)] + prompt_lesen(waggon)
     except Fehler as e:
         return {"ok": False, "text": str(e)}
     return {"ok": bool(p), "prompts": p,
-            "text": "" if p else "Kein Agent erreichbar – keine Vorschau" if vorher else "Noch nichts an den Agenten zugestellt"}
+            "text": "" if p else "Nichts zu senden – keine Entwürfe" if vorher else "Noch nichts an den Agenten gesendet"}
 
 
 GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_starten_aktion,

@@ -95,7 +95,7 @@ Zeilenangaben der Agent-Hinweise werden von `reviewed_commit` auf den MR-Stand u
 Fragen und Wünsche an einer Zeile oder allgemein; erst Entwurf, dann „senden“; Antworten, erledigen, wieder öffnen.
 Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleich).
 - Modi: lokal (Agent darf umsetzen und committen bzw. im Arbeitsstand ändern) und MR (privat, nie nach GitLab, nur
-  antworten). Mehrere Agenten (Claude, Copilot …) über `[agenten]`.
+  antworten). Claude ist immer fragbar (auch im MR ohne Zuhörer, `gespraech_agenten`), weitere Agenten (Copilot …) über `[agenten]`.
 - Fäden gehören zum Branch; andere Branches nur lesend einblendbar.
 - Ort eines Fadens: eine Zeile oder ein Bereich ab–b der neuen Seite (Umschalt-Klick, `thread --ort pfad:von-bis`); der
   Anfang wandert mit `bereich_anfang_vorwaerts` (`zeilen.py`) mit, markiert von `bereichMarkieren` (`web/review.js`).
@@ -117,7 +117,9 @@ Die Emojis wechselt ein Takt in `zug.js` (`hoererZeichen`), der Zug fragt `api/z
 Welchen Weg „senden“ nimmt, entscheidet `zustellweg`. Was beim Agenten ankam (Ausgabe von horchen/feedback,
 Startprompt), merkt sich `prompt_merken` in `<akte>.prompt` (die letzten 5, nicht in der Akte). „📨“ zeigt das, mit
 „vor dem Senden zeigen“ (`localStorage.promptVorher`) zeigt „senden“ erst `prompt_vorschau` (horchen: `faeden_abholen`
-mit `vorschau`, Entwürfe als gesendet, nichts gespeichert). Dialog: `promptDialog` (`web/review.js`).
+mit `vorschau`, Entwürfe als gesendet, nichts gespeichert; davor der Startprompt, wenn „senden“ startet oder ein todo
+anlegt) – auch ohne Agent. „📨“ zeigt davor, was gesendet, aber noch nicht abgeholt ist. Dialog: `promptDialog`
+(`web/review.js`).
 - Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt).
 - Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `agent_cli.py` (`horchen`),
   Route `api/gespraech` (`vorschau`, `prompt`), `web/hud.js`, `web/zug.js`, `web/review.js`.
