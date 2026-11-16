@@ -110,6 +110,9 @@ class Fall:
 def fall_lokal(t, port, agent=True):
     ordner = bauen(t, None)
     repo = test_repo(t)
+    for i in range(60):  # genug Dateien, dass die Liste links scrollt
+        open(os.path.join(repo, f"viele_{i:02}.txt"), "w").write("".join(f"zeile {j}\n" for j in range(30)))
+    git(repo, "add", "-A"); git(repo, "commit", "-qm", "viele Dateien")
     konfig = f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\n' + ('feedback_befehl = "true"\n' if agent else "")
     return Fall(Server(ordner, repo, port, konfig), "projekt:probe", "/probe.html", agent)
 
@@ -276,8 +279,28 @@ def teil_liste(b, f):
     b.warten_bis(f"(r => r.top >= 0 && r.bottom <= innerHeight)({sel}.getBoundingClientRect())")
 
 
+def teil_seitenleiste(b, f):
+    """Ganz oben (Bahnhof mit Himmel) passt die Dateiliste ins Fenster; selbst gescrollt bleibt sie stehen, auch wenn
+    danach die Seite ein Stück scrollt (ohne Dateiwechsel)."""
+    seite(b, f)
+    b.js("scrollTo(0, 0)")
+    time.sleep(0.3)
+    unten = b.js("[document.getElementById('liste').getBoundingClientRect().bottom, innerHeight]")
+    assert unten[0] <= unten[1], f"Liste ragt unten aus dem Fenster: {unten}"
+    if not b.js("(l => l.scrollHeight > l.clientHeight)(document.getElementById('liste'))"):
+        return  # zu wenige Dateien zum Scrollen (MR-Fall)
+    b.js("(l => l.scrollTop = l.scrollHeight)(document.getElementById('liste'))")
+    time.sleep(0.2)
+    ende = "(l => l.scrollTop + l.clientHeight)(document.getElementById('liste'))"  # wächst die Liste, sinkt scrollTop
+    vorher = b.js(ende)
+    b.js("scrollBy(0, 40)")
+    time.sleep(0.3)
+    nachher = b.js(ende)
+    assert nachher == vorher, f"Liste sprang beim Scrollen der Seite: {vorher} → {nachher}"
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
-         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste}
+         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste}
 
 
 def main():

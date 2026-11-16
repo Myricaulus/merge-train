@@ -20,11 +20,11 @@ a{color:inherit;text-decoration:none} .p{color:var(--p)} .m{color:var(--m)} .sub
 .commit b{font-weight:600} .nachricht{white-space:pre-wrap;color:var(--muted);margin-top:2px}
 .todos{margin-top:4px} .todos code{background:var(--akt);padding:1px 5px;border-radius:4px;margin-right:4px}
 .rahmen{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;padding:16px}
-.seite{position:sticky;top:calc(var(--kopfh,60px) + 16px);align-self:start;max-height:calc(100vh - var(--kopfh,60px) - 32px);
+.seite{position:sticky;top:calc(var(--kopfh,60px) + 16px);align-self:start;max-height:calc(100vh - var(--kopfh,60px) - var(--himmel-zu-sehen,0px) - 32px);
 display:flex;flex-direction:column;gap:10px;min-width:0}
 .seite>.box{flex:none;border:1px solid var(--rand);border-radius:6px;overflow:hidden;font-size:13px}
 .seite>.box>:last-child{border-bottom:0}
-#liste{flex:1 1 auto;min-height:0;overflow:auto;border:1px solid var(--rand);border-radius:6px;font-size:13px}
+#liste{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;border:1px solid var(--rand);border-radius:6px;font-size:13px}
 #liste h2{font-size:13px;margin:0;padding:6px 10px;background:var(--kopf);border-bottom:1px solid var(--rand)}
 #liste a{display:block;padding:3px 10px;border-left:3px solid transparent}
 #liste a:hover{background:var(--kopf)} #liste a.akt{background:var(--akt);border-left-color:var(--tn)}

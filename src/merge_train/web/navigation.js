@@ -32,8 +32,14 @@
       {passive: true, capture: true}
     )
   );
+  const himmel = parseFloat(getComputedStyle(kopf).getPropertyValue('--himmel')) || 0;
+  let markiert = null;
   function listeMarkieren() {
+    // ganz oben steht der Himmel des Bahnhofs noch über dem Kopf: die Seitenleiste ist um ihn kürzer
+    document.documentElement.style.setProperty('--himmel-zu-sehen', Math.max(0, himmel - scrollY) + 'px');
     const k = festeDatei != null && dateien[festeDatei] ? festeDatei : aktuelleDatei();
+    if (k === markiert) return; // Liste nur nachziehen, wenn die Datei wechselt: selbst gescrollt bleibt sie stehen
+    markiert = k;
     dateiLinks.forEach((a, j) => a.classList.toggle('akt', j === k));
     const a = dateiLinks[k],
       nav = a && a.closest('nav');
