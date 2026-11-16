@@ -34,10 +34,15 @@
     )
   );
   const himmel = parseFloat(getComputedStyle(kopf).getPropertyValue('--himmel')) || 0;
-  let markiert = null;
+  let markiert = null,
+    zuSehen = null;
+  const leiste = document.querySelector('.seite');
   function listeMarkieren() {
-    // ganz oben steht der Himmel des Bahnhofs noch über dem Kopf: die Seitenleiste ist um ihn kürzer
-    document.documentElement.style.setProperty('--himmel-zu-sehen', Math.max(0, himmel - scrollY) + 'px');
+    // ganz oben steht der Himmel des Bahnhofs noch über dem Kopf: die Seitenleiste ist um ihn kürzer. Nur an der
+    // Leiste setzen und nur bei Änderung: an <html> berechnet jede Änderung den Stil aller Elemente neu (großer
+    // Diff: ~180 000, 15 ms je Scroll-Ereignis, ruckelt beim Wegrutschen des Himmels)
+    const s = Math.max(0, himmel - scrollY);
+    if (leiste && s !== zuSehen) leiste.style.setProperty('--himmel-zu-sehen', (zuSehen = s) + 'px');
     const k = festeDatei != null && dateien[festeDatei] ? festeDatei : aktuelleDatei();
     if (k === markiert) return; // Liste nur nachziehen, wenn die Datei wechselt: selbst gescrollt bleibt sie stehen
     markiert = k;

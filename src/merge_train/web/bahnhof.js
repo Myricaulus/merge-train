@@ -67,9 +67,11 @@
     const k = document.getElementById('kopf'),
       sz = document.querySelector('.szene');
     if (k && sz) {
+      let hub = null;
       const f = () => {
-        const s = Math.min(96, Math.max(0, -k.getBoundingClientRect().top));
-        sz.style.setProperty('--hub', ((s * 36) / 96).toFixed(1) + 'px');
+        const s = Math.min(96, Math.max(0, -k.getBoundingClientRect().top)),
+          h = ((s * 36) / 96).toFixed(1);
+        if (h !== hub) sz.style.setProperty('--hub', (hub = h) + 'px'); // nur bei Änderung: weiter unten steht sie fest
       };
       addEventListener('scroll', f, {passive: true});
       f();
