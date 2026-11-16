@@ -58,8 +58,9 @@ hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Dat
   Kasten. „fertig“ und „abgeben“ (Abschnitt 15) räumen die Haken weg.
   Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
   Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
-- Dateien filtern: Klappmenü „Filter ▾“ im Titel der Dateiliste, je Häkchen abgehakte bzw. eine Endung (mit Anzahl)
-  zeigen oder ausblenden, in Liste und Diff (`ausgefiltert`), je Waggon im Browser (`filter:dateien:<id>`); j/k und die
+- Dateien filtern: im Titel der Dateiliste das Häkchen „abgehakte“ (eingeblendet klappen sie auf) und das Klappmenü
+  „Filter ▾“ mit einem Häkchen je Endung (mit Anzahl); Ausgefiltertes verschwindet aus Liste und Diff (`ausgefiltert`),
+  je Waggon im Browser (`filter:dateien:<id>`); j/k und die
   aktive Datei überspringen Ausgefiltertes, ein Sprung zu einer ausgefilterten Datei zeigt sie (`App.aufdecken`).
   Ort: `dateienFiltern` (`web/navigation.js`), nach dem Abhaken aus `hakenSetzen` (`web/diff.js`).
   Erweitern: Gruppen (etwa FE/BE nach Endungen) als weitere Zeilen im Menü.

@@ -164,7 +164,8 @@
   } catch (_) {}
 
   // ---- Filter der Dateiliste: abgehakte Dateien und Endungen ausblenden (in der Liste und im Diff), je Waggon im
-  // Browser gemerkt. Klappmenü „Filter ▾“ im Titel der Liste, je Eintrag ein Häkchen (an = gezeigt).
+  // Browser gemerkt. Im Titel der Liste: Häkchen „abgehakte“ (oft gebraucht, daher außen) und das Klappmenü „Filter ▾“
+  // mit je einem Häkchen pro Endung (an = gezeigt).
   const endung = d => {
     const n = d.dataset.pfad.split('/').pop(),
       i = n.lastIndexOf('.');
@@ -199,7 +200,24 @@
       },
       'Filter ▾'
     );
-  if (titel) titel.append(filterKnopf, menue);
+  // einmal angelegt, danach nur Zustand und Zahl: neu gebaut ginge ein Klick verloren, der gerade läuft
+  const abgehaktHaken = App.el('input', {type: 'checkbox', 'data-filter': 'abgehakt'}),
+    abgehaktZahl = App.el('span', {class: 'sub'}),
+    abgehaktHalter = App.el(
+      'label',
+      {class: 'dabgehakt', title: 'abgehakte Dateien zeigen (Haken weg: ausblenden)'},
+      abgehaktHaken,
+      ' abgehakte',
+      abgehaktZahl
+    );
+  abgehaktHaken.addEventListener('change', () => {
+    const aus = dateiFilter().filter(x => x !== 'abgehakt'),
+      an = abgehaktHaken.checked;
+    dateiFilter(an ? aus : [...aus, 'abgehakt']);
+    dateien.forEach(d => d.classList.contains('abgehakt') && (d.open = an)); // eingeblendet: auf, ausgeblendet: zu
+    dateienFiltern();
+  });
+  if (titel) titel.append(abgehaktHalter, filterKnopf, menue);
   document.addEventListener('click', e => {
     if (!menue.hidden && !e.composedPath().includes(menue)) menue.hidden = true; // Häkchen baut das Menü neu: Pfad statt contains
   });
@@ -237,25 +255,26 @@
       } else if (c.tagName === 'A' && ordner && !c.classList.contains('ausgefiltert')) ordner.classList.remove('ausgefiltert');
     });
     titel.firstChild.textContent =
-      'Dateien (' + (gezeigt < dateien.length ? gezeigt + ' von ' + dateien.length : dateien.length) + ')';
-    filterKnopf.textContent = aus.length ? 'Filter (' + aus.length + ') ▾' : 'Filter ▾';
-    filterKnopf.classList.toggle('an', aus.length > 0);
+      'Dateien (' + (gezeigt < dateien.length ? gezeigt + '/' + dateien.length : dateien.length) + ')';
+    const endAus = aus.filter(x => x !== 'abgehakt').length;
+    filterKnopf.textContent = endAus ? 'Filter (' + endAus + ') ▾' : 'Filter ▾';
+    filterKnopf.classList.toggle('an', endAus > 0);
     const abgehakt = dateien.filter(d => d.classList.contains('abgehakt')).length,
       endungen = Object.keys(zahl).sort((a, b) => zahl[b] - zahl[a] || a.localeCompare(b));
+    abgehaktHaken.checked = !aus.includes('abgehakt');
+    abgehaktZahl.textContent = ' ' + abgehakt;
     menue.replaceChildren(
-      filterZeile('abgehakt', 'abgehakte', abgehakt, aus),
-      App.el('hr'),
       ...endungen.map(e => filterZeile(e, e, zahl[e], aus)),
-      aus.length
+      endAus
         ? App.el(
             'button',
             {
               onclick: () => {
-                dateiFilter([]);
+                dateiFilter(aus.filter(x => x === 'abgehakt'));
                 dateienFiltern();
               }
             },
-            'alle zeigen'
+            'alle Endungen zeigen'
           )
         : null
     );

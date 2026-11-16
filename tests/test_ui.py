@@ -55,10 +55,19 @@ class Browser:
     def tippen(self, text):
         self.c.rufen("Input.insertText", {"text": text}, sitzung=self.s)
 
+    def taste(self, taste):
+        for art in ("keyDown", "keyUp"):
+            self.c.rufen("Input.dispatchKeyEvent", {"type": art, "key": taste, **({"text": taste} if len(taste) == 1 and art == "keyDown" else {})},
+                         sitzung=self.s)
+
     def klicken(self, selektor):
         """Echter Mausklick auf die Mitte des Elements (trifft nur, was sichtbar und nicht verdeckt ist)."""
+        # erst scrollen und zwei Frames warten: das Scrollen kann das Layout noch verschieben (Seitenleiste wird ganz
+        # oben um den Himmel kürzer), dann erst die Koordinaten nehmen
+        self.js(f"(e => e && e.scrollIntoView({{block: 'center'}}))(document.querySelector({json.dumps(selektor)}))")
+        self.js("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
         r = self.js(f"(() => {{ const e = document.querySelector({json.dumps(selektor)}); if (!e) return null;"
-                    "e.scrollIntoView({block: 'center'}); const r = e.getBoundingClientRect();"
+                    "const r = e.getBoundingClientRect();"
                     "const x = r.x + r.width / 2, y = r.y + r.height / 2, oben = document.elementFromPoint(x, y);"
                     "return [x, y, e.disabled || e.hidden, e.contains(oben) ? null : oben && oben.outerHTML.slice(0, 120)]; })()")
         if r is None:
@@ -300,8 +309,8 @@ def teil_seitenleiste(b, f):
 
 
 def teil_dateifilter(b, f):
-    """Filter der Dateiliste (Klappmenü „Filter ▾“): Endung ausblenden (Liste und Diff, nach Neuladen noch aus), j
-    springt über Ausgefiltertes, abgehakte ausblenden, „alle zeigen“."""
+    """Filter der Dateiliste: Endung im Klappmenü „Filter ▾“ ausblenden (Liste und Diff, nach Neuladen noch aus), j
+    springt über Ausgefiltertes; Häkchen „abgehakte“ außen im Titel, „alle Endungen zeigen“ lässt es stehen."""
     seite(b, f)
     b.js("Object.keys(localStorage).filter(k => k.startsWith('filter:dateien:')).forEach(k => localStorage.removeItem(k))")
     b.laden(f.srv.url(f.pfad))
@@ -313,7 +322,7 @@ def teil_dateifilter(b, f):
     lage = b.js("[document.querySelector('.dfilter-menue').getBoundingClientRect().right,"
                 " document.getElementById('liste').getBoundingClientRect().right]")
     assert lage[0] <= lage[1], f"Filtermenü ragt über die Liste hinaus nach rechts: {lage}"
-    endungen = b.js("[...document.querySelectorAll('.dfilter-menue input')].map(x => x.dataset.filter).filter(x => x !== 'abgehakt')")
+    endungen = b.js("[...document.querySelectorAll('.dfilter-menue input')].map(x => x.dataset.filter)")
     if len(endungen) < 2:
         return  # nur eine Endung (MR-Fall)
     e = endungen[0]
@@ -323,15 +332,14 @@ def teil_dateifilter(b, f):
     rest = b.js(gezeigt)
     assert rest and all(not p.lower().endswith(e) for p in rest), f"{e} nicht ausgeblendet: {rest[:5]}"
     assert b.js("[...document.querySelectorAll('#liste a')].filter(a => getComputedStyle(a).display !== 'none').length") == len(rest)
-    assert " von " in b.js("document.querySelector('#liste h2').textContent")
+    assert "/" in b.js("document.querySelector('#liste h2').textContent")
     assert "Filter (1)" in b.js("document.querySelector('#liste h2 .dfilter').textContent")
-    b.klicken("#liste h2")
+    b.taste("Escape")
     b.warten_bis("document.querySelector('.dfilter-menue').hidden")
     b.laden(f.srv.url(f.pfad))
     assert b.js(gezeigt) == rest, "Filter nach dem Neuladen vergessen"
     b.js("scrollTo(0, 0)")
-    b.c.rufen("Input.dispatchKeyEvent", {"type": "keyDown", "key": "j", "text": "j"}, sitzung=b.s)
-    b.c.rufen("Input.dispatchKeyEvent", {"type": "keyUp", "key": "j"}, sitzung=b.s)
+    b.taste("j")
     time.sleep(0.3)
     oben = b.js("(() => { const g = document.getElementById('kopf').getBoundingClientRect().bottom + 20;"
                 "return [...document.querySelectorAll('.datei')].filter(d => getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().top <= g).pop()?.dataset.pfad })()")
@@ -340,11 +348,16 @@ def teil_dateifilter(b, f):
     erste = rest[0]
     b.js(f"document.querySelector('.datei[data-pfad=\"{erste}\"] summary .haken').click()")
     b.warten_bis(f"document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
-    b.klicken("#liste h2 .dfilter")
-    b.js(haken.format("abgehakt") + ".click()")
+    b.klicken("#liste h2 .dabgehakt input")  # außen im Titel, nicht im Menü
     assert erste not in b.js(gezeigt), "abgehakte Datei nicht ausgeblendet"
-    b.js("[...document.querySelectorAll('.dfilter-menue button')].find(x => x.textContent === 'alle zeigen').click()")
-    assert b.js(gezeigt) == alle, "„alle zeigen“ zeigt nicht alles"
+    assert b.js("document.querySelector('.dfilter-menue').hidden"), "Häkchen „abgehakte“ öffnet das Menü"
+    b.klicken("#liste h2 .dfilter")  # die Endung ist seit oben noch aus
+    b.js("[...document.querySelectorAll('.dfilter-menue button')].find(x => x.textContent === 'alle Endungen zeigen').click()")
+    assert erste not in b.js(gezeigt), "„alle Endungen zeigen“ darf „abgehakte“ nicht zurücksetzen"
+    b.taste("Escape")
+    b.klicken("#liste h2 .dabgehakt input")
+    assert b.js(gezeigt) == alle, "nicht wieder alles gezeigt"
+    assert b.js(f"document.querySelector('.datei[data-pfad=\"{erste}\"]').open"), "eingeblendete abgehakte Datei nicht aufgeklappt"
     b.js(f"document.querySelector('.datei[data-pfad=\"{erste}\"] summary .haken').click()")
     b.warten_bis(f"!document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
 
