@@ -48,7 +48,8 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 nicht voll getestet sind, laufen voll. Ein Commit, der scheitert (Exit ≠ 0), zeigt die
 Fehler: beheben, wieder committen. Nicht `--no-verify`. Den Auto-Neustart und das Neuladen der Seite nicht prüfen, die
 sieht der Nutzer im HUD. Eigene Läufe nur auf Anfrage oder beim Arbeiten an den Tests selbst
-(`./testen --liste` zeigt die Auswahl, `python3 tests/test_gitlab.py <teil>` einen Teil).
+(`./testen --liste` zeigt die Auswahl, `python3 tests/test_gitlab.py <teil>` einen Teil). Die UI-Tests im echten Browser
+(`tests/test_ui.py`, Teile wie `senden`) laufen nur im pre-push (`--voll`); neue Knöpfe dort mit einem Teil abdecken.
 
 Neues Modul in `src/merge_train/`: in `MODUL_TEILE` in `testen` eintragen. Die Einzeltests rufen Funktionen beim Namen auf,
 `test_gitlab.py` über `alles_laden` auch: beim Umbenennen mitziehen. `biome lint src/merge_train/web` nicht direkt

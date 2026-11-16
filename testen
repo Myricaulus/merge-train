@@ -3,7 +3,8 @@
 
   ./testen              Änderungen gegen HEAD (Index, Arbeitsverzeichnis, neue Dateien)
   ./testen --seit REF   Änderungen seit REF (z. B. origin/main)
-  ./testen --voll       alles: ./pruefen, alle Einzeltests, alle Teile von tests/test_gitlab.py
+  ./testen --voll       alles: ./pruefen, alle Einzeltests, alle Teile von tests/test_gitlab.py, die UI-Tests
+                        (tests/test_ui.py, echter Browser – nur hier, also im pre-push, nie im pre-commit)
   ./testen --liste      nur zeigen, was laufen würde
   ./testen --push       pre-push (Zeilen von git auf stdin): jeder gepushte Commit, dessen Baum noch nicht voll getestet
                         ist, läuft --voll, und zwar genau dieser Stand (in einem Temp-Worktree, wenn er nicht der saubere
@@ -18,7 +19,7 @@ Auswahl:
                                     + die Klassen von tests/test_einheiten.py, deren Module (samt allem, was diese aus
                                       src/ importieren) sich geändert haben – automatisch aus den Imports ermittelt
                                     + die Teile von tests/test_gitlab.py laut MODUL_TEILE (unbekanntes Modul: alle)
-  • tests/…                       → die geänderte Testdatei ganz
+  • tests/…                       → die geänderte Testdatei ganz (tests/test_ui.py: nichts, läuft nur mit --voll)
   • docs/, *.md, skill/ …         → nichts
   • alles andere                  → --voll
 Ausgabe nur bei Fehlern ausführlich, sonst eine Zeile je Schritt. Exit 1 beim ersten Fehler.
@@ -153,6 +154,8 @@ def auswahl(pfade, voll):
         if p == "tests/test_einheiten.py":
             smoke = klassen_alle = True
             continue
+        if p == "tests/test_ui.py":
+            continue  # nur mit --voll (pre-push)
         if p in ("tests/test_gitlab.py", "tests/fake-glab", "bauen"):
             smoke = True; teile |= set(ALLE_TEILE)
             continue
@@ -284,6 +287,8 @@ def main():
                         [sys.executable, "tests/test_einheiten.py"] + ([] if klassen == "alle" else klassen))
             if teile:
                 schritt("test_gitlab: " + " ".join(teile), [sys.executable, "tests/test_gitlab.py", *teile], env)
+            if voll:
+                schritt("UI-Tests (Browser)", [sys.executable, "tests/test_ui.py"])
             if baum:
                 eintragen(baum)
         finally:
