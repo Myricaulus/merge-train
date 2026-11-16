@@ -44,12 +44,13 @@ Ergebnis: nicht eingecheckt, nie direkt bearbeiten. Die Tests bauen zuerst.
 ## Tests
 
 **Keine eigenen Testläufe: ändern → committen.** Der pre-commit-Hook ruft `./testen` auf, das nur prüft, was die
-Änderungen betreffen. Der pre-push-Hook (auch `git push .` von „fertig“) ruft `./testen --push` auf: Stände, die noch
+Änderungen betreffen; der erste Commit des Tages und danach höchstens alle 2 h und 5 Commits laufen voll (samt
+UI-Tests, dauert länger). Der pre-push-Hook (auch `git push .` von „fertig“) ruft `./testen --push` auf: Stände, die noch
 nicht voll getestet sind, laufen voll. Ein Commit, der scheitert (Exit ≠ 0), zeigt die
 Fehler: beheben, wieder committen. Nicht `--no-verify`. Den Auto-Neustart und das Neuladen der Seite nicht prüfen, die
 sieht der Nutzer im HUD. Eigene Läufe nur auf Anfrage oder beim Arbeiten an den Tests selbst
 (`./testen --liste` zeigt die Auswahl, `python3 tests/test_gitlab.py <teil>` einen Teil). Die UI-Tests im echten Browser
-(`tests/test_ui.py`, Teile wie `senden`) laufen nur im pre-push (`--voll`); neue Knöpfe dort mit einem Teil abdecken.
+(`tests/test_ui.py`, Teile wie `senden`) laufen nur mit `--voll` (pre-push, Takt im pre-commit); neue Knöpfe dort mit einem Teil abdecken.
 
 Neues Modul in `src/merge_train/`: in `MODUL_TEILE` in `testen` eintragen. Die Einzeltests rufen Funktionen beim Namen auf,
 `test_gitlab.py` über `alles_laden` auch: beim Umbenennen mitziehen. `biome lint src/merge_train/web` nicht direkt

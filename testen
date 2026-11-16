@@ -10,6 +10,10 @@
                         ist, läuft --voll, und zwar genau dieser Stand (in einem Temp-Worktree, wenn er nicht der saubere
                         Arbeitsstand ist). Auch `git push . claude:reviewed` („fertig“) und `git push origin reviewed:main`.
 
+Takt im pre-commit (./testen ohne Argumente): der erste Commit des Tages läuft --voll, danach erst wieder, wenn seit dem
+letzten vollen Lauf TAKT_STUNDEN vergangen und TAKT_COMMITS Commits durch sind (was später eintrifft) – damit
+Regressionen auch zwischen zwei Pushes auffallen. Stand in .git/merge-train-takt (Zeit des letzten vollen Laufs, Commits seither).
+
 Merkzettel: Ein grünes --voll auf einem sauberen Stand trägt dessen Baum (Tree-ID) in .git/merge-train-getestet ein;
 derselbe Inhalt gilt dann als getestet, egal unter welchem Commit oder Branch.
 
@@ -192,6 +196,39 @@ def eintragen(baum):
     open(merkzettel(), "w").write("\n".join((alte + [baum])[-200:]) + "\n")
 
 
+TAKT_STUNDEN, TAKT_COMMITS = 2, 5
+TAKT_VOLL = False  # main: dieser pre-commit lief nach Takt voll
+
+
+def takt_datei():
+    return os.path.join(HIER, git("rev-parse", "--git-common-dir")[0], "merge-train-takt")
+
+
+def takt_lesen():
+    """(Zeit des letzten vollen Laufs oder None, Commits seither)."""
+    try:
+        zeit, n = open(takt_datei()).read().split()
+        return float(zeit), int(n)
+    except (OSError, ValueError):
+        return None, 0
+
+
+def voll_faellig():
+    """pre-commit: Grund für einen vollen Lauf, sonst None (siehe „Takt“ oben)."""
+    zeit, n = takt_lesen()
+    if zeit is None or time.localtime(zeit)[:3] != time.localtime()[:3]:
+        return "erster Commit des Tages"
+    stunden = (time.time() - zeit) / 3600
+    if stunden >= TAKT_STUNDEN and n >= TAKT_COMMITS:
+        return f"{n} Commits und {stunden:.1f} h seit dem letzten vollen Lauf"
+    return None
+
+
+def takt_eintragen(voll):
+    zeit, n = takt_lesen()
+    open(takt_datei(), "w").write(f"{time.time()} 0\n" if voll else f"{zeit or 0} {n + 1}\n")
+
+
 def sauber():
     return not any(git("status", "--porcelain"))
 
@@ -246,6 +283,12 @@ def main():
     if "--push" in args:
         return push(sys.stdin.read().splitlines())
     voll = "--voll" in args
+    takt = not args  # pre-commit
+    grund = voll_faellig() if takt else None
+    if grund:
+        global TAKT_VOLL
+        voll = TAKT_VOLL = True
+        print(f"• {grund} → --voll")
     baum = git("rev-parse", "HEAD^{tree}")[0] if voll and sauber() else None  # vor dem Lauf: danach eintragen
     seit = args[args.index("--seit") + 1] if "--seit" in args else "HEAD"
     pfade = geaendert(seit)
@@ -299,3 +342,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    if not sys.argv[1:]:  # pre-commit grün (ein Fehler endet vorher mit Exit 1)
+        takt_eintragen(TAKT_VOLL)
