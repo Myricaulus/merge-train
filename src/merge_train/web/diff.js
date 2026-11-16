@@ -1,5 +1,5 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
-// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, melden, dateien, inlineBauen,
+// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, melden, dateien, inlineBauen,
 // dateiFesthalten, dateiLinks, wagenFuellen; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
 // direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
@@ -195,6 +195,7 @@
       const b = sichtbar('.kbox[data-id="' + i.id + '"]');
       if (!b) return false;
       const d = b.closest('.datei');
+      App.aufdecken(b);
       b.scrollIntoView({block: 'center'});
       App.dateiFesthalten(d ? dateien.indexOf(d) : null);
       blinken(b);

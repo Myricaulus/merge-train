@@ -1,7 +1,7 @@
 // Diff-Seiten: Stellwerk-HUD im Kopf (rechts neben der Schurre): Server-LED, Stand von merge-train, Zähler, wer zuhört,
 // Kontext-Füllstand der Agenten-Session. Auch auf der Startseite (Güterbahnhof, auch mit Fehler wie „kein lokaler
 // Klon“): ohne review.js fragt es selbst alle 4 s api/hud (Server, wer zuhört) und zeigt keine Zähler.
-// Braucht von App: el, kann, waggon, melden, serverWeg, review (nur Diff-Seiten). Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
+// Braucht von App: el, aufdecken, kann, waggon, melden, serverWeg, review (nur Diff-Seiten). Stellt bereit: hudZeichnen, serverLed, serverStandSetzen.
 (() => {
   const {el} = App;
   const ohneReview = {kommentare: [], hinweise: [], faeden: [], horcht: null, kontext: null};
@@ -84,7 +84,7 @@
     const ta = document.querySelector('textarea');
     if (!ta) return null;
     const hin = () => {
-      for (let d = ta.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+      App.aufdecken(ta);
       ta.scrollIntoView({block: 'center'});
       ta.focus({preventScroll: true});
     };

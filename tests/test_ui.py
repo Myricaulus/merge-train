@@ -261,8 +261,23 @@ def teil_loeschen(b, f):
     b.warten_bis(f"!{sel}")
 
 
+def teil_liste(b, f):
+    """Klick auf einen Faden in der Liste, während seine Dateibox zugeklappt ist: sie geht auf, der Faden ist zu sehen."""
+    seite(b, f)
+    neue_box(b)
+    b.tippen("Aus der Liste")
+    b.js("[...document.querySelectorAll('#ui-box button')].find(x => x.classList.contains('haupt') || x.textContent === 'an Claude').click()")
+    sel = "[...document.querySelectorAll('.kbox.gs')].find(x => x.textContent.includes('Aus der Liste'))"
+    b.warten_bis(sel)
+    b.js(f"{sel}.closest('details.datei').open = false; scrollTo(0, 0)")  # (Rechtecke meldet Chromium trotzdem)
+    b.js("[...document.querySelectorAll('.ke')].find(x => x.textContent.includes('Aus der Liste')).id = 'ui-eintrag'")
+    b.klicken("#ui-eintrag")
+    b.warten_bis(f"{sel}.closest('details.datei').open")
+    b.warten_bis(f"(r => r.top >= 0 && r.bottom <= innerHeight)({sel}.getBoundingClientRect())")
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
-         "faden": teil_faden, "loeschen": teil_loeschen}
+         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste}
 
 
 def main():

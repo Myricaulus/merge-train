@@ -25,6 +25,11 @@ App.el = (tag, attrs, ...kinder) => {
   }
   return e;
 };
+/** Zugeklappte <details> um e öffnen (Dateibox …): Chromium meldet Rechtecke auch für Zugeklapptes, scrollIntoView
+ *  allein zeigt dann nichts. */
+App.aufdecken = e => {
+  for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+};
 /** Uhrzeit (heute) bzw. Datum und Uhrzeit aus einem ISO-Zeitpunkt */
 App.uhrzeit = iso => {
   if (!iso) return '';
