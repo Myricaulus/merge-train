@@ -24,7 +24,7 @@ The page shows the name of whoever answered, opened a thread, listens or wrote a
 - **Otherwise pass `--als "<Harness> (<Model>)"`** to every `antworten`, `thread`, `kommentar`, `horchen`, `pruefen`,
   `zeigen`, e.g. `--als "Copilot (Claude Sonnet 4.5)"`, always the same string. Without a name, `thread`, `horchen` and
   `kommentar` fail with "stell dich mit --als vor". Then repeat the call with `--als`.
-- In a review JSON (agent hints, see the jira-review skill and `docs/agent-hinweise.md` in the merge-train repo) put
+- In a review JSON (agent hints, see the mr-review skill and `docs/agent-hinweise.md` in the merge-train repo) put
   the same name in the top-level field `"agent"`.
 
 ## Two rules
@@ -95,8 +95,9 @@ shows other labels, `feedback` uses these):
 The thread answer itself is German and internal; the **comment text** is for the MR author and follows the user's
 GitLab comment conventions:
 
-- Before writing it, read the rules for `text` in the jira-review skill (its SKILL.md, step 6, "`text` is the final
-  English GitLab comment", in your skills folder) and apply them, plus the repo's notes on review comments if there
+- Before writing it, read the rules for `text` in the mr-review skill (`skill/mr-review/SKILL.md` in the merge-train
+  repo, step 6, "`text` is the final GitLab comment") and apply them, together with a project skill's additions
+  (e.g. jira-review), plus the repo's notes on review comments if there
   are any (e.g. FE findings phrased as questions). They win over this summary.
 - In short: English, plain and short (usually 2–4 sentences: problem, why it matters, what to do instead), in the tone
   of the user's commit messages.

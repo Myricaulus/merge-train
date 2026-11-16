@@ -37,6 +37,17 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "  Hinweis: ~/.local/bin is
 mkdir -p "$HOME/.claude/skills"
 ln -sfn "$HIER/skill/merge-train" "$HOME/.claude/skills/merge-train"
 echo "✓ Claude-Skill: ~/.claude/skills/merge-train → $HIER/skill/merge-train"
+# mr-review (MR-Review mit Hinweisen in merge-train): optional, mit --mr-review; einmal verlinkt, bleibt er
+if [ "$1" = "--mr-review" ] || [ -L "$HOME/.claude/skills/mr-review" ]; then
+  if [ -e "$HOME/.claude/skills/mr-review" ] && [ ! -L "$HOME/.claude/skills/mr-review" ]; then
+    echo "• ~/.claude/skills/mr-review gibt es schon (kein Link) – nicht überschrieben"
+  else
+    ln -sfn "$HIER/skill/mr-review" "$HOME/.claude/skills/mr-review"
+    echo "✓ Claude-Skill: ~/.claude/skills/mr-review → $HIER/skill/mr-review"
+  fi
+else
+  echo "• Skill mr-review (MR-Review, Grundlage für eigene Review-Skills): install.idem.sh --mr-review"
+fi
 
 if [ -d "$HOME/.config/fish" ]; then
   mkdir -p "$HOME/.config/fish/completions"

@@ -1,9 +1,10 @@
-# Agent-Hinweise in merge-train (für den jira-review-Skill)
+# Agent-Hinweise in merge-train (für den mr-review-Skill)
 
 Ein Review-Agent schreibt seine Findings nach `tasks/<KEY>-review-markers.json`. merge-train zeigt sie als Hinweise
 an ihren Zeilen im MR-Diff. Im Code selbst wird nichts markiert. merge-train liest die Datei nur, schreibt sie nie und
-lädt sie neu, sobald sie sich ändert. Wie der Skill damit arbeitet, steht in `~/.claude/skills/jira-review/SKILL.md`
-(Abschnitt „Review JSON and merge-train“).
+lädt sie neu, sobald sie sich ändert. Wie ein Review-Agent damit arbeitet (Ablauf, gute Kommentartexte), steht im
+Skill [`skill/mr-review/SKILL.md`](../skill/mr-review/SKILL.md). Dieses Dokument ist die Referenz für Format und
+Ausgaben; der Skill verweist hierher statt sie zu wiederholen.
 
 ## Ablauf
 

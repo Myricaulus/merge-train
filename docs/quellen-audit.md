@@ -111,13 +111,13 @@ Sollen `agent pruefen` und `agent zeigen` GitLab gar nicht mehr fragen?
 - Vorschlag: Sie lesen den MR nur aus dem Cache. Der MR wird über die Branch-Zuordnung in den Akten unter `~/.local/share/merge-train/reviews/` gefunden, der GitLab-Stand kommt aus `meta`, dazu ein Hinweis auf das Alter der Daten.
 - Ohne Cache: eine Meldung „erst in merge-train ‚↻ MR-Daten‘ / ‚↻ MRs‘ klicken“.
 - Danach fragt nur noch der Nutzer GitLab: per Klick oder mit `merge-train <MR>` von Hand.
-- Folgen: Die Skills jira-review und merge-train sowie `docs/agent-hinweise.md` beschreiben `pruefen`/`zeigen` dann als offline. Die Warnung „GitLab steht auf …“ stützt sich dann auf den zuletzt geholten Stand.
+- Folgen: Die Skills mr-review und merge-train sowie `docs/agent-hinweise.md` beschreiben `pruefen`/`zeigen` dann als offline. Die Warnung „GitLab steht auf …“ stützt sich dann auf den zuletzt geholten Stand.
 
 ## Nebenbei erledigt / offen aus derselben Sitzung
 
 - **Erledigt:** Bereichsvergleich in `see_also` (`"diff": "pfad:von-bis"`, `line`/`end` am Eintrag). Zeilen werden von `reviewed_commit` auf den MR-Stand umgerechnet, Änderungen im Bereich erscheinen als ⚠ bzw. „Achtung“. Commit `de44115`.
 - **Erledigt:** Bei !163 / #2 hat `tasks/PROJ-32-review-markers.json` (im Klon `~/workspaces/projekt`) zwei Bereichsvergleiche: alter Handler 27–62 gegen neuen 28–62 (Prüfungen) und 66–83 gegen 124–138 (Aufbau der Antwort). Sicherung des alten Stands: `/tmp/claude-1000/-home-wsl-workspaces-merge-train/337e47f0-1904-4bdf-a023-345b67ecb612/scratchpad/PROJ-32-review-markers.vorher.json`.
 - **Offen:** Der Kommentar zu #2 (schon übernommen) übertreibt mit „repeats much of the old one“. Die Prüfungen laufen gleich ab, aber anders umgesetzt (lokale Zeitzone statt UTC, Min/Max). Das tragende Argument ist „alter Endpoint ungenutzt“. Angeboten: umformulierten Entwurf daneben legen (`merge-train agent kommentar`).
-- **Offen:** jira-review-Skill (`~/.claude/skills/jira-review/SKILL.md`, nicht im Repo).
+- **Erledigt (2026-11-16, im neuen Skill `skill/mr-review`, auf dem jira-review jetzt aufbaut):** jira-review-Skill.
   - In „Placement for ‚now unused / replaced‘“ ergänzen: Wiederholt der neue Code den alten, gehört zum alten Gegenstück ein `see_also` mit `diff` (jetzt bevorzugt als Bereichsvergleich).
   - In Schritt 4 Duplikation weiter fassen („or code that largely repeats another file“).

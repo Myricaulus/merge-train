@@ -252,7 +252,7 @@ gefragten Agenten. Für Hinweise nennt die Review-JSON den Namen im Feld `agent`
 Beim Öffnen oder Neuladen einer Seite fragt merge-train GitLab nicht. MR-Daten (Titel, Beschreibung, Branches,
 GitLab-Stand) und die MR-Liste für den Zug liegen im Cache. Geholt wird nur:
 
-- von `merge-train agent pruefen|zeigen` (macht der jira-review-Skill, wenn er den Branch aktualisiert hat) und `merge-train <MR>`,
+- von `merge-train agent pruefen|zeigen` (macht der mr-review-Skill, wenn er den Branch aktualisiert hat) und `merge-train <MR>`,
 - im **Güterbahnhof** links vom Zug: „↻ MRs“ (offene MRs, bei denen ich Reviewer oder Autor bin, dazu je MR MR-Daten,
   Entwürfe und Diskussionen, parallel, ohne die Seiten zu bauen) und „↻ MR-Daten“ (dieser MR,
   mit Antworten und Erledigt-Status der veröffentlichten Kommentare),
@@ -345,8 +345,11 @@ die Einstellungen, legt es sie an (unter WSL mit `browser = "wslview"`, wenn vor
    und `repos` setzen.
 3. Unter WSL: `sudo apt install wslu python3-pygments` (`wslview` öffnet den Windows-Browser). Der Server hört auf `127.0.0.1`,
    und WSL2 reicht `localhost` an Windows durch. Klappt das nicht, in `%UserProfile%\.wslconfig` `localhostForwarding=true` setzen.
-4. Der jira-review-Skill arbeitet mit `merge-train agent …` (Format und Ausgaben: [`docs/agent-hinweise.md`](docs/agent-hinweise.md)).
-   Im Code werden keine Marker mehr gesetzt.
+4. MR-Reviews durch einen Agenten: `install.idem.sh --mr-review` verlinkt den Skill `mr-review`
+   ([`skill/mr-review/SKILL.md`](skill/mr-review/SKILL.md)). Er bereitet den Klon vor, prüft gegen die Anforderungen
+   und schreibt die Findings als Review-JSON, die merge-train als Hinweise im MR-Diff zeigt (Format und Ausgaben:
+   [`docs/agent-hinweise.md`](docs/agent-hinweise.md)). Eigene Skills bauen darauf auf und ergänzen nur, woher die
+   Anforderungen kommen (z. B. Jira), Build-Befehle und Sprachen. So macht es `jira-review`.
 
 Python ≥ 3.8 genügt. Ohne `tomllib` (vor 3.11) liest ein einfacher Ersatzparser die Einstellungen.
 Er versteht nur `schlüssel = wert`, `[abschnitt]` und einzeilige Listen.
