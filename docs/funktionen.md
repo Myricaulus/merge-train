@@ -237,8 +237,10 @@ Module), Klassen von `tests/test_einheiten.py` (automatisch aus den Imports der 
 `tests/test_gitlab.py` (`gitlab`, `lokal`, `horchen`, `arbeitsstand`, `gemischt`). Läuft als pre-commit-Hook, `--push`
 als pre-push-Hook: jeder gepushte Stand, dessen Tree-ID nicht im Merkzettel
 `.git/merge-train-getestet` steht, läuft `--voll`, genau dieser Stand (sonst im Temp-Worktree); ein grünes `--voll` auf
-sauberem Stand trägt ein. Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
-- Ort: `testen`, `MODUL_TEILE` darin, `TEILE` in `tests/test_gitlab.py`.
+sauberem Stand trägt ein. Nur `--voll` (also pre-push): UI-Tests `tests/test_ui.py` (`senden`, `vorschau`, `zuletzt`) im
+headless Chromium über die DevTools-Pipe (`Pipe` aus `perf/cdp_messung.py`, Server und Test-Repo aus
+`werkzeug/seiten_vergleich.py`). Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
+- Ort: `testen`, `MODUL_TEILE` darin, `TEILE` in `tests/test_gitlab.py` und `tests/test_ui.py`.
 - Erweitern: neues Modul in `MODUL_TEILE` eintragen (fehlt es, laufen alle Teile); neuer Teil in `TEILE`, `ALLE_TEILE`
   und `main()` von `test_gitlab.py`. Tests rufen nie das echte `todo`/`notify-send` (Ersatz in `bin/` des Testordners).
 
