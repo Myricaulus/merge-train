@@ -265,8 +265,8 @@
     abgehaktZahl.textContent = ' ' + abgehakt;
     menue.replaceChildren(
       ...endungen.map(e => filterZeile(e, e, zahl[e], aus)),
-      endAus
-        ? App.el(
+      ...(endAus // (replaceChildren macht aus null den Text „null“)
+        ? [App.el(
             'button',
             {
               onclick: () => {
@@ -275,8 +275,8 @@
               }
             },
             'alle Endungen zeigen'
-          )
-        : null
+          )]
+        : [])
     );
     markiert = null;
     listeMarkieren();

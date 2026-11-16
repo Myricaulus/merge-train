@@ -322,6 +322,7 @@ def teil_dateifilter(b, f):
     lage = b.js("[document.querySelector('.dfilter-menue').getBoundingClientRect().right,"
                 " document.getElementById('liste').getBoundingClientRect().right]")
     assert lage[0] <= lage[1], f"Filtermenü ragt über die Liste hinaus nach rechts: {lage}"
+    assert "null" not in b.js("document.querySelector('.dfilter-menue').textContent"), "„null“ im Filtermenü"
     endungen = b.js("[...document.querySelectorAll('.dfilter-menue input')].map(x => x.dataset.filter)")
     if len(endungen) < 2:
         return  # nur eine Endung (MR-Fall)
@@ -362,6 +363,13 @@ def teil_dateifilter(b, f):
     b.warten_bis(f"!document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
 
 
+# ein null/undefined, das als Text in der Seite gelandet ist (append/replaceChildren machen daraus „null“); das Test-Repo
+# enthält die Wörter nicht
+NULL_TEXT = ("(() => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), r = [];"
+             "while (w.nextNode()) if (/^(null|undefined)$/.test(w.currentNode.nodeValue.trim()))"
+             " r.push(w.currentNode.parentElement.outerHTML.slice(0, 100)); return r.slice(0, 3); })()")
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter}
 
@@ -390,6 +398,7 @@ def main():
                     TEILE[name](b, f)
                     fehler = b.fehler()
                     assert not fehler, "JS-Fehler: " + " | ".join(fehler)
+                    assert not b.js(NULL_TEXT), "„null“/„undefined“ als Text auf der Seite: " + str(b.js(NULL_TEXT))
                     print(f"✓ {fall}:{name}")
                 except AssertionError as e:
                     gescheitert += 1
