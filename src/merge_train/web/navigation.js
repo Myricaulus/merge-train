@@ -1,6 +1,7 @@
 // Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle
-// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen. Braucht von App: zeichnen (review.js, später geladen). Stellt bereit:
-// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten.
+// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen, Filter der Liste (abgehakt, Endungen).
+// Braucht von App: el, waggon, zeichnen (review.js, später geladen). Stellt bereit:
+// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten, dateienFiltern.
 (() => {
   const dateien = [...document.querySelectorAll('.datei')], // die Dateien des Diffs (<details class="datei">)
     dateiLinks = [...document.querySelectorAll('#liste a')], // ihre Links in der Liste links
@@ -18,7 +19,7 @@
     const g = kopf.getBoundingClientRect().bottom + 20;
     let k = 0;
     dateien.forEach((d, j) => {
-      if (!d.closest('#popup') && d.getBoundingClientRect().top <= g) k = j;
+      if (!d.closest('#popup') && !d.classList.contains('ausgefiltert') && d.getBoundingClientRect().top <= g) k = j;
     });
     return k;
   }
@@ -54,9 +55,10 @@
   } // nur die Liste scrollen, nie das Fenster (sonst Rückkopplung mit dem Scroll-Event)
   addEventListener('scroll', listeMarkieren, {passive: true});
   listeMarkieren();
-  function zuDatei(k) {
+  function zuDatei(k, richtung = 1) {
     if (!dateien.length) return;
-    k = Math.max(0, Math.min(dateien.length - 1, k));
+    while (dateien[k] && dateien[k].classList.contains('ausgefiltert')) k += richtung; // ausgefilterte überspringen
+    if (!dateien[k]) return;
     dateien[k].open = true;
     dateien[k].scrollIntoView({block: 'start'});
   }
@@ -68,7 +70,7 @@
       zuDatei(dateien[k] && dateien[k].getBoundingClientRect().top > kopfHoehe() + 30 ? k : k + 1);
     } else if (e.key === 'k' || e.key === 'ArrowLeft') {
       e.preventDefault();
-      zuDatei(dateien[k] && dateien[k].getBoundingClientRect().top < kopfHoehe() - 5 ? k : k - 1);
+      zuDatei(dateien[k] && dateien[k].getBoundingClientRect().top < kopfHoehe() - 5 ? k : k - 1, -1);
     } else if (e.key === 'i') {
       if (!document.body.classList.contains('inline')) inlineBauen();
       document.body.classList.toggle('inline');
@@ -161,11 +163,111 @@
     }
   } catch (_) {}
 
+  // ---- Filter der Dateiliste: abgehakte Dateien und Endungen ausblenden (in der Liste und im Diff), je Waggon im
+  // Browser gemerkt. Klappmenü „Filter ▾“ im Titel der Liste, je Eintrag ein Häkchen (an = gezeigt).
+  const endung = d => {
+    const n = d.dataset.pfad.split('/').pop(),
+      i = n.lastIndexOf('.');
+    return i > 0 ? n.slice(i).toLowerCase() : '(ohne)';
+  };
+  const FILTER = 'filter:dateien:' + App.waggon.id;
+  function dateiFilter(neu) {
+    try {
+      if (neu) localStorage[FILTER] = JSON.stringify(neu);
+      return JSON.parse(localStorage[FILTER] || '[]');
+    } catch (_) {
+      return neu || [];
+    }
+  }
+  const liste = document.getElementById('liste'),
+    titel = liste && liste.querySelector('h2'),
+    menue = App.el('div', {class: 'dfilter-menue', hidden: ''}),
+    filterKnopf = App.el(
+      'button',
+      {
+        class: 'dfilter',
+        title: 'Dateien filtern: abgehakte, Endungen',
+        onclick: e => {
+          e.stopPropagation();
+          menue.hidden = !menue.hidden;
+          const r = filterKnopf.getBoundingClientRect(); // fest unter dem Knopf, nicht in der scrollenden Liste
+          menue.style.top = r.bottom + 4 + 'px';
+          menue.style.left = r.left + 'px';
+        }
+      },
+      'Filter ▾'
+    );
+  if (titel) titel.append(filterKnopf, menue);
+  document.addEventListener('click', e => {
+    if (!menue.hidden && !e.composedPath().includes(menue)) menue.hidden = true; // Häkchen baut das Menü neu: Pfad statt contains
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') menue.hidden = true;
+  });
+  function filterZeile(schluessel, text, anzahl, aus) {
+    const c = App.el('input', {type: 'checkbox', 'data-filter': schluessel});
+    c.checked = !aus.includes(schluessel);
+    c.addEventListener('change', () => {
+      dateiFilter(c.checked ? aus.filter(x => x !== schluessel) : [...aus, schluessel]);
+      dateienFiltern();
+    });
+    return App.el('label', {}, c, ' ' + text, App.el('span', {class: 'sub'}, ' ' + anzahl));
+  }
+  function dateienFiltern() {
+    if (!titel) return;
+    const aus = dateiFilter(),
+      zahl = {};
+    let gezeigt = 0;
+    dateien.forEach((d, i) => {
+      const e = endung(d),
+        weg = aus.includes(e) || (aus.includes('abgehakt') && d.classList.contains('abgehakt'));
+      zahl[e] = (zahl[e] || 0) + 1;
+      d.classList.toggle('ausgefiltert', weg);
+      dateiLinks[i]?.classList.toggle('ausgefiltert', weg);
+      if (!weg) gezeigt++;
+    });
+    // Ordner-Zeilen der Liste ohne gezeigte Datei darunter ausblenden
+    let ordner = null;
+    [...liste.children].forEach(c => {
+      if (c.tagName === 'DIV') {
+        ordner = c;
+        c.classList.add('ausgefiltert');
+      } else if (c.tagName === 'A' && ordner && !c.classList.contains('ausgefiltert')) ordner.classList.remove('ausgefiltert');
+    });
+    titel.firstChild.textContent =
+      'Dateien (' + (gezeigt < dateien.length ? gezeigt + ' von ' + dateien.length : dateien.length) + ')';
+    filterKnopf.textContent = aus.length ? 'Filter (' + aus.length + ') ▾' : 'Filter ▾';
+    filterKnopf.classList.toggle('an', aus.length > 0);
+    const abgehakt = dateien.filter(d => d.classList.contains('abgehakt')).length,
+      endungen = Object.keys(zahl).sort((a, b) => zahl[b] - zahl[a] || a.localeCompare(b));
+    menue.replaceChildren(
+      filterZeile('abgehakt', 'abgehakte', abgehakt, aus),
+      App.el('hr'),
+      ...endungen.map(e => filterZeile(e, e, zahl[e], aus)),
+      aus.length
+        ? App.el(
+            'button',
+            {
+              onclick: () => {
+                dateiFilter([]);
+                dateienFiltern();
+              }
+            },
+            'alle zeigen'
+          )
+        : null
+    );
+    markiert = null;
+    listeMarkieren();
+  }
+  dateienFiltern();
+
   App.dateien = dateien;
   App.dateiLinks = dateiLinks;
   App.kopfhoeheSetzen = kopfhoeheSetzen;
   App.inlineBauen = inlineBauen;
   /** Datei i in der Liste markieren und festhalten, bis der Nutzer selbst scrollt (Sprung aus der Kommentarliste) */
+  App.dateienFiltern = dateienFiltern; // nach dem Abhaken (diff.js)
   App.dateiFesthalten = i => {
     festeDatei = i;
     listeMarkieren();

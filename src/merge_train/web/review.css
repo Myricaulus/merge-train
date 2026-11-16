@@ -166,3 +166,9 @@ dialog.prompt-dialog{width:min(900px,calc(100vw - 32px));max-height:85vh;overflo
 .prompt-dialog pre{font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--kopf);border:1px solid var(--rand);border-radius:6px;padding:8px 10px;margin:4px 0 8px}
 .prompt-dialog .pd-unten{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px} .prompt-dialog .pd-unten label{margin-right:auto}
 .prompt-dialog .pd-unten button{font:13px system-ui,sans-serif;padding:3px 10px;border-radius:6px;border:1px solid var(--tn);background:var(--bg);color:var(--tn);cursor:pointer} .prompt-dialog .pd-senden{background:var(--tn)!important;color:var(--bg)!important}
+.datei.ausgefiltert,#liste .ausgefiltert{display:none}
+#liste h2{position:sticky;top:0;z-index:1} #liste h2 .dfilter{float:right;font:11px system-ui,sans-serif;padding:0 6px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--muted);cursor:pointer}
+#liste h2 .dfilter.an{border-color:var(--tn);color:var(--tn);font-weight:600}
+.dfilter-menue{position:fixed;z-index:20;display:flex;flex-direction:column;gap:2px;min-width:150px;max-height:60vh;overflow:auto;padding:6px 10px;background:var(--bg);border:1px solid var(--rand);border-radius:6px;box-shadow:0 6px 16px rgba(0,0,0,.2);font-weight:400}
+.dfilter-menue[hidden]{display:none} .dfilter-menue label{white-space:nowrap;cursor:pointer} .dfilter-menue hr{border:0;border-top:1px solid var(--rand);margin:3px 0;width:100%}
+.dfilter-menue button{margin-top:4px;font:12px system-ui,sans-serif;padding:1px 8px;border:1px solid var(--rand);border-radius:4px;background:var(--bg);color:var(--tn);cursor:pointer}

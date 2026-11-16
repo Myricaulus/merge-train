@@ -58,11 +58,16 @@ hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Dat
   Kasten. „fertig“ und „abgeben“ (Abschnitt 15) räumen die Haken weg.
   Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
   Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
+- Dateien filtern: Klappmenü „Filter ▾“ im Titel der Dateiliste, je Häkchen abgehakte bzw. eine Endung (mit Anzahl)
+  zeigen oder ausblenden, in Liste und Diff (`ausgefiltert`), je Waggon im Browser (`filter:dateien:<id>`); j/k und die
+  aktive Datei überspringen Ausgefiltertes, ein Sprung zu einer ausgefilterten Datei zeigt sie (`App.aufdecken`).
+  Ort: `dateienFiltern` (`web/navigation.js`), nach dem Abhaken aus `hakenSetzen` (`web/diff.js`).
+  Erweitern: Gruppen (etwa FE/BE nach Endungen) als weitere Zeilen im Menü.
 - Kontext zwischen Hunks nachladen (▼ 20 / ▲ 20 / alle), auch dort kommentierbar.
 - Boxen (Kommentare, Hinweise, Fäden) unter ihrer Zeile: inline über die ganze Breite, nebeneinander auf der Seite ihres
   Orts (neue Zeile rechts, nur alte links), `einfuegen` (`web/review.js`). Eine Box mit offenem Eingabefeld zeichnet
   `zeichnen` nicht neu; `feldMitnehmen` verschiebt sie beim Umschalten (i) samt Text in die sichtbare Tabelle. Neue,
-  leere Felder gehen beim Wegklicken zu.
+  leere Felder gehen bei einem Klick außerhalb ihres Rahmens zu.
 - Große und generierte Dateien erst auf Klick, automatisch, wenn ein Kommentar darin liegt.
 - Achsen: Dateiart (generiert/groß), Darstellung (nebeneinander/inline).
 - Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/navigation.js`, `web/diff.js`; Routen `api/zeilen`, `api/datei`.

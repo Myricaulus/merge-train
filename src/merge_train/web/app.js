@@ -25,9 +25,17 @@ App.el = (tag, attrs, ...kinder) => {
   }
   return e;
 };
-/** Zugeklappte <details> um e öffnen (Dateibox …): Chromium meldet Rechtecke auch für Zugeklapptes, scrollIntoView
- *  allein zeigt dann nichts. */
+/** e sichtbar machen: zugeklappte <details> darum öffnen (Dateibox …; Chromium meldet Rechtecke auch für Zugeklapptes,
+ *  scrollIntoView allein zeigt dann nichts) und eine ausgefilterte Datei wieder zeigen (bis zum nächsten Filtern). */
 App.aufdecken = e => {
+  const d = e.closest('.datei.ausgefiltert');
+  if (d) {
+    d.classList.remove('ausgefiltert');
+    let a = document.querySelector('#liste a[href="#' + d.id + '"]'); // ihr Link und die Ordner-Zeile darüber
+    a?.classList.remove('ausgefiltert');
+    while (a && a.tagName !== 'DIV') a = a.previousElementSibling;
+    a?.classList.remove('ausgefiltert');
+  }
   for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
 };
 /** Uhrzeit (heute) bzw. Datum und Uhrzeit aus einem ISO-Zeitpunkt */

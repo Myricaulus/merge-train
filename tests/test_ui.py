@@ -299,8 +299,55 @@ def teil_seitenleiste(b, f):
     assert nachher == vorher, f"Liste sprang beim Scrollen der Seite: {vorher} → {nachher}"
 
 
+def teil_dateifilter(b, f):
+    """Filter der Dateiliste (Klappmenü „Filter ▾“): Endung ausblenden (Liste und Diff, nach Neuladen noch aus), j
+    springt über Ausgefiltertes, abgehakte ausblenden, „alle zeigen“."""
+    seite(b, f)
+    b.js("Object.keys(localStorage).filter(k => k.startsWith('filter:dateien:')).forEach(k => localStorage.removeItem(k))")
+    b.laden(f.srv.url(f.pfad))
+    haken = "document.querySelector('.dfilter-menue input[data-filter=\"{}\"]')"
+    gezeigt = "[...document.querySelectorAll('.datei')].filter(d => !d.closest('#popup') && getComputedStyle(d).display !== 'none').map(d => d.dataset.pfad)"
+    alle = b.js(gezeigt)
+    b.klicken("#liste h2 .dfilter")
+    b.warten_bis("!document.querySelector('.dfilter-menue').hidden")
+    endungen = b.js("[...document.querySelectorAll('.dfilter-menue input')].map(x => x.dataset.filter).filter(x => x !== 'abgehakt')")
+    if len(endungen) < 2:
+        return  # nur eine Endung (MR-Fall)
+    e = endungen[0]
+    b.js(haken.format(e) + ".id = 'ui-filter'")
+    b.klicken("#ui-filter")
+    assert b.js("!document.querySelector('.dfilter-menue').hidden"), "Menü schließt beim Klick auf ein Häkchen"
+    rest = b.js(gezeigt)
+    assert rest and all(not p.lower().endswith(e) for p in rest), f"{e} nicht ausgeblendet: {rest[:5]}"
+    assert b.js("[...document.querySelectorAll('#liste a')].filter(a => getComputedStyle(a).display !== 'none').length") == len(rest)
+    assert " von " in b.js("document.querySelector('#liste h2').textContent")
+    assert "Filter (1)" in b.js("document.querySelector('#liste h2 .dfilter').textContent")
+    b.klicken("#liste h2")
+    b.warten_bis("document.querySelector('.dfilter-menue').hidden")
+    b.laden(f.srv.url(f.pfad))
+    assert b.js(gezeigt) == rest, "Filter nach dem Neuladen vergessen"
+    b.js("scrollTo(0, 0)")
+    b.c.rufen("Input.dispatchKeyEvent", {"type": "keyDown", "key": "j", "text": "j"}, sitzung=b.s)
+    b.c.rufen("Input.dispatchKeyEvent", {"type": "keyUp", "key": "j"}, sitzung=b.s)
+    time.sleep(0.3)
+    oben = b.js("(() => { const g = document.getElementById('kopf').getBoundingClientRect().bottom + 20;"
+                "return [...document.querySelectorAll('.datei')].filter(d => getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().top <= g).pop()?.dataset.pfad })()")
+    assert oben in rest, f"j landete auf {oben}"
+    # abgehakte ausblenden, dann „alle zeigen“
+    erste = rest[0]
+    b.js(f"document.querySelector('.datei[data-pfad=\"{erste}\"] summary .haken').click()")
+    b.warten_bis(f"document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
+    b.klicken("#liste h2 .dfilter")
+    b.js(haken.format("abgehakt") + ".click()")
+    assert erste not in b.js(gezeigt), "abgehakte Datei nicht ausgeblendet"
+    b.js("[...document.querySelectorAll('.dfilter-menue button')].find(x => x.textContent === 'alle zeigen').click()")
+    assert b.js(gezeigt) == alle, "„alle zeigen“ zeigt nicht alles"
+    b.js(f"document.querySelector('.datei[data-pfad=\"{erste}\"] summary .haken').click()")
+    b.warten_bis(f"!document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
-         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste}
+         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter}
 
 
 def main():

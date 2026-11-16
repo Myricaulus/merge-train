@@ -1,5 +1,5 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
-// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, melden, dateien, inlineBauen,
+// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, inlineBauen,
 // dateiFesthalten, dateiLinks, wagenFuellen; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
 // direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
@@ -167,7 +167,7 @@
       };
     if (x.datei != null && dateien[x.datei] && z) {
       const d = dateien[x.datei];
-      d.open = true;
+      App.aufdecken(d);
       if (d.querySelector('.spaet')) return dateiLaden(d).then(ok => (ok ? zeileZeigen(x, ohnePopup) : sonst()));
       const tab = d.querySelector(document.body.classList.contains('inline') ? 'table.inl' : 'table.sbs'),
         r = tab && zeileFinden(tab, x.a, x.b);
@@ -714,6 +714,7 @@
       d.classList.toggle('abgehakt', ab.has(d.dataset.pfad));
       App.dateiLinks[i]?.classList.toggle('abgehakt', ab.has(d.dataset.pfad));
     });
+    App.dateienFiltern();
     App.wagenFuellen(r.fuellung);
   }
   if (location.protocol.startsWith('http') && !nurLesen) {
