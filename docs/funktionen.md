@@ -134,10 +134,13 @@ mit Urteil geht Abschließen auch ohne Kommentare, das Urteil gilt nur für ein 
 ### 11. Agent-Hinweise (drafts)
 Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt die Einträge an ihrer Zeile (needle,
 `=`, `line`), mit Details, Status und Siehe-auch. Übernehmen, anpassen & übernehmen, verwerfen. `agent pruefen`
-(auch `--seit` für Review-Updates), `agent zeigen`, `agent kommentar` (draft ändern bzw. neuen daneben).
+(auch `--seit` für Review-Updates), `agent zeigen`, `agent kommentar` (draft ändern bzw. neuen daneben), `agent
+kommentare` (lesen: drafts, staged/sent, GitLab-Diskussionen; `kommentare_teile`, auch für den Zusatz „am MR: …“ zu
+„(nichts offen)“ in `feedback`).
 - Wer: Feld `agent` der JSON bzw. des Markers, sonst der Agent von `pruefen`/`zeigen` (Akte `hinweis_agenten`); geht
   beim Übernehmen in den Kommentar mit.
-- Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`--mr`, Feld `mr`, Branch).
+- Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`--mr`, Feld `mr`, Branch; Projekt aus cwd und Repo der
+  JSON: `mr_fuer_hinweise`).
 - Ort: `hinweise.py`, `agent_cli.py`, `hinweis_aktion` (`review.py`), Route `api/hinweis`. Format: `docs/agent-hinweise.md`.
 
 ### 12. GitLab-Diskussionen lesen und beantworten

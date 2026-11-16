@@ -147,6 +147,13 @@ EOF
 You can open threads too, e.g. after implementing something: points the user should check, decisions you made
 on your own, open questions. The user answers on the page; the answers reach you via `feedback`/`horchen` as usual.
 
+Before adding your own remarks to a MR (threads or new review hints), read what is already commented there, so nothing
+ends up twice. `feedback` only shows threads; a comment the user wrote without a thread does not appear there:
+
+```sh
+merge-train agent kommentare [MR]   # drafts, staged/sent comments and GitLab discussions with place, stage, id, text (read only)
+```
+
 ```sh
 merge-train agent thread --ort <pfad>:<zeile> "Text"      # at a code line (current state, see the header of feedback)
 merge-train agent thread --ort <pfad>:<von>-<bis> "Text"  # at a range of lines (one --ort per thread; --siehe/--vergleich repeatable)

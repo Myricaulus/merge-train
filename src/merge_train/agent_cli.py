@@ -57,7 +57,7 @@ def gespraech_ziele(name=None):
     ordner = name or os.getcwd()
     if name and not os.path.isdir(ordner):
         ordner = projekt_ordner(name)
-    wurzel = (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() if os.path.isdir(ordner) else ""
+    wurzel = repo_wurzel(ordner)
     if not wurzel:
         raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
     ziele = [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
@@ -168,6 +168,16 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None, waggon=None):
     return "\n".join(out)
 
 
+def am_mr(waggon):
+    """Zusatz zu „(nichts offen)“: keine Fäden heißt nicht, dass am MR nichts kommentiert ist."""
+    if not waggon.kann["review"]:
+        return ""
+    try:
+        return f" · am MR: {kommentare_zahl(review_daten(waggon))} – merge-train agent kommentare {waggon.id}"
+    except Fehler:
+        return ""
+
+
 def faeden_abholen(ziele, alle=False, markieren=True):
     """Text mit allen Fäden des aktuellen Branches, die auf den Agenten warten (alle: auch beantwortete). Markiert
     Nachrichten als abgeholt."""
@@ -189,7 +199,7 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
             if len(ziele) == 1:
-                teile.append(kopf + "\n(nichts offen)")
+                teile.append(kopf + "\n(nichts offen)" + am_mr(waggon))
             continue
         gesamt += len(zeigen)
         review = None
@@ -209,6 +219,59 @@ def faeden_abholen(ziele, alle=False, markieren=True):
             teile.append('Faden „HÄNGT AN“ einem Kommentar: merge-train agent kommentar <Faden-id> "Text" ändert genau diesen '
                          'und erledigt den Faden – keine Antwort im Faden, außer der Nutzer will etwas erklärt haben')
     return "\n".join(teile) or "(nichts offen)", gesamt
+
+
+def ort_kurz(x):
+    """Ort eines Kommentars, Hinweises oder einer Diskussion: pfad:zeile, pfad:-alt (gelöschte Zeile) oder allgemein."""
+    if not x.get("path"):
+        return "allgemein"
+    return x["path"] + (f':{x["b"]}' if x.get("b") else f':-{x["a"]} (alt)' if x.get("a") else "")
+
+
+def kommentare_teile(review):
+    """Was am MR schon kommentiert ist: drafts (offene Agent-Hinweise), staged/sent Review-Kommentare und
+    GitLab-Diskussionen (Stand des letzten „MR-Daten“) – je [(Kopf, Text)]."""
+    drafts = [(f'{ort_kurz(h)} · {n} ({st})', t) for h in review["hinweise"] if h["status"] == "offen"
+              for n, st, t in [kommentar_beschreiben("h", h)]]
+    eigene = [(f'{ort_kurz(k)} · {n} ({st})' + (" – Antwort auf Diskussion " + str(k["antwort_auf"]) if k.get("antwort_auf") else ""), t)
+              for k in review["kommentare"] if k["status"] != "loeschen" for n, st, t in [kommentar_beschreiben("k", k)]]
+    disk = []
+    for d in review["diskussionen"]:
+        wer = f'eigener Kommentar {d["kommentar"]}' if d.get("kommentar") else "GitLab-Diskussion"
+        verlauf = "\n".join(f'{m.get("wer") or ("du" if m["von"] == "ich" else "?")}'
+                            f'{"" if m.get("gesendet") else " (Antwort, " + K_STATUS.get(m.get("stufe"), "staged") + ")"}: {m["text"]}'
+                            for m in d["nachrichten"])
+        disk.append((f'{ort_kurz(d)} · {wer} · Diskussion {d["diskussion"]} ({d["stand"]})', verlauf))
+    return {"draft": drafts, "staged/sent": eigene, "GitLab-Diskussionen": disk}
+
+
+def kommentare_zahl(review):
+    """Kurz für Kopfzeilen: „1 draft, 2 staged/sent, 0 GitLab-Diskussionen“."""
+    return ", ".join(f"{len(v)} {k}" for k, v in kommentare_teile(review).items())
+
+
+def kommentare_ausgeben(ziele):
+    """agent kommentare: alles, was an den MRs schon kommentiert ist, mit Ort, Stufe, id und Text (nur lesen)."""
+    teile = []
+    for waggon in ziele:
+        if not waggon.kann["review"]:
+            continue
+        try:
+            review = review_daten(waggon)
+        except Fehler as e:
+            teile.append(f"merge-train · {waggon.name} · Kommentare nicht lesbar: {e}"); continue
+        gruppen = kommentare_teile(review)
+        teile.append(f"merge-train · {waggon.name} · MR {waggon.id} · {kommentare_zahl(review)}")
+        for name, eintraege in gruppen.items():
+            if eintraege:
+                teile.append(f"\n{name}:")
+                teile += [f"  {kopf}\n    " + text.replace("\n", "\n    ") for kopf, text in eintraege]
+        teile.append("")
+    if not teile:
+        return "(kein MR zu diesem Repo – merge-train agent kommentare <MR>)"
+    teile.append('Umformulieren: merge-train agent kommentar <h:key | Kommentar-id> "Text" (legt bei staged/sent einen neuen '
+                 'draft daneben an). GitLab-Diskussionen: Stand des letzten „↻ MR-Daten“.')
+    return "\n".join(teile)
 
 
 def umformulieren_ziel_finden(ziel, ziele=None):
@@ -483,23 +546,51 @@ def faeden_horchen(ziele, timeout=0, als=None):
     return "merge-train: keine neuen Nachrichten (Zeit abgelaufen)", 0
 
 
-def mr_fuer_hinweise(pfad, daten, ref=None):
-    """Zu welchem MR gehört die Hinweis-Datei? --mr, sonst Feld „mr“, sonst offener MR des Branches."""
-    ordner = (git(os.path.dirname(pfad), "rev-parse", "--show-toplevel", check=False) or "").strip() \
-        or os.path.dirname(pfad)
+def repo_wurzel(ordner):
+    """Oberster Ordner des Git-Repos, in dem ordner liegt, sonst None."""
+    return (git(ordner, "rev-parse", "--show-toplevel", check=False) or "").strip() or None if os.path.isdir(ordner) else None
+
+
+def mr_fuer_hinweise(pfad, daten, ref=None, cwd=None):
+    """Zu welchem MR gehört die Hinweis-Datei? --mr, sonst Feld „mr“, sonst der offene MR des Branches. Das Projekt
+    (für „!42“ und die Branch-Suche) kommt aus dem Repo, in dem der Agent arbeitet (cwd), sonst aus dem Repo der Datei
+    – sie liegt z. B. im tasks/ eines anderen Repos. Sind es zwei Repos, wird in beiden gesucht; hat jedes einen MR zum
+    Branch, ist das ein Fehler (--mr). Rückgabe (mr, ordner): ordner = das Repo, dessen origin zum MR passt."""
+    kandidaten = list(dict.fromkeys(r for r in (repo_wurzel(cwd or os.getcwd()), repo_wurzel(os.path.dirname(pfad))) if r))
+    if not kandidaten:
+        kandidaten = [os.path.dirname(pfad)]
+    projekte = {}
+    for o in kandidaten:
+        try:
+            projekte[o] = remote_info(o)
+        except Fehler:
+            pass
     ref = ref or daten.get("mr")
     if ref:
-        mr = mr_vollstaendig(mr_ref(str(ref), ordner))
+        mr = mr_vollstaendig(mr_ref(str(ref), next(iter(projekte), kandidaten[0])))
     else:
         branch = daten.get("branch")
         if not branch:
             raise Fehler("kein MR zuzuordnen: --mr angeben oder „branch“/„mr“ in die JSON schreiben")
-        host, projekt = remote_info(ordner)
-        lst = glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}")
-        if not lst:
-            raise Fehler(f"kein offener MR für Branch {branch} in {projekt} – --mr angeben")
-        mr = mr_ref(lst[0]["web_url"])
-        mr = mr._replace(host=mr.host or host)
+        if not projekte:
+            raise Fehler(f"kein GitLab-Remote „origin“ in {', '.join(kurzpfad(o) for o in kandidaten)} – --mr angeben")
+        treffer, fehler = [], []
+        for host, projekt in dict.fromkeys(projekte.values()):
+            try:
+                lst = glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}")
+            except Fehler as e:  # z. B. ein cwd mit GitHub-Remote: das andere Repo kann trotzdem passen
+                fehler.append(f"{projekt}: {e}"); continue
+            treffer += [m._replace(host=m.host or host) for m in (mr_ref(x["web_url"]) for x in lst or [])]
+        if not treffer:
+            gesucht = ", ".join(p for _, p in dict.fromkeys(projekte.values()))
+            raise Fehler(f"kein offener MR für Branch {branch} in {gesucht}"
+                         + "".join(f"\n  Abfrage gescheitert – {f}" for f in fehler) + "\n--mr angeben")
+        treffer = list(dict.fromkeys(treffer))
+        if len(treffer) > 1:
+            raise Fehler(f"mehrere offene MRs für Branch {branch}: {', '.join(f'{m.projekt}!{m.iid}' for m in treffer)} "
+                         "– --mr angeben oder „mr“ in die JSON schreiben")
+        mr = treffer[0]
+    ordner = next((o for o, (_, p) in projekte.items() if p.lower() == (mr.projekt or "").lower()), kandidaten[0])
     return mr, ordner
 
 
@@ -535,6 +626,12 @@ def agent_parser():
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: aus der Umgebung erkannt, sonst der gefragte Agent)")
     p.set_defaults(aufruf=befehl_antworten)
+    p = sub.add_parser("kommentare", help="GitLab-Kommentare eines MR lesen (draft, staged/sent, Diskussionen)",
+                       description="Alles, was am MR schon kommentiert ist: drafts (Agent-Hinweise), staged/sent "
+                                   "Review-Kommentare und GitLab-Diskussionen, je mit Ort, Stufe, id und Text. Nur lesen, "
+                                   "fragt GitLab nicht. Vor eigenen Anmerkungen aufrufen, damit nichts doppelt entsteht.")
+    p.add_argument("projekt", nargs="?", help="MR (Kennung/URL/gruppe/projekt!42) oder Projektordner; Standard: die MRs des aktuellen Repos")
+    p.set_defaults(aufruf=lambda o: print(kommentare_ausgeben(gespraech_ziele(o.projekt))) or 0)
     p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (draft ändern, sonst neuer draft)",
                        description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines drafts (noch nicht übernommener "
                                    "Agent-Hinweis) ändert dessen text in der JSON; eine Kommentar-id (staged/sent) oder Faden-id legt "

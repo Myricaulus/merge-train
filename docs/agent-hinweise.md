@@ -98,9 +98,16 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
 
 1. `--mr <URL | !42 | gruppe/projekt!42>` auf der Kommandozeile
 2. sonst Feld `"mr"` auf oberster Ebene der JSON
-3. sonst der offene MR, dessen Quell-Branch gleich `"branch"` ist (Projekt aus `git remote get-url origin`)
+3. sonst der offene MR, dessen Quell-Branch gleich `"branch"` ist
 
+Das Projekt (für `!42` und die Suche nach dem Branch) kommt aus `git remote get-url origin` des Repos, in dem der Agent
+arbeitet (cwd), sonst aus dem Repo, in dem die JSON liegt. Sind das zwei verschiedene Repos, sucht `pruefen` den Branch
+in beiden. Haben beide einen offenen MR zu dem Branch, bricht es mit „mehrere offene MRs“ ab, statt einen zu raten.
 Gibt es zum Branch mehrere offene MRs oder heißt der Branch anders: Feld `"mr"` setzen.
+
+**Repo ohne eigenes `tasks/`** (z. B. ein Submodul-Repo wie server-components): Die JSON kommt nach `tasks/` des Repos, in
+dem die Story geführt wird. Darin steht `"mr": "gruppe/projekt!17"` bzw. die MR-URL, und `pruefen`/`zeigen` laufen aus
+dem Klon des MR-Repos. Der Klon gilt dann als lokaler Klon des MR.
 
 ## Was der Nutzer in merge-train damit macht
 

@@ -224,6 +224,7 @@ es auch ohne):
 merge-train agent feedback gitlab.example.com/gruppe/projekt/42   # oder im Klon: merge-train agent feedback
 merge-train agent antworten <id> "…"
 merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "…"   # GitLab-Kommentar umformulieren (siehe unten)
+merge-train agent kommentare [MR]                                  # lesen: was am MR schon kommentiert ist
 merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   # Seite zeigt „🎧 Copilot hört zu“
 ```
 

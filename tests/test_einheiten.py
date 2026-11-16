@@ -6,7 +6,7 @@ Aufruf:  python3 tests/test_einheiten.py [Klasse …]     (vor tests/test_gitlab
 Für Zeilen-Arithmetik, Diff-Zerlegung und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an. Akten liegen
 im Temp-Ordner (XDG_DATA_HOME), GitLab ersetzt ein Fake für review.glab.
 """
-import contextlib, glob, io, os, subprocess, sys, tempfile, threading, unittest
+import contextlib, glob, io, os, subprocess, sys, tempfile, threading, unittest, urllib.parse
 
 T = tempfile.mkdtemp(prefix="merge-train-einheiten-")
 open(f"{T}/leer.toml", "w").close()
@@ -786,6 +786,30 @@ class AktualisierenTest(unittest.TestCase):
         self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu2, anders), "abweichend")
         with self.assertRaises(Fehler):
             branch_pushen(self.klon, "mr", anders)
+
+    def test_mr_fuer_hinweise(self):
+        """Vorfall 2026-11-16: JSON im tasks/ eines anderen Repos – das Projekt kommt aus dem cwd, gesucht wird in
+        beiden Repos; haben beide einen MR zum Branch, ist das ein Fehler statt des falschen MR."""
+        from unittest import mock
+        from merge_train import agent_cli
+        self.g("remote", "set-url", "origin", "git@gitlab.example:gruppe/kern/server.git", ort=self.klon)
+        self.g("init", "-q", f"{self.d}/projekt", ort=self.d)
+        self.g("remote", "add", "origin", "git@gitlab.example:gruppe/projekt/quelle.git", ort=f"{self.d}/projekt")
+        os.makedirs(f"{self.d}/projekt/tasks"); pfad = f"{self.d}/projekt/tasks/K-1-review-markers.json"
+        mrs = {"gruppe/kern/server": 17}
+        def glab(host, weg):
+            projekt = urllib.parse.unquote(weg.split("/")[1])
+            return [{"web_url": f"https://{host}/{projekt}/-/merge_requests/{mrs[projekt]}"}] if projekt in mrs else []
+        with mock.patch.object(agent_cli, "glab", glab):
+            mr, ordner = agent_cli.mr_fuer_hinweise(pfad, {"branch": "K-1"}, cwd=self.klon)
+            self.assertEqual((mr.projekt, mr.iid, os.path.realpath(ordner)), ("gruppe/kern/server", 17, os.path.realpath(self.klon)))
+            mr, _ = agent_cli.mr_fuer_hinweise(pfad, {"mr": "!3"}, cwd=self.klon)
+            self.assertEqual((mr.projekt, mr.iid), ("gruppe/kern/server", 3))  # „!3“ im Projekt des cwd
+            mrs["gruppe/projekt/quelle"] = 165
+            with self.assertRaisesRegex(Fehler, "mehrere offene MRs.*server!17.*source!165"):
+                agent_cli.mr_fuer_hinweise(pfad, {"branch": "K-1"}, cwd=self.klon)
+            mr, ordner = agent_cli.mr_fuer_hinweise(pfad, {"branch": "K-1"}, cwd=f"{self.d}/projekt")
+            self.assertEqual((mr.iid, os.path.realpath(ordner)), (165, os.path.realpath(f"{self.d}/projekt")))  # nur ein Repo
 
     def test_aktion(self):
         neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
