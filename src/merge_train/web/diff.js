@@ -361,7 +361,7 @@
         : null
     );
   }
-  /** Stand eines Eintrags; Klick, wo App.fadenErledigen es erlaubt (KI-Thread erledigen, Diskussion abwarten). */
+  /** Stand eines Eintrags; Klick, wo App.fadenErledigen es erlaubt (erledigen, GitLab-Diskussion in GitLab). */
   function standKnopf(id, i) {
     const [zeichen, klasse, titel] = standZeichen(i.st),
       klick = id !== 'kliste' && App.fadenErledigen(i.x, true);

@@ -144,7 +144,8 @@ Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt d
 Holt Diskussionen zu MRs: Antworten und Erledigt-Status an eigenen Kommentaren, fremde Diskussionen nur lesend an der
 Zeile und in einer Liste. „↩ antworten“: sofort senden oder als lokaler Entwurf, den „Review abschließen“ als
 Draft-Antwort anlegt. „☑ abwarten“ (`abhaken`, nur in der Akte) gibt den Ball ohne Antwort ab, bis ein anderer
-danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion in GitLab auf. Stand: `diskussion_stand`.
+danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion gleich in GitLab auf, wie ein KI-Thread
+erledigt wird – auch per Klick auf das Zeichen in der Liste (`fadenErledigen`). Stand: `diskussion_stand`.
 - Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
   (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
 - Liste links: siehe Baustein „Liste links über den Dateien“.
@@ -268,7 +269,8 @@ Jeder Eintrag hat zwei Achsen, beide vom Server berechnet:
   jemand von außen, ist man wieder `dran`.
 - Waggon „fertig“ (grüner Rahmen): kein `entwurf`, kein `dran`, kein `gitlab_entwurf` mehr. `wartet` hält nicht auf.
   Die Marke „● n dran“ zählt die Diskussionen, in denen du dran bist.
-- Klick auf das Zeichen in der Liste nur, wo es eine Aktion gibt: KI-Thread erledigen, Diskussion in `dran` abwarten.
+- Klick auf das Zeichen in der Liste nur, wo es eine Aktion gibt: erledigen (KI-Thread lokal, lösbare Diskussion gleich
+  in GitLab), nicht lösbare Diskussion in `dran` abwarten.
 - Filterknöpfe je Liste nur für die Stände, die dort vorkommen können (`LISTEN_STATI`), auch bei 0.
 
 **Ort**: `STAENDE`, `WER`, `faden_stand`, `diskussion_stand`, `kommentar_stand`, `hinweis_stand`, `diskussionen_stand`

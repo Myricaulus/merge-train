@@ -428,14 +428,17 @@
   const ABWARTEN_TITEL =
     'nichts zu tun: Ball abgeben, ohne zu antworten – schreibt danach jemand, bist du wieder dran; ' +
     'in GitLab bleibt die Diskussion offen';
-  /** Klick auf das Zeichen in der Liste links: KI-Thread erledigen, GitLab-Diskussion abwarten (geschlossen wird in
-   *  GitLab nur per Knopf). Rückgabe null: in diesem Stand kein Klick. */
+  /** Klick auf das Zeichen in der Liste links: erledigen wie beim KI-Thread, eine GitLab-Diskussion gleich in GitLab
+   *  (nur lösbare; nicht lösbare in „dran“ abwarten). Rückgabe null: in diesem Stand kein Klick. */
   function fadenErledigen(k, nurPruefen) {
-    const aktion =
-      k.ziel === 'gitlab' ? (k.stand === 'dran' ? 'abhaken' : null) : k.stand !== 'erledigt' ? 'erledigt' : null;
-    if (!aktion || nurPruefen) return aktion && (aktion === 'abhaken' ? '☑ abwarten' : 'als erledigt markieren');
+    const gl = k.ziel === 'gitlab',
+      aktion =
+        (!gl || k.loesbar) && k.stand !== 'erledigt' ? 'erledigt' : gl && k.stand === 'dran' ? 'abhaken' : null;
+    if (!aktion || nurPruefen)
+      return aktion && TITEL_ERLEDIGEN[aktion === 'abhaken' ? 'abhaken' : gl ? 'gitlab' : 'faden'];
     return ziel(k)({aktion});
   }
+  const TITEL_ERLEDIGEN = {faden: 'als erledigt markieren', gitlab: 'in GitLab erledigen', abhaken: '☑ abwarten'};
   /** Eine Nachricht im Verlauf: Kopf (wer, wann, ✓/✓✓ bzw. Entwurf mit ✎/🗑) und Text mit Code-Links. */
   function nachrichtBox(k, m, wer, offen, senden) {
     const ich = m.von === 'ich',
