@@ -1,7 +1,7 @@
 """merge-train agent …: die Befehle für den Agenten (feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
 import argparse, hashlib, json, os, re, subprocess, sys, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, KONF, ersetzen, jetzt, melden, projektname
+from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, SKRIPT, ersetzen, jetzt, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
 from .git import STAND_TEXT, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
@@ -594,6 +594,39 @@ def mr_fuer_hinweise(pfad, daten, ref=None, cwd=None):
     return mr, ordner
 
 
+def vorfall_ordner():
+    """Eingang für Vorfälle: vorfaelle/ im merge-train-Klon, aus dem das laufende Skript stammt (gitignored; auch bei
+    anderen Nutzern, die merge-train von GitHub auschecken), sonst – nicht aus einem Klon gestartet, eigene Instanz –
+    vorfaelle/ im Datenordner. MERGE_TRAIN_VORFAELLE überschreibt beides (Tests)."""
+    if os.environ.get("MERGE_TRAIN_VORFAELLE"):
+        return os.environ["MERGE_TRAIN_VORFAELLE"]
+    klon = repo_wurzel(os.path.dirname(SKRIPT))
+    if klon and not INSTANZ and os.path.isdir(os.path.join(klon, "skill", "merge-train")):
+        return os.path.join(klon, "vorfaelle")
+    return os.path.join(DATEN, "vorfaelle")
+
+
+def vorfall_ablegen(titel, text, agent, wo):
+    """Bericht als vorfaelle/JJJJ-MM-TT-<thema>.md ablegen (nie überschreiben). Rückgabe: Pfad."""
+    ordner = vorfall_ordner()
+    os.makedirs(ordner, exist_ok=True)
+    thema = re.sub(r"[^a-z0-9äöüß]+", "-", titel.lower()).strip("-")[:60] or "vorfall"
+    tag = datetime.now().strftime("%Y-%m-%d")
+    pfad, n = os.path.join(ordner, f"{tag}-{thema}.md"), 2
+    while os.path.exists(pfad):
+        pfad, n = os.path.join(ordner, f"{tag}-{thema}-{n}.md"), n + 1
+    with open(pfad, "w", encoding="utf-8") as f:
+        f.write(f"# {titel.strip()}\n\nDatum: {tag} · Agent: {agent} · Repo: {wo}\n\n{text.strip()}\n")
+    return pfad
+
+
+def befehl_vorfall(o):
+    wo = repo_wurzel(os.getcwd())
+    pfad = vorfall_ablegen(o.titel, text_von(o), agent_name(o.als, sonst="unbekannt"), kurzpfad(wo) if wo else os.getcwd())
+    print(f"Vorfall abgelegt: {pfad}\nDem Nutzer in einem Satz sagen, dass es ihn gibt.")
+    return 0
+
+
 def agent_parser():
     ap = argparse.ArgumentParser(prog="merge-train agent",
                                  description="Agent-Hinweise (tasks/<KEY>-review-markers.json) einem GitLab-MR zuordnen und anzeigen; "
@@ -657,6 +690,14 @@ def agent_parser():
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
+    p = sub.add_parser("vorfall", help="Bericht ablegen, wo merge-train in die Irre geführt hat (Meldung, Skill, CLI)",
+                       description="Vorfall für die Entwicklung von merge-train ablegen: Situation, was passiert ist, "
+                                   "Einordnung, Workaround, Wunsch. Landet im Eingang vorfaelle/ des merge-train-Klons "
+                                   "(gitignored), siehe docs/vorfaelle/README.md dort.")
+    p.add_argument("titel", help="kurzer Titel, z. B. „pruefen wählt bei fremdem Repo das falsche Projekt“")
+    p.add_argument("text", help="Bericht (Markdown); - = von stdin")
+    p.add_argument("--als", help="wer berichtet (Standard: aus der Umgebung erkannt)")
+    p.set_defaults(aufruf=befehl_vorfall)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
                        description=gespraech + "warten, bis der Nutzer „An Agent senden“ drückt, dann wie „feedback“ ausgeben "
                                         "und beenden (im Hintergrund laufen lassen, danach neu starten)")

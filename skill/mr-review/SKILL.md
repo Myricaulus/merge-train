@@ -153,6 +153,11 @@ When the user says the branch was updated ("review update", "schau nochmal drüb
 4. Update the JSON: drop resolved entries, adjust partially resolved ones, add new findings, set
    `reviewed_commit`/`reviewed_at`, keep `agent`. Then `pruefen` again – the open page refreshes itself.
 
+## When merge-train gets in the way
+
+Message, skill text or CLI misled you, or the user had to correct you about merge-train: file an incident with
+`merge-train agent vorfall` (see the `merge-train` skill, last section), then carry on.
+
 ## Language
 
 Chat, `title`, `problem`, `decision` and follow-up files in the user's language; `text` (the GitLab comment) in the

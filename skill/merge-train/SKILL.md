@@ -199,3 +199,23 @@ When the user asks you to listen ("hör auf merge-train", "hör zu"), or after a
 Don't run `horchen` in the foreground (it blocks until the user sends) and don't start several at once for the
 same conversation. If your harness can't run background commands, tell the user. The messages then wait on the page
 until you fetch them with `feedback`.
+
+## When merge-train misleads you: file an incident
+
+If merge-train itself got in your way – a message that sent you the wrong way, a skill instruction (this one,
+mr-review, a project skill) that did not match what the CLI does, a workaround you needed, or the user had to correct
+you about how merge-train works – file a short report once the task is unblocked. It goes to the inbox of the
+merge-train clone (gitignored, nothing is sent anywhere); whoever develops merge-train works through it.
+
+```sh
+merge-train agent vorfall "<short title>" - <<'EOF'
+## Situation
+## What happened      (commands, exact messages, what you assumed)
+## Assessment         (bug, missing feature, unclear docs – what you verified, what is only a guess)
+## Workaround
+## Wish               (what would have prevented it)
+EOF
+```
+
+Write it in the user's language, facts only, and mark guesses as guesses. One report per incident; tell the user in
+one sentence that you filed it. Not for problems in the reviewed code or the user's repo.

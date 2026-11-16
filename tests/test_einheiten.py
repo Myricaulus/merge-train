@@ -729,6 +729,19 @@ class AgentArgsTest(unittest.TestCase):
         self.assertEqual((o.befehl, o.id, o.erledigt, o.text), ("antworten", "abc", True, "Text"))
 
 
+    def test_vorfall(self):
+        """agent vorfall: Bericht im Eingang, Name aus dem Titel, nie überschreiben."""
+        from unittest import mock
+        from merge_train.agent_cli import vorfall_ablegen
+        ordner = tempfile.mkdtemp(dir=T)
+        with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}):
+            a = vorfall_ablegen("Prüfen: falsches Projekt!", "Text", "Claude", "~/x")
+            b = vorfall_ablegen("Prüfen: falsches Projekt!", "Text", "Claude", "~/x")
+        self.assertTrue(os.path.basename(a).endswith("-prüfen-falsches-projekt.md"))
+        self.assertTrue(b.endswith("-2.md"))
+        self.assertIn("Agent: Claude · Repo: ~/x", lesen(a))
+
+
 class AktualisierenTest(unittest.TestCase):
     """branch_aktualisieren: vorspulen, nach Force-Push neu setzen, eigene Commits und Änderungen schützen."""
     def setUp(self):

@@ -63,5 +63,5 @@ umgesetzt). Soll die Session zuhören: `merge-train agent horchen` im Hintergrun
 
 ## Vorfälle
 
-Neue Berichte liegen in `vorfaelle/` (gitignored), abgearbeitete mit dem Block „Umgesetzt“ in `docs/vorfaelle/`
+Neue Berichte legen Agenten mit `merge-train agent vorfall` in `vorfaelle/` ab (gitignored), abgearbeitete mit dem Block „Umgesetzt“ in `docs/vorfaelle/`
 (siehe [`docs/vorfaelle/README.md`](docs/vorfaelle/README.md)).
