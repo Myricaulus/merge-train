@@ -3,7 +3,7 @@ import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
 from .einstellungen import ARBEITSSTAND, KONF, ORDNER, SKRIPT, dateiname, ersetzen, projektname, schluessel
 from .waggon import Waggon, fertig_moeglich, von_bis
-from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, origin_voraus, projekt_wurzel, wip_name, wip_sha, zerlegen
+from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, projekt_wurzel, STAND_TEXT, stand_zu_gitlab, wip_name, wip_sha, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
@@ -43,9 +43,11 @@ def mr_seite(mr, ansicht=None):
                         "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
     ordner, refs = mr_lokal(mr, meta)
     # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
-    # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen
+    # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen; dazu der Stand der Meldung
+    # (ein Push aus dem Terminal ändert ihn, ohne dass sich Kopf oder MR-Daten ändern)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
-    mh = hashlib.sha1(json.dumps({k: v for k, v in meta.items() if k != "_zeit" or (gl_head and gl_head != refs["head_sha"])},
+    stand = stand_zu_gitlab(ordner, meta.get("source_branch") or "", refs["head_sha"], gl_head)
+    mh = hashlib.sha1(json.dumps({**{k: v for k, v in meta.items() if k != "_zeit" or stand}, "_stand": stand},
                                  sort_keys=True).encode()).hexdigest()[:6]
     praefix = os.path.join(MR_ORDNER, f'{mr.dateiname}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
     pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix,
@@ -73,13 +75,7 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
-    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
-    voraus = bool(gl_head and gl_head != head and origin_voraus(struktur["ordner"], head, gl_head))
-    knopf = ('<button data-g="aktualisieren" title="git fetch, Quell-Branch vorspulen (ausgecheckt samt Submodulen)">'
-             '⇣ lokal aktualisieren</button>' if voraus else "")
-    abw = (f'<div class="warn">GitLab stand beim letzten Holen ({html.escape(meta.get("_zeit") or "?")}) auf '
-           f'{html.escape(gl_head[:8])}, lokal ist {html.escape(head[:8])} – Branch aktualisieren oder MR-Daten holen. '
-           f'{knopf}</div>' if gl_head and gl_head != head else "")
+    abw = stand_html(struktur["ordner"], meta, head)
     titel = f'{mr.projekt}!{mr.iid}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return diff_seite(titel=f'!{mr.iid} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,
@@ -89,6 +85,32 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
                       sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
                       nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>',
                       hilfe=hilfe, leer=leer)
+
+
+# Knopf in der Meldung je Stand (stand_zu_gitlab): data-g = Aktion in api/gitlab, data-frage = erst bestätigen
+STAND_KNOPF = {
+    "origin_voraus": '<button data-g="aktualisieren" data-meldung="hole origin …" title="git fetch, Quell-Branch '
+                     'vorspulen (ausgecheckt samt Submodulen)">⇣ lokal aktualisieren</button>',
+    "gepusht": '<button data-g="mrdaten" title="GitLab-Stand dieses MR neu holen">↻ MR-Daten</button>',
+    "lokal_voraus": '<button data-g="pushen" data-meldung="pushe …" title="git push origin {b} (nur vorspulen)">'
+                    '⇡ pushen</button>',
+    "umgeschrieben": '<button data-g="pushen" data-meldung="pushe …" data-frage="{b} mit Force-Push überschreiben? '
+                     'Nur, wenn origin noch auf {gl} steht (--force-with-lease)." title="git push '
+                     '--force-with-lease={b}:{gl} origin {b}">⇡ force-push (with lease)</button>'}
+
+
+def stand_html(ordner, meta, head):
+    """Meldung über den Diffs, wenn der lokale Quell-Branch nicht auf dem zuletzt geholten GitLab-Stand steht: rot,
+    wenn lokal etwas fehlt oder auseinandergelaufen ist; sonst (lokal weiter, schon gepusht) als Hinweis."""
+    gl, branch = (meta.get("diff_refs") or {}).get("head_sha"), meta.get("source_branch") or ""
+    art = stand_zu_gitlab(ordner, branch, head, gl)
+    if not art:
+        return ""
+    e = html.escape
+    knopf = STAND_KNOPF.get(art, "").format(b=e(branch), gl=e(gl[:8]))
+    klasse = "warn" if art in ("origin_voraus", "abweichend") else "warn lokal"
+    return (f'<div class="{klasse}">GitLab stand beim letzten Holen ({e(meta.get("_zeit") or "?")}) auf {e(gl[:8])}, '
+            f'lokal ist {e(head[:8])}: {e(STAND_TEXT[art])}. {knopf}</div>')
 
 
 def leitstand_html():

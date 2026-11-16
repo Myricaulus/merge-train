@@ -19,7 +19,7 @@ os.environ.update(PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from merge_train.waggon import Fehler, Waggon
-from merge_train.git import branch_aktualisieren, origin_voraus, zerlegen
+from merge_train.git import branch_aktualisieren, branch_pushen, origin_voraus, stand_zu_gitlab, zerlegen
 from merge_train.zeilen import (alt_zeile, bereich_anfang_vorwaerts, bereich_vorwaerts, im_diff, kontext_zeile, paare_und_hunks, zeile_vorwaerts,
                                 zurueck_diffs)
 from merge_train.akte import ausstehend, ist_sent, ist_staged, kommentar_status
@@ -764,6 +764,28 @@ class AktualisierenTest(unittest.TestCase):
         self.g("push", "-qf", "origin", "HEAD:mr", ort=self.oben)
         self.assertIn("umgeschrieben", branch_aktualisieren(self.klon, "mr"))
         self.assertEqual(lesen(f"{self.klon}/f"), "a2\n")
+
+    def test_stand_und_pushen(self):
+        """stand_zu_gitlab: lokal weiter → pushen; nach Rebase (reflog stand auf gl) → Force-Push mit Lease; danach
+        gepusht, bis die MR-Daten neu geholt sind; ohne lokalen Stand auf gl: abweichend, kein Push."""
+        gl = self.g("rev-parse", "HEAD", ort=self.klon)
+        self.assertIsNone(stand_zu_gitlab(self.klon, "mr", gl, gl))
+        neu = self.commit(self.klon, "b")
+        self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu, gl), "lokal_voraus")
+        self.assertIn("gepusht", branch_pushen(self.klon, "mr", gl))
+        self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu, gl), "gepusht")
+        self.g("commit", "-q", "--amend", "-m", "b2", ort=self.klon)  # „Rebase“: neu ersetzt
+        neu2 = self.g("rev-parse", "HEAD", ort=self.klon)
+        self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu2, neu), "umgeschrieben")
+        with self.assertRaises(Fehler):  # Lease: origin steht nicht auf dem angegebenen Stand
+            branch_pushen(self.klon, "mr", gl)
+        self.assertIn("force-with-lease", branch_pushen(self.klon, "mr", neu))
+        self.assertEqual(self.g("rev-parse", "mr", ort=f"{self.d}/origin.git"), neu2)
+        anders = self.commit(self.oben, "x"); self.g("push", "-qf", "origin", "HEAD:mr", ort=self.oben)
+        self.g("fetch", "-q", ort=self.klon)
+        self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu2, anders), "abweichend")
+        with self.assertRaises(Fehler):
+            branch_pushen(self.klon, "mr", anders)
 
     def test_aktion(self):
         neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)

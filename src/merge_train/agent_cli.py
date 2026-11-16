@@ -3,7 +3,7 @@ import argparse, hashlib, json, os, re, subprocess, sys, time
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, ersetzen, jetzt, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
-from .git import git, inhalt, kurzpfad, projekt_ordner
+from .git import STAND_TEXT, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
@@ -694,9 +694,9 @@ def befehl_hinweise(o):
     print(f'{mr.projekt}!{mr.iid} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
     print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
     gl_head = (meta.get("diff_refs") or {}).get("head_sha") or ""
-    abweichend = gl_head and gl_head != head
+    abweichend = stand_zu_gitlab(struktur["ordner"], meta.get("source_branch") or "", head, gl_head)
     if abweichend:
-        print(f"Achtung: GitLab steht auf {gl_head[:8]}, der lokale Branch auf {head[:8]} – Branch aktualisieren")
+        print(f"Achtung: GitLab steht auf {gl_head[:8]}, der lokale Branch auf {head[:8]} – {STAND_TEXT[abweichend]}")
     if vorstellen:
         print(vorstellen)
     if geaendert is not None:

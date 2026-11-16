@@ -267,6 +267,43 @@ def origin_voraus(ordner, sha, ziel):
     return git(ordner, "merge-base", "--is-ancestor", sha, ziel, check=False) is not None
 
 
+def stand_zu_gitlab(ordner, branch, lokal, gl):
+    """Wie steht der lokale Quell-Branch (lokal) zum zuletzt geholten GitLab-Stand (gl)? None, wenn gleich, sonst
+    origin_voraus (erst holen), gepusht (origin/<branch> ist schon lokal, GitLab noch nicht neu geholt), lokal_voraus
+    (neue Commits, noch nicht gepusht), umgeschrieben (lokal stand der Branch auf gl und wurde umgeschrieben, z. B.
+    Rebase: Force-Push mit Lease) oder abweichend (auseinandergelaufen, ohne dass lokal auf gl stand)."""
+    if not gl or gl == lokal:
+        return None
+    if origin_voraus(ordner, lokal, gl):
+        return "origin_voraus"
+    if (git(ordner, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{branch}^{{commit}}", check=False) or "").strip() == lokal:
+        return "gepusht"
+    if git(ordner, "merge-base", "--is-ancestor", gl, lokal, check=False) is not None:
+        return "lokal_voraus"
+    reflog = (git(ordner, "reflog", "show", "--format=%H", f"refs/heads/{branch}", "--", check=False) or "").split()
+    return "umgeschrieben" if gl in reflog else "abweichend"
+
+
+def branch_pushen(ordner, branch, gl):
+    """Quell-Branch nach origin pushen: vorspulen bzw. – umgeschrieben – Force-Push mit Lease auf gl (den Stand, den
+    GitLab zuletzt hatte; ist origin inzwischen woanders, lehnt git ab). Andere Stände: Fehler. Rückgabe: Text."""
+    lokal = (git(ordner, "rev-parse", "--verify", "-q", f"refs/heads/{branch}^{{commit}}", check=False) or "").strip()
+    art = stand_zu_gitlab(ordner, branch, lokal, gl) if lokal else None
+    if art not in ("lokal_voraus", "umgeschrieben"):
+        raise Fehler(f"{branch}: nichts zu pushen ({STAND_TEXT.get(art, 'gleich mit GitLab')})")
+    lease = [f"--force-with-lease=refs/heads/{branch}:{gl}"] if art == "umgeschrieben" else []
+    git_oder_fehler(ordner, "push", "-q", *lease, "origin", f"refs/heads/{branch}:refs/heads/{branch}")
+    return f"{branch}: {gl[:8]} → {lokal[:8]} gepusht" + (" (force-with-lease)" if lease else "")
+
+
+# Kurztext je Ergebnis von stand_zu_gitlab (Seite, agent zeigen/pruefen)
+STAND_TEXT = {"origin_voraus": "GitLab ist weiter – Branch aktualisieren",
+              "gepusht": "gepusht, GitLab noch nicht neu geholt – MR-Daten holen",
+              "lokal_voraus": "lokal neue Commits, noch nicht gepusht",
+              "umgeschrieben": "lokal umgeschrieben (z. B. Rebase), noch nicht gepusht – Force-Push mit Lease",
+              "abweichend": "lokal und GitLab auseinandergelaufen – selbst zusammenführen"}
+
+
 def branch_aktualisieren(ordner, branch):
     """origin holen und den lokalen Branch auf origin/<branch> nachziehen: vorspulen, oder – nach einem Force-Push –
     auf den neuen Stand setzen, wenn der lokale Branch keine eigenen Commits hat (stand auf dem alten origin).

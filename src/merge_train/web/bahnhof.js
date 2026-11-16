@@ -1,5 +1,5 @@
 // Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne
-// GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g, auch „⇣ lokal aktualisieren“ in der Meldung zum
+// GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g, auch „⇣ lokal aktualisieren“/„⇡ pushen“ in der Meldung zum
 // abweichenden Stand), danach holt zugHolen den Zug neu bzw. lädt bei neu_laden die Seite. Lokal (data-l)
 // lädt zug.js neu. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
 (() => {
@@ -29,8 +29,9 @@
     if (b.dataset.g === 'mrdaten' && (!waggon.id || waggon.id.startsWith('projekt:'))) b.hidden = true;
     const bh = document.querySelector('.szene');
     b.addEventListener('click', () => {
+      if (b.dataset.frage && !confirm(b.dataset.frage)) return; // z. B. Force-Push
       b.disabled = true;
-      App.melden(b.dataset.g === 'aktualisieren' ? 'hole origin …' : 'frage GitLab …');
+      App.melden(b.dataset.meldung || 'frage GitLab …');
       bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet
       fetch('/api/gitlab', {
         method: 'POST',

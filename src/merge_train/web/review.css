@@ -15,7 +15,7 @@ tr.kr>td{padding:4px 10px 6px 52px;background:var(--bg)}
 .b-neu,.b-geaendert{color:var(--tb)} .b-ok{color:var(--p)} .b-loeschen{color:var(--m)} .b-agent{color:var(--tf)}
 .kbox details,.quelle{margin-top:4px;color:var(--muted);font-size:12px} .kbox details div,.quelle div{white-space:pre-wrap;margin:2px 0}
 .kbox summary,.quelle summary{cursor:pointer}
-.warn{color:var(--m)}
+.warn{color:var(--m)} .warn.lokal{color:var(--tb)}
 body.diffseite td.n:not(:empty){cursor:pointer}
 body.diffseite td.n:not(:empty):hover{color:var(--tn);background:var(--akt)}
 #allgemein{border:1px solid var(--rand);border-radius:6px;margin-bottom:16px;padding:8px 12px}

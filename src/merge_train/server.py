@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime
 from .einstellungen import KONF, SKRIPT, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
-from .git import ANLASS, anlass, branch_aktualisieren, finde_repos, git, statistik
+from .git import ANLASS, anlass, branch_aktualisieren, branch_pushen, finde_repos, git, statistik
 from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
 from .abhaken import abhaken
@@ -476,7 +476,23 @@ def aktualisieren_aktion(anfrage):
     return {"ok": True, "text": text, "neu_laden": True}
 
 
-GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion}
+def pushen_aktion(anfrage):
+    """Meldung „lokal weiter / umgeschrieben“: Quell-Branch pushen (branch_pushen, umgeschrieben mit Lease auf den
+    zuletzt geholten GitLab-Stand), dann die MR-Daten holen. Hat GitLab den Push noch nicht verarbeitet, sagt die
+    Meldung danach „gepusht“ mit „↻ MR-Daten“."""
+    mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
+    meta = akte_lesen(mr).get("meta") or {}
+    ordner, _ = mr_lokal(mr, meta)
+    text = branch_pushen(ordner, meta.get("source_branch") or "", (meta.get("diff_refs") or {}).get("head_sha") or "")
+    try:
+        text += " · " + mr_daten_holen(mr)["text"]
+    except Fehler as e:
+        text += f" · MR-Daten nicht geholt: {e}"
+    return {"ok": True, "text": text, "neu_laden": True}
+
+
+GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion,
+                   "pushen": pushen_aktion}
 
 
 @route("POST", "api/gitlab", quelle=GITLAB)

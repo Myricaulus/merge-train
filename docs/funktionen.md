@@ -152,9 +152,13 @@ erledigt wird – auch per Klick auf das Zeichen in der Liste (`fadenErledigen`)
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
-Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt; ist
-origin weiter, zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren` in `git.py`, Aktion `aktualisieren`)
-und holt danach die MR-Daten (`mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
+Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt, je nach
+`stand_zu_gitlab` (`git.py`, Texte `STAND_TEXT`, Knöpfe `STAND_KNOPF`/`stand_html` in `seite.py`): ist origin weiter,
+zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren`, Aktion `aktualisieren`); ist lokal weiter, pusht
+„⇡ pushen“, nach einem Rebase (lokal stand der Branch laut reflog auf dem GitLab-Stand) „⇡ force-push (with lease)“
+mit Lease auf den zuletzt geholten GitLab-Stand (`branch_pushen`, Aktion `pushen`, erst bestätigen); danach bzw. nach
+einem Push aus dem Terminal „gepusht“ mit „↻ MR-Daten“; auseinandergelaufen ohne Rebase: nur die Meldung. Beide
+Aktionen holen danach die MR-Daten (`mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
 lädt offene Tabs neu (`neuLaden` in `web/review.js`). Den Klon liefert `lokale_klone` (`[repos]`, Akte `klon`, sonst
 `klon_suchen`: `<klon_ordner>/<projekt>`, wenn origin passt). Fehlt im Klon ein Branch des MR, holt `mr_lokal` origin einmal je Serverlauf. Beim ersten Besuch eines MR checkt `mr_auschecken` (`review.py`,
 im Hintergrund über `im_hintergrund` im Server) den Quell-Branch im Klon aus, wenn der Stand sauber ist
