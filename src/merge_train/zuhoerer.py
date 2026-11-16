@@ -12,6 +12,29 @@ def horcht_datei(waggon):
     return akte_datei(waggon)[:-5] + ".horcht"
 
 
+# Was zuletzt an den Agenten ging (Ausgabe von horchen/feedback bzw. der Startprompt), damit die Seite es zeigen kann.
+# Nur die letzten PROMPTS_MAX, nicht in der Akte.
+PROMPTS_MAX = 5
+
+
+def prompt_datei(waggon):
+    return akte_datei(waggon)[:-5] + ".prompt"
+
+
+def prompt_merken(waggon, weg, text, wer=None):
+    """weg: horchen | feedback | start | todo"""
+    neu = [{"zeit": jetzt(), "weg": weg, "wer": wer, "text": text}] + prompt_lesen(waggon)
+    ersetzen(prompt_datei(waggon), json.dumps(neu[:PROMPTS_MAX], ensure_ascii=False))
+
+
+def prompt_lesen(waggon):
+    """Die zuletzt zugestellten Prompts, neueste zuerst."""
+    try:
+        return json.load(open(prompt_datei(waggon), encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
 # Was zwischen „agent horchen“ und der Agenten-Session (claude, copilot …) liegen darf. systemd/init: dorthin wandern
 # verwaiste Prozesse, wenn die Session weg ist – dann hört niemand mehr zu.
 _ZWISCHEN = {"sh", "bash", "zsh", "fish", "dash", "ksh", "python", "python3", "timeout", "env", "nohup", "setsid", "script"}
@@ -225,19 +248,47 @@ def todo_offen(tid):
     return os.path.exists(os.path.join(basis, "offen", tid + ".md"))
 
 
-def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
-    """Nach „An Agent senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
-    todo-Eintrag. Rückgabe (text für die Seite, todo_id oder None)."""
+def zustellweg(waggon, namen=("Claude",)):
+    """Wie „An Agent senden“ den Agenten erreicht: (weg, wer, befehle). weg: horchen (eine Session hört zu), start
+    (Befehle aus [agenten] bzw. feedback_befehl), todo, None (nichts davon)."""
     wer = horcht(waggon)
     if wer:
-        return f"an die Session übergeben, die zuhört ({wer})", None
-    projekt = waggon.name
-    prompt = quelle(waggon).prompt(waggon, wurzel)
+        return "horchen", wer, []
     agenten = KONF.get("agenten") or {}
     befehle = [(nm, agenten[nm]) for nm in namen if nm in agenten]
     if not befehle and KONF.get("feedback_befehl"):
         befehle = [("Claude", KONF["feedback_befehl"])]
     if befehle:
+        return "start", " und ".join(nm for nm, _ in befehle), befehle
+    return ("todo" if shutil.which("todo") else None), None, []
+
+
+def prompt_vorschau(waggon):
+    """Was der Agent bekäme, wenn jetzt gesendet würde ({weg, wer, text}), None, wenn ihn nichts erreicht. Bei horchen
+    die Ausgabe von horchen mit den Entwürfen als gesendet (nichts wird gespeichert), sonst der Startprompt."""
+    from .agent_cli import faeden_abholen
+    namen = list(dict.fromkeys(k.get("an") or "Claude" for k in faeden_von(akte_lesen(waggon), quelle(waggon).branch(waggon))
+                               for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))) or ["Claude"]
+    weg, wer, _ = zustellweg(waggon, namen)
+    if weg is None:
+        return None
+    if weg == "horchen":
+        text = faeden_abholen([waggon], markieren=False, vorschau=True)[0]
+    else:
+        text = quelle(waggon).prompt(waggon, quelle(waggon).ort(waggon)[0])
+    return {"weg": weg, "wer": wer, "text": text}
+
+
+def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
+    """Nach „An Agent senden“: Session, die zuhört → nichts weiter; sonst Agent aus [agenten], feedback_befehl oder
+    todo-Eintrag. Rückgabe (text für die Seite, todo_id oder None)."""
+    weg, wer, befehle = zustellweg(waggon, namen)
+    if weg == "horchen":
+        return f"an die Session übergeben, die zuhört ({wer})", None  # merkt sich horchen beim Abholen
+    projekt = waggon.name
+    prompt = quelle(waggon).prompt(waggon, wurzel)
+    if befehle:
+        prompt_merken(waggon, "start", prompt, wer)
         gestartet = []
         for nm, befehl in befehle:
             argv = [a.format(ordner=wurzel, projekt=projekt, prompt=prompt) for a in shlex.split(befehl)]
@@ -248,7 +299,7 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
             except OSError as e:
                 return f"{nm} startet nicht: {e}", None
         return " und ".join(gestartet) + " gestartet", None
-    if not shutil.which("todo"):
+    if weg is None:
         return f"Keine Session hört zu – in einer Agent-Session „merge-train agent feedback {waggon.id}“ sagen", None
     tid = akte_lesen(waggon).get("todo_id")
     zeile = f"{n} neue Nachricht(en) um {datetime.now().strftime('%H:%M')}"
@@ -263,6 +314,7 @@ def benachrichtigen(waggon, wurzel, n, namen=("Claude",)):
             return f"todo-Eintrag ließ sich nicht anlegen: {(r.stderr or r.stdout).strip()[:200]}", None
         with akte_bearbeiten(waggon) as akte:
             akte["todo_id"] = tid
+    prompt_merken(waggon, "todo", prompt)
     subprocess.run(["todo", "heute", tid, "-t", f"Fragen/Feedback aus merge-train ({zeile})"], capture_output=True)
     return "Keine Session hört zu – als todo eingetragen (Panel), „▶ Session starten“ öffnet sie", tid
 

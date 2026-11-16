@@ -114,8 +114,13 @@ der Startbefehl aus `[agenten]`. Zeigt im HUD, wer horcht (`horcht`), auf dem Wa
 hoert, arbeitet = letzte Nachricht im Transcript ist keine fertige Antwort; wartet sie im Terminal, nichts), und den
 Kontext-Füllstand der Claude-Session (Fenster 1M, sobald sie je über 200k lag; beides aus `transcript_stand`).
 Die Emojis wechselt ein Takt in `zug.js` (`hoererZeichen`), der Zug fragt `api/zuhoerer` alle 5 s.
-- Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet).
-- Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`), `agent_cli.py` (`horchen`), `web/hud.js`, `web/zug.js`.
+Welchen Weg „senden“ nimmt, entscheidet `zustellweg`. Was beim Agenten ankam (Ausgabe von horchen/feedback,
+Startprompt), merkt sich `prompt_merken` in `<akte>.prompt` (die letzten 5, nicht in der Akte). „📨“ zeigt das, mit
+„vor dem Senden zeigen“ (`localStorage.promptVorher`) zeigt „senden“ erst `prompt_vorschau` (horchen: `faeden_abholen`
+mit `vorschau`, Entwürfe als gesendet, nichts gespeichert). Dialog: `promptDialog` (`web/review.js`).
+- Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt).
+- Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `agent_cli.py` (`horchen`),
+  Route `api/gespraech` (`vorschau`, `prompt`), `web/hud.js`, `web/zug.js`, `web/review.js`.
 - Erweitern: ein neuer Zustellweg kommt in `benachrichtigen`/`feedback_senden`, nicht in die Seite.
 
 ### 10. GitLab-Review

@@ -13,7 +13,7 @@ from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
-from .zuhoerer import feedback_senden, horcht, kontext, seite_lebt, session_starten, zuhoerer
+from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
@@ -381,12 +381,24 @@ def session_starten_aktion(anfrage, waggon):
     return mit_review(waggon, anfrage, *session_starten(waggon))
 
 
-GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_starten_aktion}
+def prompt_aktion(anfrage, waggon):
+    """vorschau: was der Agent beim Senden bekäme; prompt: was er zuletzt bekommen hat."""
+    vorher = anfrage.daten.get("aktion") == "vorschau"
+    try:
+        p = [x for x in [prompt_vorschau(waggon)] if x] if vorher else prompt_lesen(waggon)
+    except Fehler as e:
+        return {"ok": False, "text": str(e)}
+    return {"ok": bool(p), "prompts": p,
+            "text": "" if p else "Kein Agent erreichbar – keine Vorschau" if vorher else "Noch nichts an den Agenten zugestellt"}
+
+
+GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_starten_aktion,
+                      "vorschau": prompt_aktion, "prompt": prompt_aktion}
 
 
 @route("POST", "api/gespraech", waggon=True)
 def api_gespraech(anfrage, waggon):
-    """Ganzes Gespräch: An Agent senden, Agenten-Session starten."""
+    """Ganzes Gespräch: An Agent senden, Agenten-Session starten, Prompt zeigen (vorher bzw. zuletzt zugestellt)."""
     aktion = GESPRAECH_AKTIONEN.get(anfrage.daten.get("aktion"))
     return aktion(anfrage, waggon) if aktion else abgelehnt(400, "unbekannte Aktion")
 

@@ -819,7 +819,8 @@
   }
   const seitenTitel = document.title,
     feedbackKnopf = document.getElementById('feedback'),
-    sessionKnopf = document.getElementById('starten');
+    sessionKnopf = document.getElementById('starten'),
+    promptKnopf = document.getElementById('prompt');
   function gsStand(vorn) {
     const f = faeden(),
       z = s => f.filter(k => k.status === s).length,
@@ -839,14 +840,74 @@
       .join(' · ');
     if (!feedbackKnopf) return;
     feedbackKnopf.hidden = mitReview && !f.length;
+    promptKnopf.hidden = feedbackKnopf.hidden;
     feedbackKnopf.disabled = !e;
     const fw = 'An Agent senden';
     feedbackKnopf.textContent = e ? fw + ' (' + e + ')' : fw;
     sessionKnopf.hidden = !review.todo || !!review.horcht;
     document.title = (neu ? '(' + neu + ') ' : '') + seitenTitel;
   }
-  function senden() {
+  function vorher(w) {
+    try {
+      if (w !== undefined) localStorage.promptVorher = w ? 1 : '';
+      return !!localStorage.promptVorher;
+    } catch (_) {
+      return false;
+    }
+  } // „Prompt vor dem Senden zeigen“, bleibt gespeichert
+  const WEGE = {
+    horchen: p => 'über „agent horchen“ an ' + (p.wer || 'die Session'),
+    feedback: () => 'über „agent feedback“',
+    start: p => 'als Startprompt für ' + (p.wer || 'den Agenten'),
+    todo: () => 'als Prompt im todo-Eintrag'
+  };
+  function promptDialog(prompts, titel, weiter) {
+    // prompts: [{zeit, weg, wer, text}]; weiter: „senden“ (Vorschau), sonst nur schließen
+    const d = el('dialog', {class: 'prompt-dialog'}),
+      haken = el('input', {type: 'checkbox'});
+    haken.checked = vorher();
+    haken.addEventListener('change', () => vorher(haken.checked));
+    const zu = () => d.close();
+    d.addEventListener('close', () => d.remove());
+    d.append(
+      el('div', {class: 'pd-kopf'}, titel),
+      ...prompts.map((p, i) =>
+        el(
+          'details',
+          {class: 'pd-eintrag', open: i === 0 ? '' : null},
+          el('summary', {}, (p.zeit ? App.uhrzeit(p.zeit) + ' · ' : '') + (WEGE[p.weg] || (() => p.weg))(p)),
+          el('pre', {}, p.text)
+        )
+      ),
+      el(
+        'div',
+        {class: 'pd-unten'},
+        el('label', {class: 'sofort', title: '„An Agent senden“ zeigt erst, was der Agent bekommt'}, haken, ' vor dem Senden zeigen'),
+        el('button', {onclick: zu}, weiter ? 'abbrechen' : 'schließen'),
+        weiter
+          ? el('button', {class: 'pd-senden', onclick: () => (zu(), weiter())}, 'senden')
+          : null
+      )
+    );
+    document.body.append(d);
+    d.showModal();
+  }
+  function senden(geprueft) {
     if (!feedbackKnopf) return;
+    if (geprueft !== true && vorher()) {
+      post('/api/gespraech', {aktion: 'vorschau'}).then(d => {
+        if (!d.ok) return senden(true); // kein Agent erreichbar: senden meldet, wie es weitergeht
+        App.melden('');
+        promptDialog(
+          d.prompts,
+          d.prompts[0].weg === 'horchen'
+            ? 'Vorschau – so holt die Session die Nachrichten ab (Stand jetzt)'
+            : 'Vorschau – damit startet der Agent',
+          () => senden(true)
+        );
+      });
+      return;
+    }
     feedbackKnopf.disabled = true;
     App.melden('sendet …');
     post('/api/gespraech', {aktion: 'senden'}).then(d => {
@@ -859,6 +920,11 @@
   }
   if (feedbackKnopf) {
     feedbackKnopf.addEventListener('click', senden);
+    promptKnopf.addEventListener('click', () =>
+      post('/api/gespraech', {aktion: 'prompt'}).then(d =>
+        d.ok ? promptDialog(d.prompts, 'Zuletzt an den Agenten zugestellt (neueste zuerst)') : App.melden(d.text || '')
+      )
+    );
     sessionKnopf.addEventListener('click', () => {
       sessionKnopf.disabled = true;
       post('/api/gespraech', {aktion: 'starten'}).then(d => {

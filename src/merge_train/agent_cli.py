@@ -12,7 +12,7 @@ from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
 from .quellen import quelle
-from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, seite_datei, todo_offen
+from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, prompt_merken, seite_datei, todo_offen
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
 from .prozess import im_browser
@@ -178,14 +178,20 @@ def am_mr(waggon):
         return ""
 
 
-def faeden_abholen(ziele, alle=False, markieren=True):
+def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorschau=False):
     """Text mit allen Fäden des aktuellen Branches, die auf den Agenten warten (alle: auch beantwortete). Markiert
-    Nachrichten als abgeholt."""
-    teile, gesamt = [], 0
+    Nachrichten als abgeholt und merkt sich den Text für die Seite (prompt_merken, weg: horchen | feedback). vorschau:
+    Entwürfe zählen als gesendet, nichts wird gespeichert (prompt_vorschau)."""
+    teile, gesamt, geholt = [], 0, []
     for waggon in ziele:
         wurzel, head = quelle(waggon).ort(waggon)
         branch = quelle(waggon).branch(waggon)
-        with akte_bearbeiten(waggon, speichern=markieren) as akte:
+        with akte_bearbeiten(waggon, speichern=markieren and not vorschau) as akte:
+            if vorschau:
+                for k in faeden_von(akte, branch):
+                    for m in k["nachrichten"]:
+                        if m["von"] == "ich" and not m.get("gesendet"):
+                            m["gesendet"] = jetzt()
             faeden = [k for k in faeden_von(akte, branch) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
             zeigen = [k for k in faeden if alle or faden_status(k) == "wartet" or faden_ungelesen(k)]
             if markieren:
@@ -202,6 +208,7 @@ def faeden_abholen(ziele, alle=False, markieren=True):
                 teile.append(kopf + "\n(nichts offen)" + am_mr(waggon))
             continue
         gesamt += len(zeigen)
+        geholt.append(waggon)
         review = None
         if waggon.kann["review"]:
             try:
@@ -218,7 +225,11 @@ def faeden_abholen(ziele, alle=False, markieren=True):
             teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"')
             teile.append('Faden „HÄNGT AN“ einem Kommentar: merge-train agent kommentar <Faden-id> "Text" ändert genau diesen '
                          'und erledigt den Faden – keine Antwort im Faden, außer der Nutzer will etwas erklärt haben')
-    return "\n".join(teile) or "(nichts offen)", gesamt
+    text = "\n".join(teile) or "(nichts offen)"
+    if markieren and weg and not vorschau:
+        for waggon in geholt:
+            prompt_merken(waggon, weg, text, wer)
+    return text, gesamt
 
 
 def ort_kurz(x):
@@ -541,7 +552,7 @@ def faeden_horchen(ziele, timeout=0, als=None):
                        for k in faeden_von(akte, quelle(waggon).branch(waggon)) for n in k["nachrichten"]):
                     neu.append(waggon)
             if neu:
-                return faeden_abholen(neu)
+                return faeden_abholen(neu, weg="horchen", wer=als)
         time.sleep(1)
     return "merge-train: keine neuen Nachrichten (Zeit abgelaufen)", 0
 
@@ -710,7 +721,7 @@ def agent_parser():
 
 
 def befehl_feedback(o):
-    print(faeden_abholen(gespraech_ziele(o.projekt), alle=o.alle)[0]); return 0
+    print(faeden_abholen(gespraech_ziele(o.projekt), alle=o.alle, weg="feedback")[0]); return 0
 
 
 def befehl_horchen(o):

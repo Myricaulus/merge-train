@@ -115,6 +115,9 @@ Fragen zum Code oder Änderungswünsche schreibt man direkt an die Zeile, wie ei
    Umschalt-Klick auf eine zweite Zeile derselben Datei macht daraus einen Bereich: Der Faden steht unter der letzten
    Zeile, die Zeilen sind links lila markiert und wandern nach neuen Commits mit. Bei Review-Kommentaren (GitLab) geht das nicht.
 2. **„An Agent senden“** schickt alle Entwürfe ab. ✓ heißt gesendet, ✓✓ heißt von Claude abgeholt.
+   **„📨“** daneben zeigt, was zuletzt genau beim Agenten ankam: die Ausgabe von `horchen`/`feedback` bzw. den
+   Startprompt, die letzten 5 und nur in einer Nebendatei der Akte (`<akte>.prompt`). Mit „vor dem Senden zeigen“
+   zeigt „An Agent senden“ das erst als Vorschau und sendet auf „senden“.
 3. Claude holt sie mit `merge-train agent feedback` ab (Ort im aktuellen Stand, Code drumherum, Verlauf), beantwortet
    Fragen bzw. setzt Wünsche auf `claude` um und antwortet je Faden mit `merge-train agent antworten <id> "…"`
    (`--erledigt`, wenn umgesetzt). Die Antwort erscheint sofort an der Zeile (die Seite fragt alle 4 s nach),
