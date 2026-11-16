@@ -190,9 +190,11 @@
         onclick: e => {
           e.stopPropagation();
           menue.hidden = !menue.hidden;
-          const r = filterKnopf.getBoundingClientRect(); // fest unter dem Knopf, nicht in der scrollenden Liste
+          // fest unter dem Knopf (nicht in der scrollenden Liste), nach links aufgeklappt: bleibt über der Liste, nicht
+          // über dem Diff mit seinen klebenden Köpfen
+          const r = filterKnopf.getBoundingClientRect();
           menue.style.top = r.bottom + 4 + 'px';
-          menue.style.left = r.left + 'px';
+          menue.style.left = Math.max(4, r.right - menue.offsetWidth) + 'px';
         }
       },
       'Filter ▾'

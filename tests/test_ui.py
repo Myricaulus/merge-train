@@ -310,6 +310,9 @@ def teil_dateifilter(b, f):
     alle = b.js(gezeigt)
     b.klicken("#liste h2 .dfilter")
     b.warten_bis("!document.querySelector('.dfilter-menue').hidden")
+    lage = b.js("[document.querySelector('.dfilter-menue').getBoundingClientRect().right,"
+                " document.getElementById('liste').getBoundingClientRect().right]")
+    assert lage[0] <= lage[1], f"Filtermenü ragt über die Liste hinaus nach rechts: {lage}"
     endungen = b.js("[...document.querySelectorAll('.dfilter-menue input')].map(x => x.dataset.filter).filter(x => x !== 'abgehakt')")
     if len(endungen) < 2:
         return  # nur eine Endung (MR-Fall)
