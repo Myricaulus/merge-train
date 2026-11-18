@@ -1,7 +1,8 @@
 // Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne
 // GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g, auch „⇣ lokal aktualisieren“/„⇡ pushen“ in der Meldung zum
 // abweichenden Stand), danach holt zugHolen den Zug neu bzw. lädt bei neu_laden die Seite. Lokal (data-l)
-// lädt zug.js neu. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
+// lädt zug.js neu. Holt der Server dabei die Läufe des Myrlings im Hintergrund (nachladen), fragt die Seite den Zug
+// noch einmal, sobald sie da sind. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
 (() => {
   const {waggon} = App;
   const mitGitlab = !!document.querySelector('#bahnhof button[data-g]');
@@ -9,8 +10,8 @@
     const t = document.getElementById('bhzeit');
     if (t && mitGitlab) t.textContent = z ? 'MRs vom ' + z : 'MRs noch nicht geholt';
   }
-  function zugHolen() {
-    return fetch('/api/zug?akt=' + encodeURIComponent(waggon.id))
+  function zugHolen(warten) {
+    return fetch('/api/zug?akt=' + encodeURIComponent(waggon.id) + (warten ? '&warten=1' : ''))
       .then(r => r.json())
       .then(z => {
         App.zugSetzen(z.wagen || []);
@@ -19,6 +20,7 @@
       .catch(() => {});
   }
   mrZeitZeigen((window.MR_ZUG || {}).zeit);
+  if ((window.MR_ZUG || {}).nachladen) zugHolen(true);
   try {
     if (sessionStorage.meldung) {
       App.melden(sessionStorage.meldung);
@@ -26,7 +28,7 @@
     }
   } catch (_) {} // Meldung von „↻ MR-Daten“ über das Neuladen
   document.querySelectorAll('button[data-g]').forEach(b => {
-    if (b.dataset.g === 'mrdaten' && (!waggon.id || waggon.id.startsWith('projekt:'))) b.hidden = true;
+    if (b.dataset.g === 'mrdaten' && (!waggon.id || /^(projekt|myrling):/.test(waggon.id))) b.hidden = true;
     const bh = document.querySelector('.szene');
     b.addEventListener('click', () => {
       if (b.dataset.frage && !confirm(b.dataset.frage)) return; // z. B. Force-Push

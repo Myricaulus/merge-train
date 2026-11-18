@@ -39,14 +39,15 @@ TESTS = os.path.join(HIER, "tests")
 # [] = Einzeltests genügen. Teile setzen ggf. andere voraus (TEILE in test_gitlab.py).
 MODUL_TEILE = {
     "__init__": ["lokal"], "__main__": ["lokal"],
-    "abhaken": ["lokal"], "agent_cli": ["gitlab", "lokal", "arbeitsstand"], "akte": [], "ansichten": ["lokal"],
-    "beobachter": ["lokal"], "cli": ["lokal", "gitlab"], "diff_html": ["lokal"], "einstellungen": ["lokal", "gitlab"],
-    "gespraech": ["lokal", "arbeitsstand", "gitlab"], "git": ["lokal", "arbeitsstand"], "gitlab": ["gitlab", "gemischt"],
-    "hinweise": ["gitlab"], "instanz": [], "prozess": ["lokal"], "quellen": ["lokal", "arbeitsstand", "gemischt"],
-    "review": ["gitlab"], "seite": ["lokal", "gitlab", "gemischt"], "server": ["lokal", "gitlab"], "syntax": ["lokal"],
-    "waggon": ["lokal", "gitlab"], "web": [], "zeilen": [], "zuhoerer": ["lokal", "horchen"],
+    "abhaken": ["lokal"], "agent_cli": ["gitlab", "lokal", "arbeitsstand", "myrling"], "akte": ["myrling"], "ansichten": ["lokal"],
+    "beobachter": ["lokal"], "cli": ["lokal", "gitlab"], "diff_html": ["lokal"], "einstellungen": ["lokal", "gitlab", "myrling"],
+    "gespraech": ["lokal", "arbeitsstand", "gitlab", "myrling"], "git": ["lokal", "arbeitsstand", "myrling"], "gitlab": ["gitlab", "gemischt"],
+    "hinweise": ["gitlab"], "instanz": [], "myrling": ["myrling"], "prozess": ["lokal"],
+    "quellen": ["lokal", "arbeitsstand", "gemischt", "myrling"], "review": ["gitlab", "myrling"],
+    "seite": ["lokal", "gitlab", "gemischt", "myrling"], "server": ["lokal", "gitlab", "myrling"], "syntax": ["lokal"],
+    "waggon": ["lokal", "gitlab", "myrling"], "web": [], "zeilen": [], "zuhoerer": ["lokal", "horchen"],
 }
-ALLE_TEILE = ["gitlab", "lokal", "horchen", "arbeitsstand", "gemischt"]
+ALLE_TEILE = ["gitlab", "lokal", "horchen", "arbeitsstand", "gemischt", "myrling"]
 NICHTS = ("docs/", "skill/", "completions/", "perf/", "README.md", "AGENTS.md", "CLAUDE.md", "refactor.md", ".gitignore",
           "config.example.toml")
 
@@ -163,6 +164,9 @@ def auswahl(pfade, voll):
             continue  # nur mit --voll (pre-push)
         if p in ("tests/test_gitlab.py", "tests/fake-glab", "bauen"):
             smoke = True; teile |= set(ALLE_TEILE)
+            continue
+        if p == "tests/fake-nas-lauf":
+            teile.add("myrling")
             continue
         if p == "testen":
             smoke = pruefen = klassen_alle = True

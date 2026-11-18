@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Ende-zu-Ende-Test des GitLab-Modus mit tests/fake-glab (kein echtes GitLab nötig).
 
-Aufruf:  python3 tests/test_gitlab.py [teil …] [--behalten]     (Teile: gitlab lokal horchen arbeitsstand gemischt; ohne = alle)
+Aufruf:  python3 tests/test_gitlab.py [teil …] [--behalten]     (Teile: gitlab lokal horchen arbeitsstand gemischt myrling;
+         ohne = alle)
 Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, freie Ports, Ersatz für todo und notify-send), baut merge-train
 dorthin (oder nimmt MERGE_TRAIN_SKRIPT) und startet eigene Server. Welche Teile bei welcher Änderung laufen: ./testen.
 """
@@ -9,7 +10,7 @@ import glob, json, os, shutil, socket, subprocess, sys, tempfile, time, urllib.e
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 # Teil → Teile, die er voraussetzt (gemischt braucht das Projekt aus lokal und den MR aus gitlab)
-TEILE = {"gitlab": [], "lokal": [], "horchen": ["lokal"], "arbeitsstand": [], "gemischt": ["gitlab", "lokal"]}
+TEILE = {"gitlab": [], "lokal": [], "horchen": ["lokal"], "arbeitsstand": [], "gemischt": ["gitlab", "lokal"], "myrling": []}
 AUSWAHL = set(TEILE)
 def freier_port():
     """Freier Port vom System: feste Ports stoßen mit liegengebliebenen Servern (andere Sessions, abgebrochene Läufe)."""
@@ -18,7 +19,7 @@ def freier_port():
         return s.getsockname()[1]
 
 
-PORT, PORT_LOKAL, PORT_GEMISCHT = freier_port(), freier_port(), freier_port()  # GitLab-Modus, lokal_test, gemischt_test
+PORT, PORT_LOKAL, PORT_GEMISCHT, PORT_MYRLING = freier_port(), freier_port(), freier_port(), freier_port()  # GitLab-Modus, lokal_test, gemischt_test, myrling_test
 T = tempfile.mkdtemp(prefix="merge-train-test-")
 # eigener Bau im Repo (tests/bau/, ignoriert), nicht ./merge-train: der Server des Nutzers bleibt unberührt, und der
 # HUD-Stand (git log am Ort des Skripts) stimmt trotzdem
@@ -1012,6 +1013,133 @@ def gitlab_test():
     finally:
         srv.terminate(); srv.wait()
 
+def myrling_test():
+    """Quelle Myrling mit tests/fake-nas-lauf: ein Waggon je anstehendem Skript, jede Datei gegen ihre eigene Basis,
+    Begleitdatei aus einem anderen Repo als „fehlt“, Gespräch mit dem Agenten im Repo der Skripte."""
+    w, anders, state = f"{T}/Myrling/skripte", f"{T}/Myrling/anders", f"{T}/nas-lauf"
+    for o in (w, anders, state):
+        os.makedirs(o)
+    g = lambda *a, cwd=w: sh("git", "-C", cwd, *a).stdout.strip()
+    for o in (w, anders):
+        g("init", "-q", "-b", "claude", cwd=o); g("config", "user.email", "t@t", cwd=o); g("config", "user.name", "t", cwd=o)
+    os.makedirs(f"{w}/nas-setup")
+    skript = f"{w}/nas-setup/07-x.sh"
+    open(skript, "w").write("".join(f"echo {i}\n" for i in range(1, 31))); os.chmod(skript, 0o755)
+    open(f"{w}/nas-setup/09-gleich.sh", "w").write("echo gleich\n")
+    open(f"{w}/sonst.txt", "w").write("eins\n")
+    g("add", "-A"); g("commit", "-qm", "Start")
+    c1 = g("rev-parse", "HEAD")
+    open(skript, "w").write("".join(f"echo {i * 2 if i == 15 else i}\n" for i in range(1, 31)))
+    open(f"{w}/nas-setup/x.conf", "w").write("a = 1\n")
+    open(f"{w}/nas-setup/08-neu.sh", "w").write("echo neu\n")
+    open(f"{w}/sonst.txt", "w").write("zwei\n")  # gehört zu keinem Lauf: darf in keinem Diff stehen
+    g("add", "-A"); g("commit", "-qm", "Lüfter schneller\n\nRumpf.")
+    c2 = g("rev-parse", "HEAD")
+    open(f"{anders}/hilfe.sh", "w").write("x\n"); g("add", "-A", cwd=anders); g("commit", "-qm", "x", cwd=anders)
+    datei = lambda pfad, basis, repo=w: {"name": os.path.basename(pfad), "repo": repo, "pfad": pfad, "basis": basis,
+                                          "commit": g("rev-parse", "HEAD", cwd=repo)}
+    liste = [{"skript": "07-x.sh", "fp": "f" * 64, "braucht": "02-grund", "stand": "geaendert", "abgelehnt": None,
+              "dateien": [datei("nas-setup/07-x.sh", c1), datei("nas-setup/x.conf", None), datei("hilfe.sh", None, anders)]},
+             {"skript": "08-neu.sh", "fp": "e" * 64, "braucht": "", "stand": "neu", "abgelehnt": None,
+              "dateien": [datei("nas-setup/08-neu.sh", None)]},
+             {"skript": "09-gleich.sh", "fp": "d" * 64, "braucht": "", "stand": "gesehen", "abgelehnt": None,
+              "dateien": [datei("nas-setup/09-gleich.sh", c2)]}]
+    json.dump(liste, open(f"{state}/anstehend.json", "w"))
+    env = dict(ENV, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/myrling.toml", XDG_CACHE_HOME=f"{T}/cache-myrling",
+               FAKE_NAS_LAUF_STATE=state)
+    open(env["MERGE_TRAIN_CONFIG"], "w").write(
+        f'lokal = false\ngitlab = false\nmyrling_befehl = "{sys.executable} {HIER}/fake-nas-lauf"\nport = {PORT_MYRLING}\n'
+        'browser = "true"\n')
+    r = subprocess.run([sys.executable, "-c", ALLES_LADEN + "import sys; m=alles_laden(sys.argv[1]); m['KONF']['myrling_befehl']='/gibt/es/nicht'; "
+                        "print(m['MYRLING'].an())", SKRIPT], capture_output=True, text=True, env=env)
+    pruefe(r.stdout.strip() == "False", "Myrling: ohne Befehl ist die Quelle aus" + r.stderr[-300:])
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
+    try:
+        for _ in range(50):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{PORT_MYRLING}/ping", timeout=1); break
+            except OSError:
+                time.sleep(0.1)
+        def hol(p):
+            try:
+                return urllib.request.urlopen(f"http://127.0.0.1:{PORT_MYRLING}{p}", timeout=60).read().decode()
+            except urllib.error.HTTPError as e:
+                return f"HTTP {e.code}: " + e.read().decode()
+        zug = json.loads(hol("/zug.js").split("=", 1)[1].rstrip(";"))
+        wagen = {x["p"]: x for x in zug["wagen"]}
+        pruefe(list(wagen) == ["myrling:07-x.sh", "myrling:08-neu.sh", "myrling:09-gleich.sh"]
+               and all(x["quelle"] == "myrling" and x["status"] == "offen" for x in wagen.values()),
+               "Myrling: ein Waggon je anstehendem Skript – " + " ".join(wagen))
+        x = wagen.get("myrling:07-x.sh") or {}
+        pruefe((x.get("plus"), x.get("minus"), x.get("dateien")) == (2, 1, 3) and x.get("datei") == "/myrling/07-x.sh"
+               and "braucht 02-grund" in x.get("titel", "") and "anderen Repos" in x.get("titel", ""),
+               f"Myrling: Waggon mit Statistik je Datei gegen ihre Basis, braucht, fehlende Datei – {x}")
+        pruefe(wagen.get("myrling:09-gleich.sh", {}).get("marke") == "● gesehen", "Myrling: Marke aus dem Stand (gesehen)")
+        seite = hol("/myrling/07-x.sh")
+        k = open(f"{T}/cache-myrling/merge-train/schluessel").read().strip()
+        pruefe("⛭ 07-x.sh" in seite and "braucht 02-grund" in seite and "hilfe.sh" in seite and "Fehlt im Diff" in seite
+               and "Lüfter schneller" in seite and 'id="feedback"' in seite and 'id="fertig"' not in seite
+               and 'id="abschliessen"' not in seite and "?commit=" not in seite,
+               "Myrling: Seite mit Kopf, Commits, fehlender Datei, ohne fertig/Review" + seite[:300] * seite.startswith("HTTP"))
+        st = json.loads(hol(f"/api/zeilen?mr=myrling:07-x.sh&k={k}&pfad=nas-setup/07-x.sh&von=1&bis=99"))
+        pruefe(st["ok"] and st["n"] == 30, "Myrling: Kontext nachladen")
+        akte = json.load(open(f"{T}/data/merge-train/myrling/07-x.sh.json"))
+        struktur = json.load(open(akte["struktur"]))
+        pruefe([(d["neu"], d["status"]) for d in struktur["dateien"]] == [("nas-setup/07-x.sh", "geändert"), ("nas-setup/x.conf", "neu")]
+               and struktur["refs"]["head_sha"] == c2 and struktur["ordner"] == w,
+               "Myrling: Diff nur der Dateien des Laufs, ohne Rechte-Änderung – " + str([(d["neu"], d["status"]) for d in struktur["dateien"]]))
+        basis = struktur["refs"]["base_sha"]
+        pruefe(sh("git", "-C", w, "show", f"{basis}:nas-setup/07-x.sh").stdout == "".join(f"echo {i}\n" for i in range(1, 31))
+               and sh("git", "-C", w, "for-each-ref").stdout.count("\n") == 1 and g("status", "--porcelain") == "",
+               "Myrling: Basis ist ein eigener Commit ohne Ref, Repo unverändert")
+        pruefe("Keine Unterschiede zur zuletzt angesehenen Fassung" in hol("/myrling/09-gleich.sh"), "Myrling: gesehen = leerer Diff")
+        pruefe("wartet auf keine Prüfung" in hol("/myrling/10-weg.sh"), "Myrling: nicht anstehendes Skript → Güterbahnhof mit Grund")
+        # Gespräch: Frage an der Zeile, der Agent im Repo der Skripte holt sie ab und antwortet
+        def post_m(pfad, d):
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT_MYRLING}{pfad}", json.dumps(d).encode(),
+                                         {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT_MYRLING}"})
+            with urllib.request.urlopen(req, timeout=60) as rr:
+                return json.loads(rr.read())
+        mb = {"mr": "myrling:07-x.sh", "k": k, "sha": c2}
+        r = post_m("/api/kommentar", dict(mb, aktion="neu", datei=0, a=None, b=15, text="Warum 30?"))
+        pruefe(r["ok"] and r["review"]["faeden"][0]["status"] == "entwurf", "Myrling: Frage an Zeile 15")
+        fid = r["review"]["faeden"][0]["id"]
+        r = post_m("/api/gespraech", dict(mb, aktion="senden"))
+        log = open(env["TODO_LOG"]).read()
+        pruefe(r["ok"] and "agent feedback myrling:07-x.sh" in log, "Myrling: Feedback senden → todo mit Prompt für diesen Lauf")
+        agent = lambda *a: subprocess.run([sys.executable, SKRIPT, "agent", *a], cwd=w, env=env, capture_output=True, text=True)
+        r = agent("feedback")
+        pruefe(f"[{fid}] nas-setup/07-x.sh:15" in r.stdout and "echo 30" in r.stdout and "Lauf 07-x.sh" in r.stdout
+               and "None" not in r.stdout,
+               "Myrling: agent feedback im Repo findet den Lauf – " + (r.stdout + r.stderr)[-300:])
+        r = agent("antworten", fid, "Weil es heiß ist.", "-p", "myrling:07-x.sh")
+        rv = json.loads(hol(f"/api/review?mr=myrling:07-x.sh&k={k}"))
+        f1 = next((x for x in rv["faeden"] if x["id"] == fid), {})
+        pruefe(r.returncode == 0 and f1.get("status") == "antwort" and f1.get("b") == 15, "Myrling: Antwort an der Zeile – " + r.stderr[-300:])
+        zug = json.loads(hol("/api/zug"))
+        pruefe(next(x for x in zug["wagen"] if x["p"] == "myrling:07-x.sh").get("gs_neu") == 1, "Myrling: Zug zeigt neue Antwort")
+        # neue Fassung: Faden wandert mit, Liste neu geholt beim Laden
+        alt = open(skript).read()
+        open(skript, "w").write("# neu\n" + alt); g("commit", "-qam", "Kopf")
+        c3 = g("rev-parse", "HEAD")
+        for lauf in liste:
+            for d in lauf["dateien"]:
+                if d["repo"] == w:
+                    d["commit"] = c3
+        json.dump(liste, open(f"{state}/anstehend.json", "w"))
+        time.sleep(5.1)  # myrling.FRISCH
+        neu = hol("/myrling/07-x.sh")
+        pruefe(f"Stand {c3[:8]}" in neu, "Myrling: neue Fassung, Seite neu gebaut" + neu[:300] * neu.startswith("HTTP"))
+        rv = json.loads(hol(f"/api/review?mr=myrling:07-x.sh&k={k}"))
+        f1 = next((x for x in rv["faeden"] if x["id"] == fid), {})
+        pruefe(f1.get("b") == 16, f"Myrling: neue Fassung, der Faden wandert mit (Zeile {f1.get('b')}, {f1.get('unter')})")
+        aufrufe = open(f"{state}/aufrufe.log").read().splitlines()
+        pruefe(all(a == "--anstehend --json" for a in aufrufe) and 2 <= len(aufrufe) <= 4,
+               f"Myrling: Befehl nur beim Laden gefragt, nicht je Anfrage ({len(aufrufe)}×)")
+    finally:
+        srv.terminate(); srv.wait()
+
+
 def main():
     teile = [a for a in sys.argv[1:] if not a.startswith("--")] or list(TEILE)
     unbekannt = [t for t in teile if t not in TEILE]
@@ -1036,6 +1164,8 @@ def main():
             arbeitsstand_test()
         if "gemischt" in teile:
             gemischt_test("gitlab.example.com/gruppe/demo/1")
+        if "myrling" in teile:
+            myrling_test()
         print("Teile:", " ".join(t for t in TEILE if t in teile))
     finally:
         if "--behalten" in sys.argv:

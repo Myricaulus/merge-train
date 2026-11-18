@@ -4,7 +4,7 @@ from .einstellungen import DATEN, KONF, jetzt
 from .waggon import Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
-from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_stand,
+from .akte import (AKTEN_ORDNER, akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_stand,
     faden_status, faeden_von, kommentar_finden, struktur_laden)
 from .hinweise import hinweise_aufloesen, see_also_aufloesen
 from .ansichten import ansicht_lesen
@@ -240,17 +240,17 @@ def gespraech_aktion(waggon, eingabe):
 # ---- Agent-Seite (CLI)
 
 def alle_gespraeche(leere=False):
-    """Alle Gespräche (lokale Projekte und MRs) → Liste von Schlüsseln. MRs nur mit Faden, außer leere: auch die
-    noch ohne (horchen im Klon muss einen MR schon belauschen, bevor dort die erste Frage steht)."""
+    """Alle Gespräche (lokale Projekte, Myrling-Läufe und MRs) → Liste von Schlüsseln. MRs und Myrling-Läufe nur mit
+    Faden, außer leere: auch die noch ohne (horchen im Klon muss sie schon belauschen, bevor dort die erste Frage steht)."""
     out = []
-    for unter in ("lokal", "reviews"):
+    for unter in AKTEN_ORDNER.values():
         for p in glob.glob(os.path.join(DATEN, unter, "*.json")):
             try:
                 akte = json.load(open(p, encoding="utf-8"))
             except (OSError, ValueError):
                 continue
             m = akte.get("mr") or {}
-            if m.get("lokal") or m.get("iid") and leere or m.get("iid") and any(k.get("nachrichten") is not None for k in akte.get("kommentare") or []):
+            if m.get("lokal") or (m.get("iid") or m.get("myrling")) and (leere or any(k.get("nachrichten") is not None for k in akte.get("kommentare") or [])):
                 out.append(Waggon.aus_dict(m))
     return out
 

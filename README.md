@@ -20,8 +20,8 @@ Obendrauf gibt es einen Güterbahnhof im Seitenkopf, bei dem man jedem fertigen 
 ## Überblick
 
 Merge-Requests im Browser ansehen, so wie der „Changes“-Reiter in GitLab, nur schneller. Jeder Waggon im Zug ist ein
-Vergleich Quelle → Ziel in einem lokalen Klon. Die Waggons kommen aus zwei **Quellen** (einzeln an- und abschaltbar,
-sind beide an, fahren sie im selben Zug):
+Vergleich Quelle → Ziel in einem lokalen Klon. Die Waggons kommen aus drei **Quellen** (einzeln an- und abschaltbar,
+alle eingeschalteten fahren im selben Zug):
 
 - **lokal** (`lokal = true`): Für alle Repos unter `~/Projects` wird `claude` gegen `reviewed` verglichen.
   „fertig ✓“ setzt `reviewed` auf den gesehenen Stand. Fragen und Wünsche zum Code gehen per Klick auf die Zeilennummer
@@ -29,6 +29,10 @@ sind beide an, fahren sie im selben Zug):
   von/bis gibt es auch je Projekt: `[zweige.<projekt>]` in der Einstellung, oder im Zug den Waggon mit „▾“ aufklappen
   (Projektinfos, Branches zur Auswahl, „↺ Standard“). Repos, denen ein Branch fehlt, fahren als gestrichelter
   Waggon „⚠ fehlt“ mit, wenn sie ausdrücklich unter `projekte` stehen.
+- **Myrling** (`myrling = true`, Befehl `myrling_befehl`): Skripte, die der Myrling ausführen soll und die auf eine
+  Prüfung warten, heute die NAS-Skripte von `nas-lauf`. Ein Waggon „⛭ skript“ je Skript. Der Diff zeigt das Skript und
+  seine Begleitdateien, jede gegen die Fassung, die du zuletzt angesehen hast. Fragen an der Zeile gehen an den Agenten
+  im Repo der Skripte, der sie ändern und committen darf. Fehlt der Befehl, ist die Quelle aus.
 - **GitLab** (`gitlab = true`): ein MR mit eigenen Review-Kommentaren und Agent-Hinweisen. „Review abschließen“ legt
   die Kommentare als **Entwürfe** im MR an, veröffentlicht wird danach in GitLab. Dazu private Fragen an Agenten
   (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)), die nur antworten, nichts ändern.
@@ -302,6 +306,8 @@ liegen im Repo zwei Symlinks aus der [Installation](#installation) (in `.gitigno
 | `lokal` | `true` | Quelle „lokal“ (Projekt-Diff `claude` → `reviewed`) an/aus |
 | `projekte` | `~/Projects` | Ordner mit Repos oder Liste aus Ordnern/einzelnen Repos für „lokal“ |
 | `von`, `bis` | `reviewed`, `claude` | „lokal“ vergleicht `bis` gegen `von`. `bis = "arbeitsstand"`: das Arbeitsverzeichnis samt nicht Committetem (z. B. was ein Agent gerade baut) gegen `von = "origin/main"`; Index und Branch bleiben unberührt, „fertig“ gibt es dann nicht |
+| `myrling` | `true` | Quelle „Myrling“ (Skripte, die auf eine Prüfung warten) an/aus; aus, wenn `myrling_befehl` fehlt |
+| `myrling_befehl` | `nas-lauf` | liefert die anstehenden Läufe (`--anstehend --json`), darf `~` und Argumente enthalten |
 | `gitlab` | `true` | Quelle „GitLab“ (MRs) an/aus |
 | `gitlab_host` | leer | Host, wenn ihn weder URL noch Remote liefern |
 | `mr_liste` | `reviewer,author` | welche MRs der Zug zeigt: `reviewer`, `author`, `assignee` (mehrere mit Komma) oder `keine` |

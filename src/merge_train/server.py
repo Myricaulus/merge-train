@@ -11,8 +11,9 @@ from .abhaken import abhaken
 from .beobachter import neue_zeilen, veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
-from .seite import VERSION, mr_seite, projekt_seite, startseite
-from .quellen import GITLAB, LOKAL, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
+from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, startseite
+from .myrling import anstehend_warten, im_hintergrund_holen
+from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -192,7 +193,7 @@ def start(anfrage):
         offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
         if offen:
             return weiterleitung(offen[0]["datei"])
-        if not GITLAB.an():
+        if not (GITLAB.an() or MYRLING.an()):
             return Antwort(200, ALLES_DURCH)
     return Antwort(200, startseite())
 
@@ -219,6 +220,17 @@ def mr_seite_liefern(anfrage, kennung):
     return Antwort(200, open(datei, "rb").read())
 
 
+@route("GET", re.compile(r"myrling/(.*)", re.S), mit_schluessel=False, quelle=MYRLING)
+def myrling_seite_liefern(anfrage, skript):
+    """Seite eines Laufs, der auf eine Prüfung wartet; steht er nicht (mehr) an: Güterbahnhof mit dem Grund."""
+    waggon = Waggon.aus_id("myrling:" + skript)
+    try:
+        datei, _ = myrling_seite(waggon)
+    except Fehler as e:
+        return Antwort(200, startseite(str(e), waggon.id))
+    return Antwort(200, open(datei, "rb").read())
+
+
 @route("GET", re.compile(r".*\.html", re.S), mit_schluessel=False, quelle=LOKAL)
 def projekt_seite_liefern(anfrage):
     repos = {dateiname(projektname(r)): r for r in finde_repos()}
@@ -235,8 +247,13 @@ def projekt_seite_liefern(anfrage):
 @route("GET", "zug.js", mit_schluessel=False)
 @route("GET", "api/zug", mit_schluessel=False)
 def zug(anfrage):
-    """Der gemischte Zug aller eingeschalteten Quellen."""
-    d = {"wagen": alle_wagen(anfrage.daten.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None}
+    """Der gemischte Zug aller eingeschalteten Quellen. Myrling: zug.js (Laden einer Seite) holt dessen Liste im
+    Hintergrund neu (nachladen: die Seite fragt dann api/zug?warten=1), api/zug nimmt die zuletzt geholte."""
+    nachladen = anfrage.pfad == "zug.js" and MYRLING.an() and im_hintergrund_holen()
+    if anfrage.pfad == "api/zug" and anfrage.daten.get("warten") and MYRLING.an():
+        anstehend_warten()
+    d = {"wagen": alle_wagen(anfrage.daten.get("akt")), "zeit": mr_liste()[1] if GITLAB.an() else None,
+         "nachladen": bool(nachladen)}
     if anfrage.pfad == "api/zug":
         return d
     return Antwort(200, "window.MR_ZUG=" + json.dumps(d, ensure_ascii=False) + ";", "text/javascript; charset=utf-8")

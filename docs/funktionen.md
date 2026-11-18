@@ -8,7 +8,7 @@ Beim Ändern mitpflegen: Eine neue Funktion bekommt hier einen Eintrag, eine neu
 
 ## Grundbegriffe
 
-- **Waggon**: ein Vergleich Quelle → Ziel in einem lokalen Klon (lokales Projekt oder MR). Schlüssel für alles andere:
+- **Waggon**: ein Vergleich Quelle → Ziel in einem lokalen Klon (lokales Projekt, MR oder Lauf des Myrlings). Schlüssel für alles andere:
   Seite, Akte, Fäden, Zug. `waggon.py`
 - **Quelle**: woher Waggons kommen. `quellen.py`
 - **Akte**: die JSON-Datei je Waggon mit Kommentaren, Fäden und Hinweis-Status. `akte.py`
@@ -19,16 +19,25 @@ Beim Ändern mitpflegen: Eine neue Funktion bekommt hier einen Eintrag, eine neu
 ## Funktionen
 
 ### 1. Mehrere Quellen für Waggons
-Lokale Branches (`bis` gegen `von` in jedem Repo unter `projekte`) und GitLab-MRs. Einzeln an- und abschaltbar, beide
-zusammen in einem Zug.
-- Achsen: Quelle (lokal, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`, dazu
+Lokale Branches (`bis` gegen `von` in jedem Repo unter `projekte`), Läufe des Myrlings und GitLab-MRs. Einzeln an- und
+abschaltbar, alle zusammen in einem Zug.
+- Achsen: Quelle (lokal, Myrling, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`, dazu
   `titel` und `logo` (Datei in `web/`, Route `logo/<name>.svg`): das Symbol für „wer = extern“, Pflicht für jede
   Quelle mit Einträgen von außen.
-- Ort: `quellen.py` (Klassen `Lokal`, `GitLab`), `gitlab.py` (glab), `cli.py` (MR-Verweise).
+- Ort: `quellen.py` (Klassen `Lokal`, `Myrling`, `GitLab`), `gitlab.py` (glab), `myrling.py` (Befehl des Myrlings),
+  `cli.py` (MR-Verweise). Waggon-Art: `Waggon.lokal` | `.myrling` | sonst MR (`ist_mr`), Akten-Ordner `AKTEN_ORDNER`.
 - Erweitern: eine neue Quelle ist eine neue Klasse in `quellen.py` plus eine Waggon-Art, keine eigene Seite.
 - von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`): auf der Seite gewählt (Akte `zweige`) vor
   `[zweige.<projekt>]` vor `von`/`bis`. Fehlt ein Branch: `fehlende_zweige` (`git.py`), Waggon „⚠ fehlt“
   (`stand_oder_fehlt`); ohne gemeinsamen Vorgänger (`ohne_basis`, z. B. nach einem Rebase ab der Wurzel) „⚠ keine Basis“, nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).
+- Myrling: Skripte, die der Myrling ausführen soll und die auf eine Prüfung warten (heute nas-lauf, `myrling_befehl`
+  mit `--anstehend --json`; Vertrag oben in `myrling.py`). Ein Waggon je Skript, Kennung `myrling:<skript>`, Seite
+  `/myrling/<skript>`. Jede Datei hat ihre eigene Vergleichsbasis: `lauf_ort` baut daraus einen Basis-Commit
+  (`stand_mit` in `git.py`: Baum des Stands, jede Datei auf ihrer Basis, kein Ref), damit Diff, Kontext und Fäden wie
+  bei den anderen Quellen laufen. Die Liste kostet etwa 1 s: `zug.js` holt sie im Hintergrund (`im_hintergrund_holen`,
+  die Seite fragt mit `api/zug?warten=1` nach), die Seite eines Laufs frisch (`FRISCH`). Fäden hängen am Skript
+  (`branch` = „myrling“) und wandern über neue Fassungen mit. Begleitdateien aus anderen Repos zeigt der Waggon noch
+  nicht (Warnung „Fehlt im Diff“). Attrappe für die Tests: `tests/fake-nas-lauf`.
 - Waggon-Karte („▾“ am lokalen Waggon): Projektinfos, von/bis wählen. `projekt_einstellung`/`projekt_einstellen`
   (`quellen.py`), Route `api/projekt`, `karteOeffnen` in `web/zug.js`. Erweitern: weitere Projekt-Einstellungen dort
   und in der Akte, keine eigene Seite.
@@ -45,9 +54,11 @@ Was ein Waggon darf, bestimmt seine Quelle: `review` (Kommentare nach GitLab), `
 - lokal: Branch `bis` gegen `von` (Standard `claude` → `reviewed`)
 - Arbeitsstand: `bis = "arbeitsstand"`, auch nicht Committetes, ohne Index oder Branch anzufassen
 - MR: Quell-Branch gegen den gemeinsamen Vorgänger mit dem Ziel-Branch
+- Myrling: jede Datei des Laufs gegen ihre zuletzt angesehene Fassung (direkt, nicht über den gemeinsamen Vorgänger)
 - Beobachten: eigene Instanz je Repo/Worktree, live (siehe 16)
 - Achsen: `von`/`bis` in der Einstellung, Quelle.
-- Ort: `einstellungen.py` (`VON`, `BIS`, `ARBEITSSTAND`), `git.py` (`arbeitsstand`), `Quelle.ort`.
+- Ort: `einstellungen.py` (`VON`, `BIS`, `ARBEITSSTAND`), `git.py` (`arbeitsstand`, `stand_mit`; eigene Commit-Objekte
+  mit `eigener_commit_env`), `Quelle.ort`.
 
 ### 4. Diff-Seite (gemeinsam für alle Quellen)
 Eine Seite für jeden Waggon: Diff immer aus dem lokalen Git (nie aus der GitLab-API), Syntaxfarben, geänderte Wörter

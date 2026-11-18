@@ -4,7 +4,7 @@ gebauten Seite.
 Zugriff nur hierüber: ändern mit `with akte_bearbeiten(waggon) as akte:` (sperrt, lädt, speichert am Ende, wenn sich
 etwas geändert hat; bei einer Ausnahme nicht), nur lesen mit `akte_lesen(waggon)`.
 
-Aufbau der Datei (lokal/<name>.json bzw. reviews/<name>.json):
+Aufbau der Datei (lokal/<name>.json, myrling/<skript>.json bzw. reviews/<name>.json):
   mr               Waggon.als_dict(), bei MRs dazu web_url, titel, source_branch, target_branch
   meta             MR-Daten aus GitLab (META_FELDER in gitlab.py, _zeit = Abruf), nur MRs
   klon             Repo, in dem die Hinweis-Datei liegt (agent zeigen), nur MRs
@@ -47,7 +47,15 @@ from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 from contextlib import contextmanager
 
 def akte_datei(waggon):
-    return os.path.join(DATEN, "lokal" if waggon.lokal else "reviews", waggon.dateiname + ".json")
+    return os.path.join(DATEN, AKTEN_ORDNER[waggon_art(waggon)], waggon.dateiname + ".json")
+
+
+def waggon_art(waggon):
+    """lokal | myrling | mr"""
+    return "lokal" if waggon.lokal else "myrling" if waggon.myrling else "mr"
+
+
+AKTEN_ORDNER = {"lokal": "lokal", "myrling": "myrling", "mr": "reviews"}
 
 
 def akte_laden(waggon, kaputte_beiseite=False):

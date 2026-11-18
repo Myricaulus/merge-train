@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Nachgebautes nas-lauf für Tests der Quelle Myrling (das echte liegt in newterminal und fehlt auf anderen Rechnern).
+
+Die anstehenden Läufe stehen in $FAKE_NAS_LAUF_STATE/anstehend.json (so, wie nas-lauf --anstehend --json sie ausgibt;
+der Test schreibt die Datei). Jeder Aufruf wird in $FAKE_NAS_LAUF_STATE/aufrufe.log protokolliert.
+
+  --anstehend --json                       gibt anstehend.json aus (FAKE_NAS_LAUF_FEHLER=1: Exit 1)
+  --vermerken <skript> <fp> ok|abgelehnt [grund]
+                                           Exit 3, wenn <fp> nicht der jetzige ist; ok nimmt den Lauf aus der Liste,
+                                           abgelehnt setzt stand/abgelehnt; Urteile in vermerkt.json
+  <skript>                                 Lauf: Ausgabe „lauf <skript>“, Exit $FAKE_NAS_LAUF_EXIT (Standard 0)
+"""
+import json, os, sys
+from datetime import datetime
+
+STATE = os.environ["FAKE_NAS_LAUF_STATE"]
+LISTE = os.path.join(STATE, "anstehend.json")
+
+
+def laden(name, std):
+    try:
+        return json.load(open(os.path.join(STATE, name), encoding="utf-8"))
+    except FileNotFoundError:
+        return std
+
+
+def speichern(name, obj):
+    json.dump(obj, open(os.path.join(STATE, name), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+a = sys.argv[1:]
+with open(os.path.join(STATE, "aufrufe.log"), "a", encoding="utf-8") as f:
+    f.write(" ".join(a) + "\n")
+if a[:1] == ["--anstehend"]:
+    if a[1:] != ["--json"]:
+        sys.exit("nas-lauf: nur als: nas-lauf --anstehend --json")
+    if os.environ.get("FAKE_NAS_LAUF_FEHLER"):
+        sys.exit("nas-lauf: kaputt (FAKE_NAS_LAUF_FEHLER)")
+    print(json.dumps(laden("anstehend.json", []), ensure_ascii=False))
+elif a[:1] == ["--vermerken"]:
+    skript, fp, urteil, grund = (a[1:] + [""])[:4]
+    liste = laden("anstehend.json", [])
+    lauf = next((x for x in liste if x["skript"] == skript), None)
+    if not lauf or lauf["fp"] != fp:
+        print(f"nas-lauf: {skript}: Fingerabdruck veraltet", file=sys.stderr)
+        sys.exit(3)
+    if urteil == "ok":
+        liste.remove(lauf)
+    elif urteil == "abgelehnt":
+        lauf.update(stand="abgelehnt", abgelehnt={"am": datetime.now().strftime("%Y-%m-%d %H:%M"), "grund": grund})
+    else:
+        sys.exit(f"nas-lauf: ok oder abgelehnt, nicht {urteil}")
+    speichern("anstehend.json", liste)
+    speichern("vermerkt.json", laden("vermerkt.json", []) + [{"skript": skript, "fp": fp, "urteil": urteil, "grund": grund}])
+elif a and not a[0].startswith("-"):
+    print(f"lauf {a[0]}")
+    sys.exit(int(os.environ.get("FAKE_NAS_LAUF_EXIT", "0")))
+else:
+    sys.exit(f"nas-lauf (Attrappe): unbekannt: {' '.join(a)}")

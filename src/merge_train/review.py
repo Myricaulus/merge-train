@@ -24,7 +24,7 @@ def stand(waggon, akte):
     teile.append(horcht(waggon) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
     k = kontext(waggon)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
-    for p in [akte_datei(waggon)] + ([] if waggon.lokal else hinweis_dateien(waggon, akte)):
+    for p in [akte_datei(waggon)] + (hinweis_dateien(waggon, akte) if waggon.ist_mr else []):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -177,7 +177,8 @@ def review_daten(mr, ansicht=None):
 
 
 def seiten_struktur(sid, ansicht=None):
-    """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“) oder lokales Projekt („projekt:name“), ganz oder Ansicht."""
+    """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“), lokales Projekt („projekt:name“) oder Myrling-Lauf
+    („myrling:skript“), ganz oder Ansicht."""
     waggon = Waggon.aus_id(sid)
     if waggon.lokal:
         try:

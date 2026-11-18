@@ -1,9 +1,9 @@
-"""Die Seiten bauen: Diff-Seite eines Projekts bzw. MRs, Güterbahnhof mit Zug, Startseite."""
+"""Die Seiten bauen: Diff-Seite eines Projekts, MRs bzw. Myrling-Laufs, Güterbahnhof mit Zug, Startseite."""
 import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
 from .einstellungen import ARBEITSSTAND, KONF, ORDNER, SKRIPT, dateiname, ersetzen, projektname, schluessel
 from .waggon import Waggon, fertig_moeglich, von_bis
-from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, projekt_wurzel, STAND_TEXT, stand_zu_gitlab, wip_name, wip_sha, zerlegen
+from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, STAND_TEXT, stand_zu_gitlab, wip_name, wip_sha, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
@@ -115,9 +115,11 @@ def stand_html(ordner, meta, head):
 
 def leitstand_html():
     """Knöpfe im Leitstand: je eingeschalteter Quelle."""
+    from .quellen import MYRLING  # quellen braucht seite
     knoepfe = ""
-    if KONF["lokal"]:
-        knoepfe += '<button data-l="neu" title="Nach neuen lokalen Änderungen schauen">↻ Änderungen</button>'
+    wo = [t for t, an in (("lokalen Änderungen", KONF["lokal"]), ("Läufen des Myrlings", MYRLING.an())) if an]
+    if wo:  # lädt die Seite neu: lokal ist dann alles frisch, zug.js holt die Läufe neu
+        knoepfe += f'<button data-l="neu" title="Nach neuen {" und ".join(wo)} schauen">↻ Änderungen</button>'
     if KONF["gitlab"]:
         fehlt = not shutil.which((shlex.split(KONF["glab"]) or ["glab"])[0])
         def knopf(aktion, text, titel):  # ohne glab ausgegraut: der Bahnhof steht, aber es fährt nichts
@@ -158,9 +160,9 @@ def praefix_json(praefix, ans=None):
     return praefix + (f'-{ans["art"]}{ans["sha"][:12]}' if ans else "") + f"-{VERSION}.json"
 
 
-def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
+def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None, commits=None):
     """Seite für base..head (bzw. eine Commit-Ansicht) bauen, im Cache je Stand. html_fn(dateien, commits, texte, struktur).
-    Rückgabe (html-pfad, struktur)."""
+    commits: die Liste unter „Commits“, Standard base..head. Rückgabe (html-pfad, struktur)."""
     ans = ansicht_aufloesen(ordner, refs, *ansicht) if ansicht else None
     stamm = praefix_json(praefix, ans)[:-5]
     if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
@@ -170,7 +172,8 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None):
     von, bis = (ans["von"], ans["bis"]) if ans else (refs["base_sha"], refs["head_sha"])
     dateien = zerlegen(git(ordner, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
                            "-M", "-U3", von, bis))
-    commits = git_commits(ordner, refs["base_sha"], refs["head_sha"])
+    if commits is None:
+        commits = git_commits(ordner, refs["base_sha"], refs["head_sha"])
     def benoetigt(d):
         if d["binaer"] or not d["hunks"]:
             return None, None
@@ -321,15 +324,76 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
 
 def ansicht_struktur(haupt, ansicht):
     """Struktur der Ansichts-Seite zur Hauptseite (erzeugt sie bei Bedarf)."""
+    from .quellen import quelle  # quellen braucht seite
     p = praefix_json(haupt["praefix"], {"art": ansicht[0], "sha": ansicht[1]})
     if p not in STRUKTUR:
         if not os.path.exists(p):
             waggon = Waggon.aus_id(haupt["id"])
-            if waggon.lokal:
-                return projekt_seite(projekt_wurzel(waggon.lokal), ansicht=ansicht)[1]
-            return mr_seite(waggon, ansicht=ansicht)[1]
+            return quelle(waggon).seite(waggon, ansicht=ansicht)[1]
         STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
     return STRUKTUR[p]
+
+
+# ---- Lauf des Myrlings (Skript und Begleitdateien, jede gegen ihre zuletzt angesehene Fassung)
+
+MYRLING_ORDNER = os.path.join(ORDNER, "myrling")
+
+
+# stand aus nas-lauf --anstehend → Text im Kopf der Seite und Marke am Waggon
+LAUF_STAND = {"neu": ("neu", "noch nie angesehen"), "geaendert": ("geändert", "seit der zuletzt angesehenen Fassung geändert"),
+              "abgelehnt": ("✗ abgelehnt", "diese Fassung ist abgelehnt"),
+              "gesehen": ("gesehen", "wie zuletzt angesehen, aber weder geprüft noch erfolgreich gelaufen")}
+
+
+def myrling_seite(waggon, ansicht=None):
+    """Seite eines Myrling-Laufs: Diff von der Basis (jede Datei auf ihrer zuletzt angesehenen Fassung, lauf_ort) zum
+    jetzigen Commit, Commits = die, die eine der Dateien seit ihrer Basis geändert haben. Fragt den Befehl der Quelle,
+    wenn seine Liste älter als ein paar Sekunden ist. Rückgabe (html-pfad, struktur)."""
+    from .myrling import lauf_ort, lauf_von
+    lauf = lauf_von(waggon.myrling)
+    wurzel, basis, head, fehlen = lauf_ort(lauf)
+    refs = {"base_sha": basis, "start_sha": basis, "head_sha": head}
+    kopf = {k: lauf[k] for k in ("fp", "stand", "braucht", "abgelehnt")}
+    mh = hashlib.sha1(json.dumps([kopf, fehlen], sort_keys=True).encode()).hexdigest()[:6]
+    praefix = os.path.join(MYRLING_ORDNER, f"{waggon.dateiname}-{head[:12]}-{basis[:12]}-{mh}")
+    hier = [d for d in lauf["dateien"] if d["repo"] == wurzel]
+    nur = set()
+    for d in hier:  # neue Datei: die Commits, die sie angelegt und geändert haben (höchstens 20)
+        bereich = [f'{d["basis"]}..{head}'] if d["basis"] else ["-n", "20", head]
+        nur |= set((git(wurzel, "rev-list", *bereich, "--", d["pfad"], check=False) or "").split())
+    pfad, struktur = seite_bauen(waggon.id, wurzel, refs, praefix, lambda *a: myrling_html(waggon, lauf, fehlen, *a),
+                                 ansicht, commits=git_commits(wurzel, nur=nur))
+    if not ansicht:
+        with akte_bearbeiten(waggon) as akte:  # Gespräch: Kommentare beziehen sich auf den ganzen Lauf
+            akte["struktur"] = praefix_json(praefix)
+            akte["lauf"] = {"fp": lauf["fp"], "repo": wurzel}
+    return pfad, struktur
+
+
+def myrling_html(waggon, lauf, fehlen, dateien, commits, texte, struktur):
+    e = html.escape
+    head = struktur["refs"]["head_sha"]
+    stand_kurz, stand_lang = LAUF_STAND.get(lauf["stand"], (lauf["stand"], lauf["stand"]))
+    warn = ""
+    if lauf["abgelehnt"]:
+        warn += (f'<div class="warn">Abgelehnt am {e(str(lauf["abgelehnt"].get("am") or "?"))}: '
+                 f'{e(str(lauf["abgelehnt"].get("grund") or "(ohne Begründung)"))}</div>')
+    if fehlen:
+        warn += ('<div class="warn">Fehlt im Diff (Begleitdateien aus anderen Repos zeigt der Waggon noch nicht): '
+                 + ", ".join(f'<code title="{e(d["repo"])}">{e(kurzpfad(os.path.join(d["repo"], d["pfad"])))}</code>' for d in fehlen)
+                 + "</div>")
+    leer = (f'<div class="leer">Keine Unterschiede zur zuletzt angesehenen Fassung – {e(stand_lang)}.</div>'
+            if not dateien else "")
+    daten = seiten_daten(waggon.id, head, len(dateien), None, projekt=waggon.id, fp=lauf["fp"])
+    hilfe = ('<div class="hilfe">Klick auf Zeilennummer: Frage an Claude<br><kbd>n</kbd> nächster Waggon<br>'
+             '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
+    braucht = f' · braucht {e(lauf["braucht"])}' if lauf["braucht"] else ""
+    return diff_seite(titel=f'Lauf {e(waggon.myrling)}', sid=waggon.id, lesen=False, daten=daten, head=head,
+                      dateien=dateien, texte=texte, commits=commits, h1=f'⛭ {e(waggon.myrling)}',
+                      commits_titel="Commits seit der zuletzt angesehenen Fassung", commits_liste=commits_html(commits),
+                      nach_commits=warn, hilfe=hilfe, leer=leer,
+                      sub_vor=f'<span class="lauf-stand" title="{e(stand_lang)}">{e(stand_kurz)}</span>{braucht} · Myrling ·\n',
+                      nach_sub=f'\n<span class="sub quelle-ok" title="Fingerabdruck {e(lauf["fp"])}">· {e(kurzpfad(struktur["ordner"]))} · fp {e(lauf["fp"][:8])}</span>')
 
 
 def startseite(text="", sid=""):

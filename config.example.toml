@@ -19,6 +19,11 @@
 # glab = "glab"               # Befehl, darf Argumente enthalten
 # mr_liste = "reviewer"       # MR-Zug: reviewer | assignee | author | keine
 
+# Läufe des Myrlings, die auf eine Prüfung warten (heute die NAS-Skripte von nas-lauf): ein Waggon je Skript, Diff
+# gegen die zuletzt angesehene Fassung. Fehlt der Befehl, ist die Quelle aus.
+# myrling = true
+# myrling_befehl = "~/Projects/newterminal/nas-setup/werkzeuge/nas-lauf"   # mit --anstehend --json
+
 # Weitere Klone der GitLab-Projekte ohne Eintrag unter [repos]: ein MR aus gruppe/metrics-client findet
 # <ordner>/metrics-client (oder <ordner>/gruppe/metrics-client), wenn dessen origin auf genau dieses Projekt zeigt
 # klon_ordner = ["~/workspaces"]   # ein Ordner oder eine Liste

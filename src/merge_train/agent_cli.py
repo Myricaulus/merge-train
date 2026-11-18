@@ -41,8 +41,9 @@ def agent_name(als=None, sonst=None):
 
 
 def gespraech_ziele(name=None):
-    """Welche Gespräche meint der Agent? MR-Kennung/URL → dieses; Projekt → dessen lokales Gespräch;
-    ohne Angabe: das aktuelle Repo (lokales Gespräch und alle MRs mit diesem Klon). Rückgabe: Liste von Schlüsseln."""
+    """Welche Gespräche meint der Agent? MR-Kennung/URL bzw. „myrling:skript“ → dieses; Projekt → dessen lokales
+    Gespräch; ohne Angabe: das aktuelle Repo (lokales Gespräch und alle MRs und Myrling-Läufe mit diesem Klon).
+    Rückgabe: Liste von Schlüsseln."""
     if name:
         mr = None
         try:
@@ -50,8 +51,10 @@ def gespraech_ziele(name=None):
         except Fehler:
             if ist_mr_ref(name):
                 mr = mr_ref(name, os.getcwd())
-        if mr and not mr.lokal:
-            treffer = [waggon for waggon in alle_gespraeche() if not waggon.lokal and waggon.projekt == mr.projekt
+        if mr and mr.myrling:
+            return [mr]
+        if mr and mr.ist_mr:
+            treffer = [waggon for waggon in alle_gespraeche() if waggon.ist_mr and waggon.projekt == mr.projekt
                        and waggon.iid == mr.iid and (not mr.host or waggon.host == mr.host)]
             return treffer[:1] or [mr]
     ordner = name or os.getcwd()
@@ -200,7 +203,9 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
                         if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt"):
                             m["abgeholt"] = jetzt()
         bis = von_bis(waggon.lokal)[1] if waggon.lokal else None
-        wo = f"{branch}{' · Arbeitsstand' if bis == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
+        wo = (f"{branch}{' · Arbeitsstand' if bis == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else
+              f"Lauf {waggon.myrling} · Stand {head[:8]} · Repo {wurzel}" if waggon.myrling else
+              f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}")
         kopf = (f'merge-train · {waggon.name} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
@@ -216,9 +221,12 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
             except Fehler:
                 pass
         teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review, waggon=waggon) + "\n" for k in zeigen]
-        teile.append("Code-Zeilen beziehen sich auf " + (("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
-                     "nicht committen." if bis == ARBEITSSTAND else f"den aktuellen Stand von {bis}.") if waggon.kann["committen"]
-                     else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
+        teile.append("Code-Zeilen beziehen sich auf " + (
+            f"den Stand {head[:8]} des Skripts; Änderungen im Repo committen, der Myrling führt erst die neu geprüfte "
+            "Fassung aus." if waggon.myrling else
+            ("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
+             "nicht committen." if bis == ARBEITSSTAND else f"den aktuellen Stand von {bis}.") if waggon.kann["committen"]
+            else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
         if any(waggon.kann["review"] for waggon in ziele):
@@ -404,7 +412,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
     if len(ziele) > 1:
         lokal = [review_ziel(ziele)] if review_ziel(ziele) else [waggon for waggon in ziele if waggon.lokal]
         if not lokal:
-            raise Fehler("mehrere MRs zu diesem Repo – mit -p den MR angeben: " + ", ".join(waggon.id for waggon in ziele))
+            raise Fehler("mehrere MRs bzw. Läufe zu diesem Repo – mit -p angeben: " + ", ".join(waggon.id for waggon in ziele))
         ziele = lokal[:1]
     waggon = ziele[0]
     wurzel, head = quelle(waggon).ort(waggon)

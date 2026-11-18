@@ -21,6 +21,8 @@ STANDARD = {
     "gitlab": True,           # GitLab-MRs über glab
     "gitlab_host": "",        # leer: Host aus MR-URL bzw. git-Remote, sonst glab-Standard
     "glab": "glab",
+    "myrling": True,          # Läufe des Myrlings, die auf eine Prüfung warten (ein Waggon je Skript); aus, wenn der Befehl fehlt
+    "myrling_befehl": "nas-lauf",  # liefert sie (--anstehend --json), z. B. "~/Projects/newterminal/nas-setup/werkzeuge/nas-lauf"
     "mr_liste": "reviewer,author",  # Zug im GitLab-Modus: reviewer, assignee, author (mehrere mit Komma) | keine
     "hinweise": [],           # Globs für Agent-Hinweis-Dateien, z. B. "~/src/*/tasks/*-review-markers.json"
     "repos": {},              # "gruppe/projekt" = "~/pfad/zum/klon" (schneller als Dateien über die API)

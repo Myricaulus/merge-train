@@ -1,4 +1,5 @@
-"""Die beiden Quellen der Waggons – Lokal (Branches im Klon) und GitLab (Merge-Requests) – und was sie können."""
+"""Die Quellen der Waggons – Lokal (Branches im Klon), Myrling (Läufe, die auf eine Prüfung warten) und GitLab
+(Merge-Requests) – und was sie können."""
 import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
@@ -9,7 +10,8 @@ from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, 
                    review_kommentare, struktur_laden)
 from .gitlab import mr_liste, mr_ref
 from .abhaken import abhaken, haken_weg, teil_abgeben
-from .seite import mr_seite, projekt_seite
+from .seite import LAUF_STAND, mr_seite, myrling_seite, projekt_seite
+from . import myrling
 
 def runde_laden():
     try:
@@ -220,7 +222,7 @@ def mr_wagen(akt=None):
     if akt and akt not in gesehen:
         try:
             mr = Waggon.aus_id(akt)
-            if not mr.lokal:
+            if mr.ist_mr:
                 wagen.insert(0, wagen_fuer(mr, akte_lesen(mr)["mr"].get("titel", ""), 0))
         except Fehler:
             pass
@@ -276,6 +278,78 @@ class Lokal:
                 f"Danach mit `merge-train agent horchen` im Hintergrund auf weitere Nachrichten warten.")
 
 
+def myrling_wagen(akt=None):
+    """Ein Waggon je anstehendem Lauf (myrling.anstehend; zug.js holt die Liste im Hintergrund neu). Die Statistik
+    kommt aus dem Diff Basis → Stand; abgelehnte warten auf eine neue Fassung."""
+    laeufe, _ = myrling.gepuffert()
+    if laeufe is None:
+        try:
+            laeufe = myrling.anstehend()
+        except Fehler as e:
+            return [{"p": "myrling:", "name": "Myrling", "titel": str(e), "zeile2": "Befehl scheitert", "datei": "",
+                     "plus": 0, "minus": 0, "dateien": 0, "commits": 0, "todos": [], "status": "fehlt", "marke": "⚠ Fehler"}]
+    wagen = []
+    for lauf in laeufe:
+        waggon = Waggon(myrling=lauf["skript"])
+        plus = minus = dateien = 0
+        try:
+            wurzel, basis, head, fehlen = myrling.lauf_ort(lauf)
+            for z in git(wurzel, "diff", "--numstat", basis, head).splitlines():
+                a, b, _ = z.split("\t", 2); dateien += 1
+                if a != "-": plus += int(a); minus += int(b)
+            dateien += len(fehlen)
+            branch = MYRLING.branch(waggon)
+        except Fehler as e:
+            wurzel, fehlen, branch = None, [], None
+            lauf = dict(lauf, stand="fehlt", grund=str(e))
+        gs, gs_neu = faeden_zaehlen(waggon, branch)
+        kurz, lang = LAUF_STAND.get(lauf["stand"], (lauf["stand"], lauf.get("grund") or lauf["stand"]))
+        marke = f"💬 {gs_neu} neu" if gs_neu else "✗ abgelehnt" if lauf["stand"] == "abgelehnt" else f"● {kurz}"
+        titel = "\n".join(t for t in (
+            f'{lauf["skript"]}: {lang}', f'braucht {lauf["braucht"]}' if lauf["braucht"] else "",
+            f'abgelehnt: {(lauf["abgelehnt"] or {}).get("grund") or "?"}' if lauf["abgelehnt"] else "",
+            f"{len(fehlen)} Datei(en) aus anderen Repos fehlen im Diff" if fehlen else "",
+            f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
+        wagen.append({"p": waggon.id, "name": "⛭ " + lauf["skript"], "titel": titel, "zeile2": None if plus + minus else kurz,
+                      "datei": waggon.url, "plus": plus, "minus": minus, "dateien": dateien, "commits": 0, "todos": [],
+                      "status": "fehlt" if lauf["stand"] == "fehlt" else "offen", "marke": marke, "gs": gs, "gs_neu": gs_neu})
+    return wagen
+
+
+class Myrling:
+    name, titel = "myrling", "Myrling"
+    logo = None
+
+    def an(self):
+        return bool(KONF["myrling"]) and myrling.befehl_da()
+
+    def ort(self, waggon):
+        """(Klon, Stand) des Laufs, wie ihn die Seite zuletzt gebaut hat (sonst neu: fragt den Befehl)."""
+        struktur = struktur_laden(akte_lesen(waggon))
+        if struktur is None:
+            _, struktur = self.seite(waggon)
+        return struktur["ordner"], struktur["refs"]["head_sha"]
+
+    def seite(self, waggon, ansicht=None):
+        return myrling_seite(waggon, ansicht=ansicht)
+
+    def branch(self, waggon):
+        """Fäden hängen am Skript, nicht an einem Branch: über neue Fassungen wandern sie mit (Zeilen vorwärts)."""
+        return "myrling"
+
+    def wagen(self, akt=None):
+        return myrling_wagen(akt)
+
+    def prompt(self, waggon, wurzel):
+        z = waggon.id
+        return (f"In merge-train liegen Fragen des Nutzers zum Skript {waggon.myrling}, das der Myrling ausführen soll "
+                f"(nas-lauf, Repo {wurzel}; Diff gegen die zuletzt angesehene Fassung). Hol sie mit "
+                f"`merge-train agent feedback {z}` ab. Fragen beantworten, Änderungswünsche am Skript im Repo umsetzen "
+                f"und committen (das Skript läuft erst nach erneuter Prüfung); zu jedem Faden mit "
+                f"`merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). Danach mit "
+                f"`merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
+
+
 class GitLab:
     name, titel = "gitlab", "GitLab"
     logo = "gitlab.svg"
@@ -308,14 +382,14 @@ class GitLab:
                 f"Danach mit `merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 
-LOKAL, GITLAB = Lokal(), GitLab()
+LOKAL, MYRLING, GITLAB = Lokal(), Myrling(), GitLab()
 
 
-QUELLEN = (LOKAL, GITLAB)
+QUELLEN = (LOKAL, MYRLING, GITLAB)
 
 
 def quelle(waggon):
-    return LOKAL if waggon.lokal else GITLAB
+    return LOKAL if waggon.lokal else MYRLING if waggon.myrling else GITLAB
 
 
 def extern_von(waggon):

@@ -170,7 +170,7 @@
       g.addEventListener('click', e => {
         const w = zugWagen[+g.dataset.i];
         if (!w) return;
-        if (e.target.closest('.auf') || w.status === 'fehlt') return karteOeffnen(w, g);
+        if (e.target.closest('.auf') || w.status === 'fehlt') return w.quelle && w.quelle !== 'lokal' ? undefined : karteOeffnen(w, g); // Karte nur lokal
         if (w.p !== waggon.projekt && (w.status === 'offen' || (w.quelle && w.quelle !== 'lokal')))
           location.href = w.datei;
       })

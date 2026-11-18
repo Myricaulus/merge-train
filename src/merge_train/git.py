@@ -107,10 +107,38 @@ def branch_von(wurzel):
 _ARBEIT = {}
 
 
+def eigener_commit_env(index):
+    """Umgebung für eigene Commit-Objekte (Arbeitsstand, stand_mit): eigener Index, feste Namen und Daten – gleicher
+    Inhalt ergibt denselben sha, die Seite bleibt im Cache."""
+    return dict(os.environ, GIT_INDEX_FILE=index, GIT_AUTHOR_NAME="merge-train", GIT_AUTHOR_EMAIL="merge-train@localhost",
+                GIT_COMMITTER_NAME="merge-train", GIT_COMMITTER_EMAIL="merge-train@localhost",
+                GIT_AUTHOR_DATE="2000-01-01T00:00:00+0000", GIT_COMMITTER_DATE="2000-01-01T00:00:00+0000")
+
+
+def stand_mit(wurzel, head, fassungen, text):
+    """Commit-Objekt mit dem Baum von head, in dem jede Datei aus fassungen {pfad: commit} so steht wie in jenem Commit
+    (None oder dort nicht vorhanden: fehlt) – z. B. die Basis eines Myrling-Laufs, dessen Dateien je eine eigene
+    Vergleichsbasis haben. Elternteil head, kein Ref; ändert sich nichts: head."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as t:
+        env = eigener_commit_env(os.path.join(t, "index"))
+        git(wurzel, "read-tree", head, env=env)
+        for pfad, sha in fassungen.items():
+            eintrag = (git(wurzel, "ls-tree", "-z", sha, "--", pfad, check=False) or "").split("\0")[0] if sha else ""
+            if eintrag:  # „100755 blob <sha>\t<pfad>“: Modus mitnehmen, sonst zeigt der Diff eine Rechte-Änderung
+                modus, _, blob = eintrag.split("\t", 1)[0].split(" ")
+                git(wurzel, "update-index", "--add", "--cacheinfo", f"{modus},{blob},{pfad}", env=env)
+            else:
+                git(wurzel, "update-index", "--force-remove", "--", pfad, env=env)
+        baum = git(wurzel, "write-tree", env=env).strip()
+        if baum == git(wurzel, "rev-parse", head + "^{tree}").strip():
+            return head
+        return git(wurzel, "commit-tree", baum, "-p", head, "-m", text, env=env).strip()
+
+
 def arbeitsstand(wurzel):
     """Das Arbeitsverzeichnis (geänderte, neue nicht ignorierte und gelöschte Dateien) als Commit-Objekt, ohne Index,
-    Branch oder Dateien anzufassen: Kopie des Index, add -A, write-tree, commit-tree mit festen Daten – gleicher Inhalt
-    ergibt denselben sha (die Seite bleibt im Cache). Ohne Änderungen: HEAD."""
+    Branch oder Dateien anzufassen: Kopie des Index, add -A, write-tree, commit-tree (eigener_commit_env). Ohne Änderungen: HEAD."""
     import tempfile
     head = git(wurzel, "rev-parse", "HEAD").strip()
     status = git(wurzel, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False,  # Index nicht auffrischen:
@@ -132,9 +160,7 @@ def arbeitsstand(wurzel):
         echt = git(wurzel, "rev-parse", "--path-format=absolute", "--git-path", "index", check=False)
         if echt and os.path.exists(echt.strip()):
             shutil.copyfile(echt.strip(), idx)  # mit Stat-Cache: nur geänderte Dateien werden neu gelesen
-        env = dict(os.environ, GIT_INDEX_FILE=idx, GIT_AUTHOR_NAME="merge-train", GIT_AUTHOR_EMAIL="merge-train@localhost",
-                   GIT_COMMITTER_NAME="merge-train", GIT_COMMITTER_EMAIL="merge-train@localhost",
-                   GIT_AUTHOR_DATE="2000-01-01T00:00:00+0000", GIT_COMMITTER_DATE="2000-01-01T00:00:00+0000")
+        env = eigener_commit_env(idx)
         if not os.path.exists(idx):
             git(wurzel, "read-tree", "HEAD", env=env)
         git(wurzel, "add", "-A", env=env)
@@ -392,10 +418,14 @@ def inhalt(ordner, sha, pfad):
     return INHALT[k]
 
 
-def git_commits(ordner, von, bis):
-    """Commits von..bis, älteste zuerst: (kurz-sha, zeit, betreff, rumpf, sha)."""
+def git_commits(ordner, von=None, bis=None, *, nur=None):
+    """Commits von..bis, älteste zuerst: (kurz-sha, zeit, betreff, rumpf, sha). nur: genau diese Commits (shas, nach
+    Datum), von/bis dann None."""
+    auswahl = ["--no-walk=sorted", *sorted(nur)] if nur is not None else [f"{von}..{bis}"]
+    if nur is not None and not nur:
+        return []
     roh = git(ordner, "log", "--reverse", "--format=%h%x1f%ad%x1f%s%x1f%b%x1f%H%x1e",
-              "--date=format:%d.%m. %H:%M", f"{von}..{bis}", check=False) or ""
+              "--date=format:%d.%m. %H:%M", *auswahl, check=False) or ""
     return [tuple(c.strip("\n").split("\x1f")) for c in roh.split("\x1e") if c.strip()]
 
 
