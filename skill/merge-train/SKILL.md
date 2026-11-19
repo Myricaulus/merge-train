@@ -1,6 +1,6 @@
 ---
 name: merge-train
-description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo: the merge-train repo itself (local mode, changes allowed) and GitLab MR clones (answer only).'
+description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent feedback --horchen` / `horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo: the merge-train repo itself (local mode, changes allowed) and GitLab MR clones (answer only).'
 argument-hint: "[MR-URL | gruppe/projekt!42]"
 ---
 
@@ -187,17 +187,22 @@ EOF
 
 When the user asks you to listen ("hör auf merge-train", "hör zu"), or after answering when the prompt says so:
 
-1. Start `merge-train agent horchen [MR]` **as a background process** of your harness, so you get its output when it
-   exits (Claude Code: Bash with `run_in_background`; elsewhere the harness's way to run a command in the background
-   and read its output later). The page then shows „🎧 <your name> hört zu“, and „An Agent senden“ goes straight
-   to you. Add `--als` if merge-train doesn't recognize you.
+1. Start `merge-train agent feedback --horchen [MR]` **as a background process** of your harness, so you get its
+   output when it exits (Claude Code: Bash with `run_in_background`; Copilot: bash with `mode: "async"`; elsewhere
+   the harness's way to run a command in the background). It hands you what is already waiting at once, otherwise
+   it waits like `horchen`. The page then shows „🎧 <your name> hört zu“, and „An Agent senden“ goes straight to you.
+   Add `--als` if merge-train doesn't recognize you. Then end your turn: **don't poll** it (no `read_bash`/output
+   reads in a loop) – your harness wakes you when it exits, every poll costs a request.
 2. When it exits with messages, its output is the same as `feedback` (already marked as picked up): handle each
-   thread as above (`antworten` or `kommentar`, not in the console), then start `horchen` again.
-3. It also ends by itself, with exit 1 and a message, when the page has been closed for a while or (in Claude Code)
-   your session ends. Then do **not** restart; tell the user listening stopped and that "hör zu" starts it again.
+   thread as above (`antworten` or `kommentar`, not in the console), then start `merge-train agent horchen [MR]` in
+   the background (only new messages).
+3. When the user stops listening on the page (closes it, or „🎧 ✕“), the command does **not** exit and prints
+   nothing: it waits silently until your session ends, so you are not woken. Leave it alone – don't read, stop or
+   restart it. Should it ever end without output, do nothing at all (no reply, no restart). It ends with exit 1 and
+   a message after `--timeout` or when your session ends; then don't restart either. "hör zu" starts it again.
 
-Don't run `horchen` in the foreground (it blocks until the user sends) and don't start several at once for the
-same conversation. If your harness can't run background commands, tell the user. The messages then wait on the page
+Don't run it in the foreground (it blocks until the user sends) and don't start several at once for the same
+conversation. If your harness can't run background commands, tell the user. The messages then wait on the page
 until you fetch them with `feedback`.
 
 ## When merge-train misleads you: file an incident

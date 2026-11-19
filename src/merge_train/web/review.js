@@ -831,7 +831,8 @@
   const seitenTitel = document.title,
     feedbackKnopf = document.getElementById('feedback'),
     sessionKnopf = document.getElementById('starten'),
-    promptKnopf = document.getElementById('prompt');
+    promptKnopf = document.getElementById('prompt'),
+    abmeldenKnopf = document.getElementById('abmelden');
   function gsStand(vorn) {
     const f = faeden(),
       z = s => f.filter(k => k.status === s).length,
@@ -856,6 +857,7 @@
     const fw = 'An Agent senden';
     feedbackKnopf.textContent = e ? fw + ' (' + e + ')' : fw;
     sessionKnopf.hidden = !review.todo || !!review.horcht;
+    abmeldenKnopf.hidden = !review.horcht;
     document.title = (neu ? '(' + neu + ') ' : '') + seitenTitel;
   }
   function vorher(w) {
@@ -933,6 +935,15 @@
       post('/api/gespraech', {aktion: 'prompt'}).then(d =>
         d.ok ? promptDialog(d.prompts, 'Zuletzt an den Agenten zugestellt (neueste zuerst)') : App.melden(d.text || '')
       )
+    );
+    abmeldenKnopf.addEventListener('click', () =>
+      post('/api/gespraech', {aktion: 'abmelden'}).then(d => {
+        App.melden(d.text || '');
+        if (d.review) {
+          Object.assign(review, d.review);
+          zeichnen();
+        } else gsStand();
+      })
     );
     sessionKnopf.addEventListener('click', () => {
       sessionKnopf.disabled = true;

@@ -229,6 +229,7 @@ def lokal_test():
         if "horchen" in AUSWAHL:
             horchen_waise_test(proj, env, k, hol)
             horchen_seite_zu_test(proj, env, k, hol)
+            horchen_abmelden_test(proj, env, k, hol)
     finally:
         srv.terminate(); srv.wait()
 
@@ -348,15 +349,50 @@ def horchen_waise_test(proj, env, k, hol):
     pruefe(danach.get("horcht") is None, "horchen: Seite zeigt danach niemanden")
     pruefe(danach.get("kontext") is None, "horchen: und keinen Kontext-Füllstand mehr")
 
+def still_horchen(proj, env, aus):
+    """horchen unter dem Fake-Agenten (agentx aus horchen_waise_test), Ausgabe in die Datei aus."""
+    return subprocess.Popen([f"{T}/bin/agentx", "-c", f'"{sys.executable}" "{SKRIPT}" agent horchen --als Fake > "{aus}"; true'],
+                            cwd=proj, env=env)
+
+def warten_bis(bedingung, n=60):
+    for _ in range(n):
+        if bedingung():
+            return True
+        time.sleep(0.1)
+    return False
+
 def horchen_seite_zu_test(proj, env, k, hol):
-    """Wird die Seite geschlossen (kein Lebenszeichen mehr), hört horchen auf – aber erst, wenn sie nach dem Start da war."""
-    lau = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", "--timeout", "20"], cwd=proj, stdout=subprocess.PIPE,
-                           text=True, env=dict(env, MERGE_TRAIN_SEITE_WEG_S="2"))
+    """Wird die Seite geschlossen (kein Lebenszeichen mehr), hört horchen auf – aber erst, wenn sie nach dem Start da war –,
+    und zwar still: kein Wort und kein Ende (das weckte den Agenten), der Waggon zeigt niemanden mehr."""
+    datei, aus = f"{T}/data/merge-train/lokal/proj.horcht", f"{T}/still-seite.out"
+    ag = still_horchen(proj, dict(env, MERGE_TRAIN_SEITE_WEG_S="2"), aus)
     time.sleep(3)
-    pruefe(lau.poll() is None, "horchen: ohne Seite seit dem Start läuft es weiter")
+    pruefe(os.path.exists(datei), "horchen: ohne Seite seit dem Start hört es weiter zu")
     hol(f"/api/stand?mr=projekt:proj&k={k}")  # Seite meldet sich einmal, dann nicht mehr
-    aus, _ = lau.communicate(timeout=20)
-    pruefe("Seite geschlossen" in aus, "horchen: hört auf, wenn die Seite kein Lebenszeichen mehr schickt")
+    pruefe(warten_bis(lambda: not os.path.exists(datei)), "horchen: hört auf, wenn die Seite kein Lebenszeichen mehr schickt")
+    time.sleep(1)
+    pruefe(ag.poll() is None and open(aus).read() == "", "horchen: danach stumm, endet nicht (weckt den Agenten nicht)")
+    ag.kill(); ag.wait()
+
+def horchen_abmelden_test(proj, env, k, hol):
+    """„🎧 ✕“ auf der Seite: der Zuhörer ist weg, horchen merkt es und bleibt stumm, bis die Session endet."""
+    aus = f"{T}/still-abmelden.out"
+    ag = still_horchen(proj, env, aus)
+    pruefe(warten_bis(lambda: json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("horcht") == "Fake"),
+           "abmelden: Seite zeigt erst den Zuhörer")
+    port = PORT_LOKAL
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/gespraech",
+                                 json.dumps({"mr": "projekt:proj", "k": k, "aktion": "abmelden"}).encode(),
+                                 {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"})
+    r = json.loads(urllib.request.urlopen(req, timeout=60).read())
+    pruefe(r["ok"] and "Fake hört nicht mehr zu" in r["text"] and r["review"].get("horcht") is None,
+           "abmelden: Seite zeigt danach niemanden")
+    time.sleep(2)
+    pruefe(ag.poll() is None and open(aus).read() == "", "abmelden: horchen bleibt stumm und endet nicht")
+    ag.kill(); ag.wait()
+    pruefe(warten_bis(lambda: "horchen" not in subprocess.run(["pgrep", "-af", "agent horchen --als Fake"],
+                                                              capture_output=True, text=True).stdout, 60),
+           "abmelden: endet die Session, endet auch das stumme horchen")
 
 def gemischt_test(mr):
     """Beide Quellen an: ein Zug mit lokalen Waggons und MRs, jede Seite mit den Knöpfen ihrer Quelle."""
@@ -427,6 +463,8 @@ def mr_gespraech_test(mr, k, basis, struktur):
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
     pruefe(r.returncode == 0 and f'[{f["id"]}] App.cs:11' in r.stdout and "an Copilot" in r.stdout and "Was macht Zeile 11?" in r.stdout,
            "MR-Gespräch: agent feedback mit MR-Kennung")
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, "--horchen", "--als", "Copilot", "--timeout", "10", env=genv, check=False)
+    pruefe(r.returncode == 0 and "Was macht Zeile 11?" in r.stdout, "feedback --horchen: was schon wartet, kommt sofort")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", cwd=REPO, env=genv, check=False)
     pruefe(r.returncode == 0 and "gruppe/demo!1" in r.stdout, "MR-Gespräch: agent feedback im Klon findet den MR")
     r = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "Hallo", env=ohne_agent(genv), check=False)
@@ -437,6 +475,8 @@ def mr_gespraech_test(mr, k, basis, struktur):
     m = rv["faeden"][0]["nachrichten"][-1]
     pruefe(rv["faeden"][0]["status"] == "antwort" and m["text"] == "Sie loggt." and m["wer"] == "Copilot",
            "MR-Gespräch: Antwort ohne erkennbaren Agenten unter dem gefragten (Copilot)")
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, "--horchen", "--als", "Copilot", "--timeout", "2", env=genv, check=False)
+    pruefe(r.returncode == 1 and "Zeit abgelaufen" in r.stdout, "feedback --horchen: wartet nichts, horcht es")
     lauscher = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", mr, "--als", "Copilot", "--timeout", "30"], env=genv,
                                 stdout=subprocess.PIPE, text=True)
     for _ in range(50):

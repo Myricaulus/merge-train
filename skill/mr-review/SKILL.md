@@ -22,7 +22,9 @@ yourself (`--als`, field `agent`): "Say who you are" in the `merge-train` skill.
 ## 1. Requirements and context
 
 1. The MR: from the arguments (URL, `gruppe/projekt!42`), else the open MR of the branch – `"branch"` in the JSON is
-   enough, `pruefen` finds it. Read its description (read only, e.g. `glab mr view <iid>`).
+   enough, `pruefen` finds it. Read its description (read only, e.g. `glab mr view <iid>`). As JSON (source branch,
+   `sha`, description): `glab api projects/<gruppe%2Fprojekt>/merge_requests/<iid>`. Older glab (e.g. 1.36 from
+   Ubuntu) has no `--output json` for `mr view`.
 2. Requirements: what the change is supposed to do. Without a project skill: the MR description and a linked issue.
    Note acceptance criteria and **decisions made in comments** (who decided what, when) – they often change the scope.
 3. Read the repo conventions (`AGENTS.md`, `CONTRIBUTING.md`, `README.md`) before judging the code. Look for existing

@@ -13,7 +13,7 @@ from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, projekt_seite, startseite
 from .quellen import GITLAB, LOKAL, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
-from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer
+from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
@@ -394,13 +394,20 @@ def prompt_aktion(anfrage, waggon):
             "text": "" if p else "Nichts zu senden – keine Entwürfe" if vorher else "Noch nichts an den Agenten gesendet"}
 
 
+def abmelden_aktion(anfrage, waggon):
+    wer = zuhoerer_abmelden(waggon)
+    return mit_review(waggon, anfrage, bool(wer), f"{wer} hört nicht mehr zu – die Session bekommt davon nichts mit"
+                      if wer else "Niemand hört zu")
+
+
 GESPRAECH_AKTIONEN = {"senden": feedback_senden_aktion, "starten": session_starten_aktion,
-                      "vorschau": prompt_aktion, "prompt": prompt_aktion}
+                      "vorschau": prompt_aktion, "prompt": prompt_aktion, "abmelden": abmelden_aktion}
 
 
 @route("POST", "api/gespraech", waggon=True)
 def api_gespraech(anfrage, waggon):
-    """Ganzes Gespräch: An Agent senden, Agenten-Session starten, Prompt zeigen (vorher bzw. zuletzt zugestellt)."""
+    """Ganzes Gespräch: An Agent senden, Agenten-Session starten, Prompt zeigen (vorher bzw. zuletzt zugestellt),
+    Zuhörer abmelden."""
     aktion = GESPRAECH_AKTIONEN.get(anfrage.daten.get("aktion"))
     return aktion(anfrage, waggon) if aktion else abgelehnt(400, "unbekannte Aktion")
 

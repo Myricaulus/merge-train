@@ -115,7 +115,7 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 - Ort: `gespraech.py`, `agent_cli.py` (`feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen
-Eine Session wartet mit `agent horchen`; sonst startet „senden“ einen Befehl: `todo`-Eintrag, `feedback_befehl` oder
+Eine Session wartet mit `agent horchen` (bzw. `agent feedback --horchen`: erst was schon wartet); sonst startet „senden“ einen Befehl: `todo`-Eintrag, `feedback_befehl` oder
 der Startbefehl aus `[agenten]`. Zeigt im HUD, wer horcht (`horcht`), auf dem Waggondach, wer zuhört und was er tut (`zuhoerer`:
 hoert, arbeitet = letzte Nachricht im Transcript ist keine fertige Antwort; wartet sie im Terminal, nichts), und den
 Kontext-Füllstand der Claude-Session (Fenster 1M, sobald sie je über 200k lag; beides aus `transcript_stand`).
@@ -126,7 +126,12 @@ Startprompt), merkt sich `prompt_merken` in `<akte>.prompt` (die letzten 5, nich
 mit `vorschau`, Entwürfe als gesendet, nichts gespeichert; davor der Startprompt, wenn „senden“ startet oder ein todo
 anlegt) – auch ohne Agent. „📨“ zeigt davor, was gesendet, aber noch nicht abgeholt ist. Dialog: `promptDialog`
 (`web/review.js`).
-- Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt).
+Zuhören endet still (`horchen_still`, `agent_cli.py`): Seite zu, „🎧 ✕“ (`zuhoerer_abmelden`, Aktion `abmelden`)
+oder von einem neuen Zuhörer abgelöst. Die `.horcht`-Dateien sind weg, `horchen` gibt nichts aus und endet erst mit der
+Session, denn sein Ende weckt den Agenten (Request). Ziele: das Repo samt seinen MRs, auch MRs ohne Faden
+(`alle_gespraeche(leere=True)`).
+- Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt),
+  Ende (Nachricht, Session weg, Zeit, still).
 - Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `agent_cli.py` (`horchen`),
   Route `api/gespraech` (`vorschau`, `prompt`), `web/hud.js`, `web/zug.js`, `web/review.js`.
 - Erweitern: ein neuer Zustellweg kommt in `benachrichtigen`/`feedback_senden`, nicht in die Seite.

@@ -100,6 +100,10 @@ class Fall:
         q = urllib.parse.urlencode({"mr": self.mr, "k": self.srv.schluessel})
         return json.loads(urllib.request.urlopen(self.srv.url(f"/api/review?{q}")).read())["faeden"]
 
+    def horcht(self):
+        q = urllib.parse.urlencode({"mr": self.mr, "k": self.srv.schluessel})
+        return json.loads(urllib.request.urlopen(self.srv.url(f"/api/review?{q}")).read()).get("horcht")
+
     def gesendet(self):
         return [m for k in self.faeden() for m in k["nachrichten"] if m["von"] == "ich" and m.get("gesendet")]
 
@@ -370,8 +374,33 @@ NULL_TEXT = ("(() => { const w = document.createTreeWalker(document.body, NodeFi
              " r.push(w.currentNode.parentElement.outerHTML.slice(0, 100)); return r.slice(0, 3); })()")
 
 
+def teil_abmelden(b, f):
+    """„🎧 ✕“ neben „An Agent senden“: der Zuhörer ist weg, die horchen-Instanz bleibt stumm und endet nicht (ihr Ende
+    weckte den Agenten). Der „Agent“ ist eine Shell mit eigenem Prozessnamen, damit merge-train die Session erkennt."""
+    t = tempfile.mkdtemp(prefix="merge-train-agentx-")
+    os.symlink("/bin/sh", os.path.join(t, "agentx"))
+    aus, exe = os.path.join(t, "aus"), os.path.join(f.srv.ordner, "merge-train")
+    befehl = f'"{sys.executable}" "{exe}" agent horchen "{f.mr.removeprefix("projekt:")}" --als Fake > "{aus}"; true'
+    ag = subprocess.Popen([os.path.join(t, "agentx"), "-c", befehl], env=f.srv.umgebung)
+    try:
+        ende = time.time() + 8
+        while f.horcht() != "Fake" and time.time() < ende:
+            time.sleep(0.1)
+        assert f.horcht() == "Fake", "horchen hat sich nicht angemeldet"
+        seite(b, f)
+        b.warten_bis("!document.getElementById('abmelden').hidden")
+        b.klicken("#abmelden")
+        b.warten_bis("document.getElementById('abmelden').hidden")
+        assert f.horcht() is None, "nach „🎧 ✕“ hört noch jemand zu"
+        time.sleep(1.5)
+        assert ag.poll() is None and open(aus).read() == "", "horchen hat sich beendet oder etwas ausgegeben"
+    finally:
+        ag.kill(); ag.wait(); shutil.rmtree(t, ignore_errors=True)
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
-         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter}
+         "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
+         "abmelden": teil_abmelden}
 
 
 def main():

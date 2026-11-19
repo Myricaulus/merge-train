@@ -297,7 +297,9 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
                'An Agent senden</button>\n'
                '<button id="prompt" hidden title="Was ging an den Agenten? Die zuletzt zugestellten Prompts (horchen, Start). '
                'Dort lässt sich einschalten, dass „An Agent senden“ den Prompt vorher zeigt">📨</button>\n'
-               '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>')
+               '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>\n'
+               '<button id="abmelden" hidden title="Zuhören beenden: die Session bekommt davon nichts mit (kein Request). '
+               'Wieder zuhören: der Session „hör zu“ sagen">🎧 ✕</button>')
     if kann["fertig"]:
         knoepfe += f'\n<button id="fertig"{" hidden" if lesen else ""} title="{fertig_titel}">fertig ✓</button>'
     if kann["review"]:

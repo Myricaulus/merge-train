@@ -102,6 +102,23 @@ def horcht(waggon):
     return " ".join(teile[2:]) or "Claude"
 
 
+def zuhoerer_abmelden(waggon):
+    """„🎧 ✕“ auf der Seite: die horchen-Instanz dieses Waggons hört auf, an allen Waggons, an denen sie horcht (ihre
+    .horcht-Dateien weg). Sie merkt das und wartet stumm bis zum Ende der Session (horchen_still), so dass der Agent
+    nicht geweckt wird. Rückgabe: wer zugehört hat, sonst None."""
+    wer = horcht(waggon)
+    if not wer:
+        return None
+    pid = open(horcht_datei(waggon)).read().split()[0]
+    for d in glob.glob(os.path.join(os.path.dirname(os.path.dirname(akte_datei(waggon))), "*", "*.horcht")):
+        try:
+            if open(d).read().split()[0] == pid:
+                os.remove(d)
+        except (OSError, IndexError):
+            pass
+    return wer
+
+
 # ---- Kontext-Füllstand und Tätigkeit der Agenten-Session (fürs HUD und den Waggon, ohne Zutun des Agenten)
 # „agent horchen“ merkt sich in <akte>.agent pid und Session-ID der Agenten-Session (Claude Code setzt
 # CLAUDE_CODE_SESSION_ID). Der Server liest deren Transcript (Zeile für Zeile, nur was seit dem letzten Mal dazukam):

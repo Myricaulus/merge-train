@@ -61,6 +61,7 @@ merge-train agent zeigen  tasks/PROJ-824-review-markers.json
 merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
 merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „An Agent senden“ gedrückt wird
+merge-train agent feedback --horchen [projekt|MR]      # Agent: was wartet, sofort – sonst wie horchen
 merge-train agent thread [--ort pfad:zeile[-bis]] [--siehe …] [--vergleich A B] "…"   # Agent: eigenen Thread anlegen
 ```
 
@@ -145,6 +146,9 @@ Der Knopf merkt sich die Wahl.
   Eine Session hört nur auf die Waggons ihres eigenen Projekts; jedes Projekt kann also seine eigene Session haben.
   Deshalb sitzt der Kopfhörer auch auf dem Dach des Waggons: 🎧, wenn sie zuhört (ab und zu langweilt sie sich
   sichtbar), wackelndes Werkzeug, wenn sie gerade arbeitet.
+  **„🎧 ✕“** neben „An Agent senden“ beendet das Zuhören, ebenso das Schließen der Seite. Die Session merkt davon
+  nichts: `horchen` endet nicht, sondern wartet stumm bis zum Ende der Session. Sein Ende würde den Agenten wecken
+  und einen Request mit dem ganzen Kontext kosten. Wieder zuhören: der Session „hör zu“ sagen.
   In anderen Repos (z. B. dem Klon eines MR) kennt die Session das über den Claude-Skill `merge-train`
   (`skill/merge-train/SKILL.md`, bei der [Installation](#installation) verlinkt).
 - **Keine hört zu**: Ist das Werkzeug `todo` installiert (eigenes Werkzeug des Autors, nicht Teil von merge-train und

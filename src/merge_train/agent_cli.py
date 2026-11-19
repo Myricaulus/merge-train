@@ -504,41 +504,47 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
 
 
 def faeden_horchen(ziele, timeout=0, als=None):
-    """Warten, bis neue (noch nicht abgeholte) Nachrichten da sind, dann ausgeben. Rückgabe (text, anzahl)."""
+    """Warten, bis neue (noch nicht abgeholte) Nachrichten da sind, dann ausgeben. Rückgabe (text, anzahl); text None:
+    gestoppt (horchen_still), nichts ausgeben."""
     import atexit, signal, time
-    dateien = [horcht_datei(waggon) for waggon in ziele]
-    for d in dateien:
-        ersetzen(d, f"{os.getpid()} {jetzt()} {als}\n")
+    mein = str(os.getpid())
+    for waggon in ziele:
+        ersetzen(horcht_datei(waggon), f"{mein} {jetzt()} {als}\n")
     sid, sess = os.environ.get("CLAUDE_CODE_SESSION_ID"), agent_session(os.getpid())
     if sid and sess and re.fullmatch(r"[\w-]+", sid):
         for waggon in ziele:
             ersetzen(agent_datei(waggon), f"{sess} {sid} {als}\n")
+    def meine(waggon):
+        try:
+            return open(horcht_datei(waggon)).read().split()[0] == mein
+        except (OSError, IndexError):
+            return False
+    alle = list(ziele)
     def weg(*_):
-        for d in dateien:
-            try:
-                if open(d).read().split()[0] == str(os.getpid()):
-                    os.remove(d)
-            except (OSError, IndexError):
-                pass
+        for waggon in alle:
+            if meine(waggon):
+                os.remove(horcht_datei(waggon))
     atexit.register(weg)
     for sig in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, lambda *_: sys.exit(0))
     ende = time.time() + timeout if timeout else None
-    pfade = [akte_datei(waggon) for waggon in ziele]
     zuletzt = None
     session = agent_session(os.getpid())  # endet die Agenten-Session, hört auch horchen auf
     start, gesehen = time.time(), False
-    seiten = [seite_datei(waggon) for waggon in ziele]
     while not ende or time.time() < ende:
         if session and _prozess(session) is None:
             return "merge-train: Agenten-Session beendet – horchen hört auf", 0
+        ziele = [waggon for waggon in ziele if meine(waggon)]  # „abmelden“ auf der Seite, abgelöst von einem neuen Zuhörer
+        if not ziele:
+            return horchen_still(session, ende)
+        seiten = [seite_datei(waggon) for waggon in ziele]
         zuletzt_da = max([os.path.getmtime(p) for p in seiten if os.path.exists(p)] or [0])
         gesehen = gesehen or zuletzt_da > start  # erst zählen, wenn die Seite nach dem Start offen war
         if gesehen and time.time() - zuletzt_da > SEITE_WEG_S:
-            return (f"merge-train: Seite geschlossen (seit {SEITE_WEG_S} s kein Lebenszeichen) – horchen hört auf. "
-                    "Neu horchen, wenn der Nutzer weitermachen will.", 0)
+            weg()
+            return horchen_still(session, ende)
         m = []
-        for p in pfade:
+        for p in [akte_datei(waggon) for waggon in ziele]:
             try:
                 m.append(os.stat(p).st_mtime_ns)
             except OSError:
@@ -555,6 +561,17 @@ def faeden_horchen(ziele, timeout=0, als=None):
                 return faeden_abholen(neu, weg="horchen", wer=als)
         time.sleep(1)
     return "merge-train: keine neuen Nachrichten (Zeit abgelaufen)", 0
+
+
+def horchen_still(session, ende):
+    """horchen ist gestoppt (Seite geschlossen, „🎧 ✕“ auf der Seite, von einem neuen Zuhörer abgelöst), der Waggon zeigt
+    niemanden mehr. Nicht enden: das Ende eines Hintergrund-Befehls weckt den Agenten (Claude Code, Copilot) und kostet
+    einen Request mit dem ganzen Kontext. Stumm warten, bis die Agenten-Session endet (bzw. bis --timeout), dann ohne
+    Ausgabe enden."""
+    import time
+    while session and _prozess(session) is not None and not (ende and time.time() >= ende):
+        time.sleep(2)
+    return None, 0
 
 
 def repo_wurzel(ordner):
@@ -661,7 +678,11 @@ def agent_parser():
     p.add_argument("projekt", nargs="?", help="Projektordner, Name unter ~/Projects oder MR (Kennung/URL/gruppe/projekt!42); "
                                               "Standard: aktuelles Repo samt seinen MRs")
     p.add_argument("--alle", action="store_true", help="auch beantwortete Fäden zeigen")
-    p.add_argument("--als", help="wird ignoriert (feedback braucht keinen Namen), damit ein Agent es überall anhängen kann")
+    p.add_argument("--horchen", action="store_true", help="wartet nichts, gleich wie „horchen“ auf neue Nachrichten warten "
+                                                            "(im Hintergrund laufen lassen)")
+    p.add_argument("--als", help="Name als Zuhörer (nur mit --horchen nötig, sonst ignoriert, damit ein Agent es überall "
+                                 "anhängen kann)")
+    p.add_argument("--timeout", type=int, default=0, metavar="S", help="mit --horchen: nach S Sekunden aufgeben (Exit 1)")
     p.set_defaults(aufruf=befehl_feedback)
     p = sub.add_parser("antworten", help="Gespräch: auf einen Faden antworten",
                        description=gespraech + "auf einen Faden antworten; der Nutzer sieht die Antwort sofort in merge-train")
@@ -712,7 +733,8 @@ def agent_parser():
     p.set_defaults(aufruf=befehl_vorfall)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",
                        description=gespraech + "warten, bis der Nutzer „An Agent senden“ drückt, dann wie „feedback“ ausgeben "
-                                        "und beenden (im Hintergrund laufen lassen, danach neu starten)")
+                                        "und beenden (im Hintergrund laufen lassen, danach neu starten). Stoppt der Nutzer "
+                                        "das Zuhören (Seite zu, „🎧 ✕“), wartet es stumm bis zum Ende der Session")
     p.add_argument("projekt", nargs="?", help="Projektordner, Name oder MR (Standard: aktuelles Repo samt seinen MRs)")
     p.add_argument("--als", help="Name, der auf der Seite als Zuhörer erscheint (Standard: aus der Umgebung erkannt, "
                                  "z. B. Claude in Claude Code; sonst Pflicht, z. B. \"Copilot (Claude Sonnet 4.5)\")")
@@ -722,11 +744,23 @@ def agent_parser():
 
 
 def befehl_feedback(o):
-    print(faeden_abholen(gespraech_ziele(o.projekt), alle=o.alle, weg="feedback")[0]); return 0
+    """--horchen: was schon wartet, sofort ausgeben; wartet nichts, gleich horchen (ein Aufruf statt zwei)."""
+    ziele = gespraech_ziele(o.projekt)
+    wer = agent_name(o.als) if o.horchen else None
+    text, n = faeden_abholen(ziele, alle=o.alle, weg="feedback", wer=wer)
+    if n or not o.horchen:
+        print(text); return 0
+    return horchen_ausgeben(ziele, o.timeout, wer)
 
 
 def befehl_horchen(o):
-    text, n = faeden_horchen(gespraech_ziele(o.projekt), o.timeout, agent_name(o.als))
+    return horchen_ausgeben(gespraech_ziele(o.projekt), o.timeout, agent_name(o.als))
+
+
+def horchen_ausgeben(ziele, timeout, wer):
+    text, n = faeden_horchen(ziele, timeout, wer)
+    if text is None:  # gestoppt: kein Wort, kein Fehlercode
+        return 0
     print(text); return 0 if n else 1
 
 
