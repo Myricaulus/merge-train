@@ -226,7 +226,7 @@ Kopf jeder Seite: ein Wagen je Waggon (gemischt aus allen Quellen), Füllstand, 
 ein eigenes „ungesehen“ gibt es nicht, ein neuer Beitrag anderer macht die Diskussion „dran“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
 Welche MRs: `mr_liste` (reviewer, author, assignee).
 - Achsen: Quelle, Marke am Wagen, Knopf im Leitstand.
-- Ort: `alle_wagen`/`wagen_fuer` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
+- Ort: `alle_wagen`/`wagen_fuer`, ein Wagen aus `wagen_eintrag`, `faeden_marke`, `faeden_text` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
   Spec und Ausbauschritte: `docs/gueterbahnhof.md`.
 
 ### 15. „fertig“ / „abgeben“ (lokal)

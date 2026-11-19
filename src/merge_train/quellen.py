@@ -183,6 +183,22 @@ def projekt_einstellen(projekt, von, bis):
     return True, f"{projekt}: {bis} → {von}" + (" (Standard)" if (von, bis) == std else "")
 
 
+def wagen_eintrag(p, name, titel, datei, marke, *, zeile2=None, plus=0, minus=0, dateien=0, status="offen", **mehr):
+    """Ein Wagen im Zug für MR und Myrling (lokale kommen fertig aus statistik)."""
+    return {"p": p, "name": name, "titel": titel, "zeile2": zeile2, "datei": datei, "plus": plus, "minus": minus,
+            "dateien": dateien, "commits": 0, "todos": [], "status": status, "marke": marke, **mehr}
+
+
+def faeden_marke(gs_neu, sonst):
+    """Marke am Wagen: neue Antworten des Agenten gehen vor."""
+    return f"💬 {gs_neu} neu" if gs_neu else sonst
+
+
+def faeden_text(gs, gs_neu):
+    """Zeile im Titel des Wagens: Fäden, davon neu."""
+    return f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else ""
+
+
 def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
@@ -197,21 +213,18 @@ def mr_wagen(akt=None):
         fertig = (bool(akte.get("abgeschlossen") or akte.get("diskussionen")) and not ausstehend(akte) and not gesendet
                   and not (ds["dran"] or ds["entwurf"] or ds["gitlab_entwurf"]))
         kurz = mr.projekt.rsplit("/", 1)[-1]
-        marke = (f"💬 {gs_neu} neu" if gs_neu else
-                 f"● {ds['dran']} dran" if ds["dran"] else ("✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt")
-                 if fertig else f"● {n} Komm." if n else "● offen")
+        marke = faeden_marke(gs_neu, f"● {ds['dran']} dran" if ds["dran"] else (
+            "✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt") if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
             ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
             f"{ds['dran']} Diskussion(en): du bist dran" if ds["dran"] else "",
             f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
             f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
             f"{gesendet} Entwurf/Entwürfe in GitLab" if gesendet else "",
-            f"{n} eigene Kommentare" if n else "",
-            f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
-        return {"p": mr.id, "name": f'!{mr.iid} {kurz}', "titel": f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
-                "zeile2": titel, "datei": mr.url, "plus": 0, "minus": 0, "dateien": aenderungen or 0,
-                "commits": 0, "todos": [], "status": "fertig" if fertig and not gs_neu else "offen",
-                "marke": marke}
+            f"{n} eigene Kommentare" if n else "", faeden_text(gs, gs_neu)) if t)
+        return wagen_eintrag(mr.id, f'!{mr.iid} {kurz}', f'{mr.projekt}!{mr.iid}: {titel}' + (f"\n{stand}" if stand else ""),
+                             mr.url, marke, zeile2=titel, dateien=aenderungen or 0,
+                             status="fertig" if fertig and not gs_neu else "offen")
     for it in items:
         try:
             mr = mr_ref(it.get("web_url", ""))
@@ -319,8 +332,7 @@ def myrling_wagen(akt=None):
         try:
             laeufe = myrling.anstehend()
         except Fehler as e:
-            return [{"p": "myrling:", "name": "Myrling", "titel": str(e), "zeile2": "Befehl scheitert", "datei": "",
-                     "plus": 0, "minus": 0, "dateien": 0, "commits": 0, "todos": [], "status": "fehlt", "marke": "⚠ Fehler"}]
+            return [wagen_eintrag("myrling:", "Myrling", str(e), "", "⚠ Fehler", zeile2="Befehl scheitert", status="fehlt")]
     wagen = []
     for lauf in laeufe:
         waggon = Waggon(myrling=lauf["skript"])
@@ -337,15 +349,14 @@ def myrling_wagen(akt=None):
             lauf = dict(lauf, stand="fehlt", grund=str(e))
         gs, gs_neu = faeden_zaehlen(waggon, branch)
         kurz, lang = LAUF_STAND.get(lauf["stand"], (lauf["stand"], lauf.get("grund") or lauf["stand"]))
-        marke = f"💬 {gs_neu} neu" if gs_neu else "✗ abgelehnt" if lauf["stand"] == "abgelehnt" else f"● {kurz}"
+        marke = faeden_marke(gs_neu, "✗ abgelehnt" if lauf["stand"] == "abgelehnt" else f"● {kurz}")
         titel = "\n".join(t for t in (
             f'{lauf["skript"]}: {lang}', f'braucht {lauf["braucht"]}' if lauf["braucht"] else "",
             f'abgelehnt: {(lauf["abgelehnt"] or {}).get("grund") or "?"}' if lauf["abgelehnt"] else "",
-            f"{len(fehlen)} Datei(en) aus anderen Repos fehlen im Diff" if fehlen else "",
-            f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else "") if t)
-        wagen.append({"p": waggon.id, "name": "⛭ " + lauf["skript"], "titel": titel, "zeile2": None if plus + minus else kurz,
-                      "datei": waggon.url, "plus": plus, "minus": minus, "dateien": dateien, "commits": 0, "todos": [],
-                      "status": "fehlt" if lauf["stand"] == "fehlt" else "offen", "marke": marke, "gs": gs, "gs_neu": gs_neu})
+            f"{len(fehlen)} Datei(en) aus anderen Repos fehlen im Diff" if fehlen else "", faeden_text(gs, gs_neu)) if t)
+        wagen.append(wagen_eintrag(waggon.id, "⛭ " + lauf["skript"], titel, waggon.url, marke,
+                                   zeile2=None if plus + minus else kurz, plus=plus, minus=minus, dateien=dateien,
+                                   status="fehlt" if lauf["stand"] == "fehlt" else "offen", gs=gs, gs_neu=gs_neu))
     return wagen
 
 
