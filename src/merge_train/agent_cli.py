@@ -634,7 +634,10 @@ def vorfall_ordner():
     return os.path.join(DATEN, "vorfaelle")
 
 
-def vorfall_ablegen(titel, text, agent, wo):
+VORFALL_ARTEN = {"bug": ("Bug", "bug"), "wunsch": ("Wunsch", "enhancement")}  # --art → (Text, GitHub-Label)
+
+
+def vorfall_ablegen(titel, text, agent, wo, art=None):
     """Bericht als vorfaelle/JJJJ-MM-TT-<thema>.md ablegen (nie überschreiben). Rückgabe: Pfad."""
     ordner = vorfall_ordner()
     os.makedirs(ordner, exist_ok=True)
@@ -644,7 +647,8 @@ def vorfall_ablegen(titel, text, agent, wo):
     while os.path.exists(pfad):
         pfad, n = os.path.join(ordner, f"{tag}-{thema}-{n}.md"), n + 1
     with open(pfad, "w", encoding="utf-8") as f:
-        f.write(f"# {titel.strip()}\n\nDatum: {tag} · Agent: {agent} · Repo: {wo}\n\n{text.strip()}\n")
+        f.write(f"# {titel.strip()}\n\nDatum: {tag} · Agent: {agent} · Repo: {wo}"
+                f"{f' · Art: {VORFALL_ARTEN[art][0]}' if art else ''}\n\n{text.strip()}\n")
     return pfad
 
 
@@ -663,14 +667,18 @@ def vorfall_github():
     return m.group(2) if m else None
 
 
-def vorfall_issue(titel, text, agent):
+def vorfall_issue(titel, text, agent, art=None):
     """Vorfall als Issue im GitHub-Repo von merge-train anlegen (gh api statt gh issue create: das braucht zusätzlich
-    Leserechte am Inhalt). Rückgabe: (url, None) oder (None, Grund)."""
+    Leserechte am Inhalt), mit Label bug/enhancement nach art (ohne Schreibrechte am Repo lässt GitHub es still weg).
+    Rückgabe: (url, None) oder (None, Grund)."""
     repo = vorfall_github()
     if not repo:
         return None, "kein GitHub-Repo (Einstellung vorfall_github)"
     tag = datetime.now().strftime("%Y-%m-%d")
-    daten = json.dumps({"title": titel.strip(), "body": f"Datum: {tag} · Agent: {agent}\n\n{text.strip()}\n"})
+    daten = {"title": titel.strip(), "body": f"Datum: {tag} · Agent: {agent}\n\n{text.strip()}\n"}
+    if art:
+        daten["labels"] = [VORFALL_ARTEN[art][1]]
+    daten = json.dumps(daten)
     try:
         r = subprocess.run([KONF.get("gh") or "gh", "api", f"repos/{repo}/issues", "--input", "-", "--jq", ".html_url"],
                            input=daten, capture_output=True, text=True, timeout=60)
@@ -684,12 +692,12 @@ def vorfall_issue(titel, text, agent):
 
 def befehl_vorfall(o):
     text, agent = text_von(o), agent_name(o.als, sonst="unbekannt")
-    url, grund = vorfall_issue(o.titel, text, agent)
+    url, grund = vorfall_issue(o.titel, text, agent, o.art)
     if url:
         print(f"Vorfall als GitHub-Issue angelegt: {url}")
     else:
         wo = repo_wurzel(os.getcwd())
-        pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd())
+        pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd(), o.art)
         print(f"Vorfall abgelegt: {pfad} (kein Issue: {grund})")
     print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
     return 0
@@ -772,6 +780,8 @@ def agent_parser():
                                    "docs/vorfaelle/README.md.")
     p.add_argument("titel", help="kurzer Titel, z. B. „pruefen wählt bei fremdem Repo das falsche Projekt“")
     p.add_argument("text", help="Bericht (Markdown); - = von stdin")
+    p.add_argument("--art", choices=VORFALL_ARTEN, help="bug: merge-train tut etwas falsch (Label bug); wunsch: es fehlt "
+                                                        "etwas oder die Doku ist unklar (Label enhancement)")
     p.add_argument("--als", help="wer berichtet (Standard: aus der Umgebung erkannt)")
     p.set_defaults(aufruf=befehl_vorfall)
     p = sub.add_parser("horchen", help="Gespräch: auf neue Nachrichten warten",

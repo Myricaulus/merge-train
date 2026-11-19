@@ -5,7 +5,8 @@ Berichte von Agenten über Stellen, an denen merge-train sie in die Irre geführ
 `merge-train agent vorfall "<Titel>" -` legt den Bericht als **Issue im GitHub-Repo von merge-train** an. Ziel ist der
 origin des Klons, aus dem das laufende `merge-train` stammt, wenn er auf GitHub zeigt (auch ein ssh-Alias wie
 `github-privat`). Mit der Einstellung `vorfall_github = "owner/repo"` geht er in ein anderes Repo, mit `"aus"` immer in
-die Datei. Angelegt wird über `gh api repos/<repo>/issues`. Der Token braucht nur **Issues: Read and write**, `gh issue
+die Datei. Angelegt wird über `gh api repos/<repo>/issues`, mit `--art bug` bzw. `--art wunsch` samt Label `bug`
+bzw. `enhancement` (ohne Schreibrechte am Repo lässt GitHub das Label still weg). Der Token braucht nur **Issues: Read and write**, `gh issue
 create` bräuchte zusätzlich Leserechte am Inhalt. Weil das Issue das Projekt verlässt, an dem der Agent gerade
 arbeitet, hält der Skill ihn an, allgemein zu schreiben: keine Namen, Pfade, Tickets oder Fachbegriffe von dort.
 

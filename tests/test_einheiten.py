@@ -754,7 +754,7 @@ class AgentArgsTest(unittest.TestCase):
                     f'[ -e {bin_}/kaputt ] && {{ echo "HTTP 403: Resource not accessible" >&2; exit 1; }}\n'
                     'echo https://github.com/o/r/issues/7\n')
         os.chmod(gh, 0o755)
-        _, o = agent_cli.agent_args(["vorfall", "Titel", "Bericht", "--als", "Claude"])
+        _, o = agent_cli.agent_args(["vorfall", "Titel", "Bericht", "--als", "Claude", "--art", "wunsch"])
         def lauf():
             aus = io.StringIO()
             with contextlib.redirect_stdout(aus):
@@ -768,11 +768,13 @@ class AgentArgsTest(unittest.TestCase):
             self.assertEqual(daten["title"], "Titel")
             self.assertIn("Agent: Claude", daten["body"])
             self.assertNotIn("Repo:", daten["body"])
+            self.assertEqual(daten["labels"], ["enhancement"])
             self.assertEqual(os.listdir(ordner), [])
             open(os.path.join(bin_, "kaputt"), "w").close()
             aus = lauf()
             self.assertIn("kein Issue: HTTP 403", aus)
             self.assertEqual(len(os.listdir(ordner)), 1)
+            self.assertIn("· Art: Wunsch", lesen(os.path.join(ordner, os.listdir(ordner)[0])))
             KONF["vorfall_github"] = "aus"
             self.assertIn("kein GitHub-Repo", lauf())
         with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}), mock.patch.dict(KONF, {"vorfall_github": ""}):

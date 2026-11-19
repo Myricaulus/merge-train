@@ -381,12 +381,15 @@ def teil_abmelden(b, f):
     os.symlink("/bin/sh", os.path.join(t, "agentx"))
     aus, exe = os.path.join(t, "aus"), os.path.join(f.srv.ordner, "merge-train")
     befehl = f'"{sys.executable}" "{exe}" agent horchen "{f.mr.removeprefix("projekt:")}" --als Fake > "{aus}"; true'
+    # Was die Teile davor an Fragen hinterlassen haben, abholen: sonst gibt horchen das sofort aus und meldet sich nicht an
+    subprocess.run([sys.executable, exe, "agent", "feedback", f.mr.removeprefix("projekt:"), "--als", "Fake"],
+                   env=f.srv.umgebung, capture_output=True, check=True)
     ag = subprocess.Popen([os.path.join(t, "agentx"), "-c", befehl], env=f.srv.umgebung)
     try:
         ende = time.time() + 8
         while f.horcht() != "Fake" and time.time() < ende:
             time.sleep(0.1)
-        assert f.horcht() == "Fake", "horchen hat sich nicht angemeldet"
+        assert f.horcht() == "Fake", f"horchen hat sich nicht angemeldet (Exit {ag.poll()}, Ausgabe: {open(aus).read()[:300]!r})"
         seite(b, f)
         b.warten_bis("!document.getElementById('abmelden').hidden")
         b.klicken("#abmelden")

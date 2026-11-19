@@ -214,7 +214,7 @@ merge-train's GitHub repo (if that fails, a file in the inbox of the merge-train
 works through it.
 
 ```sh
-merge-train agent vorfall "<short title>" - <<'EOF'
+merge-train agent vorfall "<short title>" --art bug|wunsch - <<'EOF'
 ## Situation
 ## What happened      (commands, exact messages, what you assumed)
 ## Assessment         (bug, missing feature, unclear docs – what you verified, what is only a guess)
@@ -226,5 +226,6 @@ EOF
 Keep it general: it describes merge-train, not the work at hand. No names of people, companies, projects, repos,
 branches, tickets, file paths or domain terms from the repo you work in; use placeholders (`<submodule>/…`, "a MR
 with submodules", "the target branch"). Write it in the user's language, facts only, and mark guesses as guesses.
-One report per incident; tell the user in one sentence that you filed it (with the issue link). Not for problems in
-the reviewed code or the user's repo.
+`--art bug`: merge-train does something wrong (wrong result, misleading message, crash); `--art wunsch`: it works as
+designed, but something is missing or the docs are unclear. Always give one. One report per incident; tell the user
+in one sentence that you filed it (with the issue link). Not for problems in the reviewed code or the user's repo.
