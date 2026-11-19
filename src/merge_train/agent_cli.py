@@ -759,8 +759,13 @@ def agent_parser():
     p.set_defaults(aufruf=befehl_kommentar)
     p = sub.add_parser("thread", help="Gespräch: neuen Thread anlegen (Hinweis, offene Frage, Zusammenfassung)",
                        description=gespraech + "Neuer Thread vom Agenten, an einer Code-Zeile oder allgemein (ohne --ort, z. B. die "
-                                   "Zusammenfassung am Ende). Datei- und pfad:zeile-Angaben im Text werden auf der Seite zu "
-                                   "Links. Antworten des Nutzers kommen wie sonst über feedback/horchen.")
+                                   "Zusammenfassung am Ende). Hast du hier Code geändert, gehören deine offenen Punkte, "
+                                   "Entscheidungen und die Zusammenfassung hierher, je Punkt ein Thread an seiner Zeile, statt "
+                                   "in die Konsole: ohne -p landet der Thread im lokalen Gespräch des Repos (jedes Repo unter "
+                                   "projekte, auch wenn der Klon zugleich zu einem MR gehört), zugeordnet zum ausgecheckten "
+                                   "bzw. eingestellten bis-Branch. Nach einem reinen Review stattdessen -p <MR>. Datei- und "
+                                   "pfad:zeile-Angaben im Text werden auf der Seite zu Links. Antworten des Nutzers kommen wie "
+                                   "sonst über feedback/horchen.")
     p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--ort", metavar="PFAD[:ZEILE[-BIS]]",
                    help="Zeile oder Bereich im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon); einmal je Thread")
@@ -768,7 +773,7 @@ def agent_parser():
                    help="Siehe-auch-Link (mehrfach möglich)")
     p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][|LABEL]"),
                    help="zwei Dateien (bzw. mit VON-BIS nur diese Bereiche) nebeneinander vergleichen (Popup); mehrfach möglich")
-    p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
+    p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR; nach einem Review: der MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
     p = sub.add_parser("vorfall", help="Bericht als GitHub-Issue (sonst Datei), wo merge-train in die Irre geführt hat (Meldung, Skill, CLI)",

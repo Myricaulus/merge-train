@@ -1,6 +1,6 @@
 ---
 name: merge-train
-description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent feedback --horchen` / `horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo: the merge-train repo itself (local mode, changes allowed) and GitLab MR clones (answer only).'
+description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent feedback --horchen` / `horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo under `projekte` in the merge-train config: you changed code → local conversation of the checked-out branch (`agent thread`, changes allowed); you only reviewed a MR → its review (answer only, own threads with `-p <MR>`). A MR in the same clone does not take away the local conversation.'
 argument-hint: "[MR-URL | gruppe/projekt!42]"
 ---
 
@@ -39,10 +39,23 @@ The page shows the name of whoever answered, opened a thread, listens or wrote a
 
 ## Which conversation
 
-Without an argument the commands use the current repo: its local conversation (if local mode is on) and all its
-MRs the user has opened in merge-train. Pass an MR (URL, `host/gruppe/projekt/42`, `gruppe/projekt!42`) to narrow
-it down, e.g. when several MRs share the clone or you are not inside the clone. The skill argument, if given, is
-that MR.
+**The one question: did you change code here, or only read and comment?**
+
+- **You changed code** (implemented a story, fixed something; the repo is under `projekte` in the merge-train
+  config): that is the **local conversation** of the branch you work on. Open points, decisions and the summary go
+  there with `merge-train agent thread` **without `-p`**. merge-train assigns the thread to the right branch itself
+  (the checked-out branch, or the configured `bis` branch). This holds in every repo, not only in merge-train
+  itself, and also when the same clone serves a colleague's MR: `kommentare` and the `feedback` header then list
+  only that MR, but `thread` still lands in the local conversation (local before MR).
+- **You only reviewed** (someone else's MR, nothing changed): findings go into the review JSON as agent hints
+  (mr-review skill), rewordings through `merge-train agent kommentar`, and `kommentare` shows what is already
+  there. Own threads to that MR need `-p <MR>`, otherwise they land in the local conversation.
+
+Without an argument `feedback`, `antworten` and `horchen` use the current repo: its local conversation (if local
+mode is on) and all its MRs the user has opened in merge-train. Pass an MR (URL, `host/gruppe/projekt/42`,
+`gruppe/projekt!42`) to narrow it down, e.g. when several MRs share the clone or you are not inside the clone. The
+skill argument, if given, is that MR. Don't conclude from an empty `feedback` or a MR-only `kommentare` that there
+is no local conversation: just run `thread`, it says so if the repo is not in merge-train.
 
 ## Fetch
 
@@ -148,7 +161,7 @@ EOF
 You can open threads too, e.g. after implementing something: points the user should check, decisions you made
 on your own, open questions. The user answers on the page; the answers reach you via `feedback`/`horchen` as usual.
 
-Before adding your own remarks to a MR (threads or new review hints), read what is already commented there, so nothing
+Before adding your own remarks to a **MR you review** (threads with `-p <MR>` or new review hints), read what is already commented there, so nothing
 ends up twice. `feedback` only shows threads; a comment the user wrote without a thread does not appear there:
 
 ```sh
@@ -163,7 +176,7 @@ merge-train agent thread - <<'EOF'                         # general thread (no 
 EOF
 #   --siehe <pfad>[:<zeile>[-<bis>]][|Label]   "see also" link (repeatable)
 #   --vergleich <A>[:von-bis] <B>[:von-bis][|Label]   two files (or just these line ranges) side by side in a popup (repeatable)
-#   -p <MR|Projekt>                            other conversation (default: current repo, local before MR)
+#   -p <MR|Projekt>                            other conversation (default: current repo, local before MR – after a review: -p <MR>)
 ```
 
 - **One thread per point**, at the line it is about: the problem or decision in 2–5 German sentences, what you
