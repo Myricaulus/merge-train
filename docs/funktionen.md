@@ -165,7 +165,8 @@ Session, denn sein Ende weckt den Agenten (Request). Ziele: das Repo samt seinen
 (`alle_gespraeche(leere=True)`).
 - Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt),
   Ende (Nachricht, Session weg, Zeit, still).
-- Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `agent_cli.py` (`horchen`),
+- Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `entwuerfe_senden` (`akte.py`,
+  senden und Vorschau), `agent_cli.py` (`horchen`),
   Route `api/gespraech` (`vorschau`, `prompt`), `web/hud.js`, `web/zug.js`, `web/review.js`.
 - Erweitern: ein neuer Zustellweg kommt in `benachrichtigen`/`feedback_senden`, nicht in die Seite.
 

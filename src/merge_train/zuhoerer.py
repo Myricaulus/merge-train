@@ -3,7 +3,7 @@ import glob, json, os, shlex, shutil, subprocess
 from datetime import datetime
 from .einstellungen import KONF, ersetzen, jetzt
 from .waggon import Fehler
-from .akte import akte_bearbeiten, akte_datei, akte_lesen, faeden_von
+from .akte import akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, faeden_von
 from .quellen import quelle
 
 # ---- Wer bekommt das Feedback?
@@ -345,13 +345,7 @@ def feedback_senden(waggon):
         return False, str(e), None
     branch = quelle(waggon).branch(waggon)
     with akte_bearbeiten(waggon) as akte:
-        n, namen = 0, []
-        for k in faeden_von(akte, branch):
-            for m in k["nachrichten"]:
-                if m["von"] == "ich" and not m.get("gesendet"):
-                    m["gesendet"] = jetzt(); n += 1
-                    if (k.get("an") or "Claude") not in namen:
-                        namen.append(k.get("an") or "Claude")
+        n, namen = entwuerfe_senden(akte, branch)
         if not n:
             return False, "Keine Entwürfe zum Senden", None
     text, tid = benachrichtigen(waggon, wurzel, n, namen)

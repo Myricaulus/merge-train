@@ -6,7 +6,7 @@ from .waggon import Fehler, Waggon, von_bis
 from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
     kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
@@ -191,10 +191,7 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
         branch = quelle(waggon).branch(waggon)
         with akte_bearbeiten(waggon, speichern=markieren and not vorschau) as akte:
             if vorschau:
-                for k in faeden_von(akte, branch):
-                    for m in k["nachrichten"]:
-                        if m["von"] == "ich" and not m.get("gesendet"):
-                            m["gesendet"] = jetzt()
+                entwuerfe_senden(akte, branch)
             faeden = [k for k in faeden_von(akte, branch) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
             zeigen = [k for k in faeden if alle or faden_status(k) == "wartet" or faden_ungelesen(k)]
             if markieren:

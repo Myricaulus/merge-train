@@ -242,6 +242,19 @@ def faeden_von(akte, branch=ALLE):
             and (branch is ALLE or k.get("branch") == branch)]
 
 
+def entwuerfe_senden(akte, branch):
+    """Eigene, noch nicht gesendete Nachrichten in den Fäden des Branches als gesendet markieren (senden, Vorschau).
+    Rückgabe (Anzahl, Agenten der Fäden in Reihenfolge)."""
+    n, namen = 0, []
+    for k in faeden_von(akte, branch):
+        for m in k["nachrichten"]:
+            if m["von"] == "ich" and not m.get("gesendet"):
+                m["gesendet"] = jetzt(); n += 1
+                if (k.get("an") or "Claude") not in namen:
+                    namen.append(k.get("an") or "Claude")
+    return n, namen
+
+
 def faeden_archivieren(waggon, branch):
     """Nach „fertig“: erledigte Fäden des Branches aus der Ansicht nehmen (bleiben in der Datei)."""
     with akte_bearbeiten(waggon) as akte:
