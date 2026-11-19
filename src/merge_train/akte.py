@@ -46,9 +46,9 @@ from datetime import datetime
 from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 from contextlib import contextmanager
 
-def akte_datei(waggon):
-    """Ordner je Art des Waggons (Art.ordner in waggon.py)."""
-    return os.path.join(DATEN, waggon.art.ordner, waggon.dateiname + ".json")
+def akte_datei(waggon, endung=".json"):
+    """Ordner je Art des Waggons (Art.ordner in waggon.py); andere endung: Begleitdatei daneben (.horcht, .prompt …)."""
+    return os.path.join(DATEN, waggon.art.ordner, waggon.dateiname + endung)
 
 
 def akte_laden(waggon, kaputte_beiseite=False):

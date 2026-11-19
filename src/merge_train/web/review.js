@@ -922,13 +922,15 @@
     }
     feedbackKnopf.disabled = true;
     App.melden('sendet …');
-    post('/api/gespraech', {aktion: 'senden'}).then(d => {
-      App.melden(d.text || '');
-      if (d.review) {
-        Object.assign(review, d.review);
-        zeichnen();
-      } else gsStand();
-    });
+    post('/api/gespraech', {aktion: 'senden'}).then(gespraechAntwort);
+  }
+  // Antwort von senden/abmelden: Meldung, dann neu zeichnen (mit Review-Daten) bzw. nur den Stand der Fäden
+  function gespraechAntwort(d) {
+    App.melden(d.text || '');
+    if (d.review) {
+      Object.assign(review, d.review);
+      zeichnen();
+    } else gsStand();
   }
   if (feedbackKnopf) {
     if (!mitReview)
@@ -940,13 +942,7 @@
       )
     );
     abmeldenKnopf.addEventListener('click', () =>
-      post('/api/gespraech', {aktion: 'abmelden'}).then(d => {
-        App.melden(d.text || '');
-        if (d.review) {
-          Object.assign(review, d.review);
-          zeichnen();
-        } else gsStand();
-      })
+      post('/api/gespraech', {aktion: 'abmelden'}).then(gespraechAntwort)
     );
     sessionKnopf.addEventListener('click', () => {
       sessionKnopf.disabled = true;

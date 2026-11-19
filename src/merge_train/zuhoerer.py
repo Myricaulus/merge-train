@@ -9,7 +9,7 @@ from .quellen import quelle
 # ---- Wer bekommt das Feedback?
 
 def horcht_datei(waggon):
-    return akte_datei(waggon)[:-5] + ".horcht"
+    return akte_datei(waggon, ".horcht")
 
 
 # Was zuletzt an den Agenten ging (Ausgabe von horchen/feedback bzw. der Startprompt), damit die Seite es zeigen kann.
@@ -18,7 +18,7 @@ PROMPTS_MAX = 5
 
 
 def prompt_datei(waggon):
-    return akte_datei(waggon)[:-5] + ".prompt"
+    return akte_datei(waggon, ".prompt")
 
 
 def prompt_merken(waggon, weg, text, wer=None):
@@ -76,7 +76,7 @@ SEITE_WEG_S = int(os.environ.get("MERGE_TRAIN_SEITE_WEG_S") or 30)
 
 
 def seite_datei(waggon):
-    return akte_datei(waggon)[:-5] + ".seite"
+    return akte_datei(waggon, ".seite")
 
 
 def seite_lebt(waggon):
@@ -126,7 +126,7 @@ def zuhoerer_abmelden(waggon):
 # arbeitet = ob die letzte Nachricht eine fertige Antwort ist. Solange die Session lebt, auch während sie arbeitet.
 
 def agent_datei(waggon):
-    return akte_datei(waggon)[:-5] + ".agent"
+    return akte_datei(waggon, ".agent")
 
 def claude_dir():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
