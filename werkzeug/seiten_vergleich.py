@@ -63,7 +63,8 @@ class Server:
             f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\nfeedback_befehl = "true"\n')
         self.umgebung = dict(os.environ, **(umgebung or {}), MERGE_TRAIN_CONFIG=os.path.join(ordner, "config.toml"),
                              XDG_CACHE_HOME=os.path.join(ordner, "cache"), XDG_DATA_HOME=os.path.join(ordner, "data"),
-                             XDG_CONFIG_HOME=os.path.join(ordner, "config"))
+                             XDG_CONFIG_HOME=os.path.join(ordner, "config"),
+                             TODO_DIR=os.path.join(ordner, "todo"))  # todo-Einträge (Seite ohne Session) nicht beim Nutzer
         self.umgebung.pop("MERGE_TRAIN_INSTANZ", None)
         self.p = subprocess.Popen([sys.executable, os.path.join(ordner, "merge-train"), "--server"], env=self.umgebung,
                                   stdout=subprocess.DEVNULL, stderr=open(os.path.join(ordner, "server.log"), "w"))
