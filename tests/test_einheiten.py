@@ -780,6 +780,67 @@ class AgentArgsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}), mock.patch.dict(KONF, {"vorfall_github": ""}):
             self.assertIsNone(agent_cli.vorfall_github())  # Tests legen nie echte Issues an
 
+    def test_vorfall_todo(self):
+        """agent vorfall: gibt es todo, wird es ein Eintrag im merge-train-Klon (vor GitHub und Datei)."""
+        from unittest import mock
+        from merge_train import agent_cli
+        bin_, klon = tempfile.mkdtemp(dir=T), tempfile.mkdtemp(dir=T)
+        with open(f"{bin_}/todo", "w") as f:
+            f.write(f'#!/bin/sh\nprintf "%s\\n" "$@" > {bin_}/args\necho t9\n')
+        os.chmod(f"{bin_}/todo", 0o755)
+        _, o = agent_cli.agent_args(["vorfall", "Titel", "Bericht", "--als", "Claude", "--art", "bug"])
+        aus = io.StringIO()
+        with mock.patch.dict(os.environ, {"PATH": f"{bin_}:" + os.environ["PATH"]}), \
+             mock.patch.object(agent_cli, "eigener_klon", return_value=klon), \
+             mock.patch.object(agent_cli, "vorfall_issue", side_effect=AssertionError("kein Issue, wenn todo klappt")), \
+             contextlib.redirect_stdout(aus):
+            agent_cli.befehl_vorfall(o)
+        self.assertIn("als todo-Eintrag im Projekt merge-train angelegt: t9", aus.getvalue())
+        args = lesen(f"{bin_}/args").splitlines()
+        self.assertEqual(args[:6], ["neu", "merge-train Bug: Titel", "-p", klon, "--prio", "3"])
+        self.assertEqual(args[args.index("-n") + 1], "Bericht")
+        with mock.patch.object(agent_cli, "eigener_klon", return_value=None):  # gebaut außerhalb eines Klons
+            self.assertEqual(agent_cli.vorfall_todo("T", "B", "Claude"), (None, "kein merge-train-Klon"))
+        self.assertIsNone(agent_cli.vorfall_todo("T", "B", "Claude")[0])  # Ersatz-todo der Tests scheitert → GitHub
+
+
+class EinrichtungTest(unittest.TestCase):
+    """merge-train status meldet eine fehlerhafte Einrichtung: Einstellung, fehlende Branches, Git-Hooks des Klons."""
+    def test_konfig_maengel(self):
+        from unittest import mock
+        from merge_train.einstellungen import KONF, konfig_maengel
+        with mock.patch.dict(KONF, {"lokall": True, "port": "8771", "lokal": 1, "kontext_schwellen": [1, 2, 3, 4]}):
+            m = konfig_maengel()
+        self.assertTrue(any("„lokall“" in x and "unbekannt" in x for x in m), m)
+        self.assertTrue(any("„port“" in x for x in m) and any("„lokal“" in x for x in m), m)
+        self.assertFalse(any("kontext_schwellen" in x for x in m), m)
+        with mock.patch.dict(KONF, {"log_tage": True}):  # bool ist in Python ein int – trotzdem falsch
+            self.assertTrue(any("„log_tage“" in x for x in konfig_maengel()))
+
+    def test_hooks_und_zweige(self):
+        from unittest import mock
+        from merge_train import agent_cli
+        w = tempfile.mkdtemp(dir=T)
+        subprocess.run(["git", "init", "-q", "-b", "claude", w], check=True)
+        subprocess.run(["git", "-C", w, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], check=True)
+        for name in agent_cli.HOOKS:
+            if name != "pre-push":
+                schreiben(f"{w}/.git/hooks/{name}", f"#!/bin/sh\n# {agent_cli.HOOKS[name]} (von install.idem.sh)\n")
+        self.assertEqual(agent_cli.fehlende_hooks(w), ["pre-push"])
+        with mock.patch.object(agent_cli, "konfig_maengel", return_value=[]):
+            with mock.patch.object(agent_cli, "eigener_klon", return_value=w):
+                teile = "\n".join(agent_cli.einrichtung_teile(w))
+                self.assertIn("Git-Hooks fehlen: pre-push – Commits und Pushes laufen ungetestet", teile)
+                self.assertIn("Branch reviewed fehlt im Klon", teile)
+                self.assertNotIn("Branch claude", teile)
+                self.assertNotIn("Branch", "\n".join(agent_cli.einrichtung_teile(w, zweige=False)))
+            with mock.patch.object(agent_cli, "eigener_klon", return_value=None):  # anderes Repo: Hooks gehen es nichts an
+                self.assertNotIn("Hooks", "\n".join(agent_cli.einrichtung_teile(w)))
+            schreiben(f"{w}/.git/hooks/pre-push", "#!/bin/sh\n# merge-train: testen\n")
+            subprocess.run(["git", "-C", w, "branch", "reviewed"], check=True)
+            with mock.patch.object(agent_cli, "eigener_klon", return_value=w):
+                self.assertEqual(agent_cli.einrichtung_teile(w), [])
+
 
 class AktualisierenTest(unittest.TestCase):
     """branch_aktualisieren: vorspulen, nach Force-Push neu setzen, eigene Commits und Änderungen schützen."""

@@ -22,7 +22,7 @@ complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_se
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a kommentare -d 'am MR schon Kommentiertes lesen'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a zeigen -d 'Review-JSON beim MR anmelden und öffnen'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a pruefen -d 'Review-JSON gegen den MR-Stand prüfen (--seit)'
-complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a vorfall -d 'Bericht, wo merge-train in die Irre geführt hat (--art bug|wunsch)'
+complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a vorfall -d 'Bericht, wo merge-train in die Irre geführt hat (--art bug|wunsch): todo, sonst GitHub-Issue, sonst Datei'
 complete -c merge-train -n '__fish_seen_subcommand_from thread' -l ort -x -d 'pfad:zeile oder pfad:von-bis (mit grep -n gemessen)'
 complete -c merge-train -n '__fish_seen_subcommand_from thread antworten' -l siehe -x -d 'pfad[:zeile[-bis]][|Label]: Aufrufer, Test, altes Verhalten'
 complete -c merge-train -n '__fish_seen_subcommand_from thread antworten' -l vergleich -x -d 'A[:von-bis] B[:von-bis][|Label]: nebeneinander'

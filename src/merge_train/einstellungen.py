@@ -84,6 +84,19 @@ def konfig_laden():
 KONF = konfig_laden()
 
 
+def konfig_maengel():
+    """Was an der Einstellung nicht stimmt (für merge-train status): unbekannte Schlüssel (Tippfehler, sonst still
+    übergangen), Werte vom falschen Typ, Ordner unter projekte, die es nicht gibt. Je Mangel ein Text."""
+    out = [f"unbekannte Einstellung „{k}“ (Tippfehler? bekannt sind die in config.example.toml)"
+           for k in sorted(set(KONF) - set(STANDARD))]
+    for k, std in STANDARD.items():
+        v = KONF[k]
+        typen = (str, list) if k == "projekte" else (int,) if type(std) is int else (type(std),)
+        if not isinstance(v, typen) or isinstance(v, bool) != isinstance(std, bool):
+            out.append(f"„{k}“ = {v!r} hat den falschen Typ (erwartet wie im Standard: {std!r})")
+    return out + [f"projekte: Ordner {p} gibt es nicht" for p in PROJEKTE_LISTE if not os.path.isdir(p)]
+
+
 ORDNER = os.path.join(INSTANZ, "cache") if INSTANZ else os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "merge-train")
 
 

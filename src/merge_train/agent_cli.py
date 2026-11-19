@@ -1,9 +1,9 @@
 """merge-train agent …: die Befehle für den Agenten (status, feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
-import argparse, hashlib, json, os, re, subprocess, sys, time
+import argparse, hashlib, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, melden, projektname
+from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
-from .git import STAND_TEXT, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
+from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
@@ -642,13 +642,18 @@ def mr_fuer_hinweise(pfad, daten, ref=None, cwd=None):
     return mr, ordner
 
 
+def eigener_klon():
+    """Der merge-train-Klon, aus dem das laufende Skript stammt (gebaut liegt es in dessen Wurzel), sonst None."""
+    return repo_wurzel(os.path.dirname(SKRIPT))
+
+
 def vorfall_ordner():
     """Eingang für Vorfälle: vorfaelle/ im merge-train-Klon, aus dem das laufende Skript stammt (gitignored; auch bei
     anderen Nutzern, die merge-train von GitHub auschecken), sonst – nicht aus einem Klon gestartet, eigene Instanz –
     vorfaelle/ im Datenordner. MERGE_TRAIN_VORFAELLE überschreibt beides (Tests)."""
     if os.environ.get("MERGE_TRAIN_VORFAELLE"):
         return os.environ["MERGE_TRAIN_VORFAELLE"]
-    klon = repo_wurzel(os.path.dirname(SKRIPT))
+    klon = eigener_klon()
     if klon and not INSTANZ and os.path.isdir(os.path.join(klon, "skill", "merge-train")):
         return os.path.join(klon, "vorfaelle")
     return os.path.join(DATEN, "vorfaelle")
@@ -672,6 +677,31 @@ def vorfall_ablegen(titel, text, agent, wo, art=None):
     return pfad
 
 
+def vorfall_todo(titel, text, agent, art=None):
+    """Vorfall als todo-Eintrag im merge-train-Klon – der erste Weg, wo es todo gibt (auf dem Rechner, auf dem
+    merge-train entwickelt wird; GitHub-Issues sind für den Austausch zwischen Rechnern und Accounts). Eigene Instanz:
+    nie. Rückgabe: (id, None) oder (None, Grund)."""
+    klon = eigener_klon()
+    if INSTANZ or not klon:
+        return None, "kein merge-train-Klon"
+    if not shutil.which("todo"):
+        return None, "kein todo"
+    art_text = VORFALL_ARTEN[art][0] if art else "Vorfall"
+    woher = repo_wurzel(os.getcwd())
+    try:
+        r = subprocess.run(["todo", "neu", f"merge-train {art_text}: {titel.strip()}", "-p", klon, "--prio", "3" if art == "bug" else "4",
+                            "--von", f"{agent} ({os.path.basename(woher)})" if woher else agent, "-n", text.strip(),
+                            "--prompt", f"Im merge-train-Repo: {art_text} „{titel.strip()}“ bearbeiten, der Bericht steht in der "
+                                        "Notiz dieses Eintrags. Erst docs/funktionen.md lesen."],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"todo: {e}"
+    tid = (r.stdout.strip().splitlines() or [""])[-1].strip()
+    if r.returncode or not tid:
+        return None, ((r.stderr or r.stdout).strip() or f"todo: Exit {r.returncode}").splitlines()[-1][:200]
+    return tid, None
+
+
 def vorfall_github():
     """GitHub-Repo („owner/repo“) für Vorfälle: Einstellung vorfall_github, „aus“ = nur Datei; leer = origin des
     merge-train-Klons, aus dem das Skript stammt, wenn dessen Host nach GitHub aussieht (auch ein ssh-Alias wie
@@ -681,7 +711,7 @@ def vorfall_github():
         return None if wert == "aus" else wert
     if INSTANZ or os.environ.get("MERGE_TRAIN_VORFAELLE"):
         return None
-    klon = repo_wurzel(os.path.dirname(SKRIPT))
+    klon = eigener_klon()
     url = (git(klon, "remote", "get-url", "origin", check=False) or "").strip() if klon else ""
     m = re.match(r"^(?:ssh://|https?://)?(?:[^@/]+@)?([^/:]*github[^/:]*)(?::\d+)?[:/](.+?/[^/]+?)(?:\.git)?/?$", url)
     return m.group(2) if m else None
@@ -711,14 +741,20 @@ def vorfall_issue(titel, text, agent, art=None):
 
 
 def befehl_vorfall(o):
+    """Erster Weg, der klappt: todo-Eintrag, GitHub-Issue, Datei im Eingang."""
     text, agent = text_von(o), agent_name(o.als, sonst="unbekannt")
+    tid, grund_todo = vorfall_todo(o.titel, text, agent, o.art)
+    if tid:
+        print(f"Vorfall als todo-Eintrag im Projekt merge-train angelegt: {tid}")
+        print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
+        return 0
     url, grund = vorfall_issue(o.titel, text, agent, o.art)
     if url:
         print(f"Vorfall als GitHub-Issue angelegt: {url}")
     else:
         wo = repo_wurzel(os.getcwd())
         pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd(), o.art)
-        print(f"Vorfall abgelegt: {pfad} (kein Issue: {grund})")
+        print(f"Vorfall abgelegt: {pfad} (kein todo: {grund_todo}; kein Issue: {grund})")
     print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
     return 0
 
@@ -810,13 +846,14 @@ def agent_parser():
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR; nach einem Review: der MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
-    p = sub.add_parser("vorfall", help="Bericht als GitHub-Issue (sonst Datei), wo merge-train in die Irre geführt hat (Meldung, Skill, CLI)",
+    p = sub.add_parser("vorfall", help="Bericht als todo-Eintrag, sonst GitHub-Issue, sonst Datei: wo merge-train in die Irre geführt hat "
+                                       "oder etwas fehlt (Meldung, Skill, CLI)",
                        description="Vorfall für die Entwicklung von merge-train ablegen: Situation, was passiert ist, "
-                                   "Einordnung, Workaround, Wunsch. Wird ein Issue im GitHub-Repo von merge-train (origin des "
-                                   "merge-train-Klons bzw. Einstellung vorfall_github): allgemein halten, ohne Namen, Pfade, "
-                                   "Tickets oder Begriffe aus dem Projekt, an dem du gerade arbeitest. Geht das nicht (kein gh, "
-                                   "keine Rechte), landet er im Eingang vorfaelle/ des Klons (gitignored), siehe "
-                                   "docs/vorfaelle/README.md.")
+                                   "Einordnung, Workaround, Wunsch. Der erste Weg, der klappt: todo-Eintrag im Projekt "
+                                   "merge-train (gibt es todo, wird merge-train hier entwickelt), Issue im GitHub-Repo von "
+                                   "merge-train (origin des merge-train-Klons bzw. Einstellung vorfall_github), Datei im "
+                                   "Eingang vorfaelle/ des Klons (gitignored, siehe docs/vorfaelle/README.md). Allgemein "
+                                   "halten, ohne Namen, Pfade, Tickets oder Begriffe aus dem Projekt, an dem du gerade arbeitest.")
     p.add_argument("titel", help="kurzer Titel, z. B. „pruefen wählt bei fremdem Repo das falsche Projekt“")
     p.add_argument("text", help="Bericht (Markdown); - = von stdin")
     p.add_argument("--art", choices=VORFALL_ARTEN, help="bug: merge-train tut etwas falsch (Label bug); wunsch: es fehlt "
@@ -883,6 +920,42 @@ def faeden_teile(faeden, feedback):
     return teile
 
 
+# Git-Hooks des merge-train-Klons und ihre Kennzeile, wie install.idem.sh sie schreibt
+HOOKS = {"pre-commit": "merge-train: testen", "pre-push": "merge-train: testen",
+         "post-merge": "merge-train: bauen", "post-checkout": "merge-train: bauen", "post-rewrite": "merge-train: bauen"}
+
+
+def fehlende_hooks(wurzel):
+    """Welche Hooks aus HOOKS im Klon fehlen (bzw. ohne ihre Kennzeile, also nicht von install.idem.sh)."""
+    ordner = os.path.join(wurzel, git(wurzel, "rev-parse", "--git-path", "hooks").strip())
+    def hat(name, kennung):
+        try:
+            return kennung in open(os.path.join(ordner, name), encoding="utf-8", errors="replace").read()
+        except OSError:
+            return False
+    return [name for name, kennung in HOOKS.items() if not hat(name, kennung)]
+
+
+def einrichtung_teile(wurzel, zweige=True):
+    """Für status, ganz oben: was an der Einrichtung nicht stimmt – Einstellung (konfig_maengel), im Klon fehlende
+    von/bis (zweige), im merge-train-Klon selbst fehlende Git-Hooks. Leer, wenn alles stimmt."""
+    konfig = konfig_maengel()
+    maengel = [f"Einstellung {kurzpfad(KONFIG_DATEI)}:\n" + "\n".join(f"      · {m}" for m in konfig)] if konfig else []
+    if zweige:
+        maengel += [f"Branch {b} fehlt im Klon (von/bis des Projekts: auf der Seite am Waggon wählen oder [zweige.<projekt>] "
+                    "in der Einstellung)" for b in fehlende_zweige(wurzel)]
+    klon = eigener_klon()
+    if klon and os.path.realpath(klon) == os.path.realpath(wurzel):
+        hooks = fehlende_hooks(wurzel)
+        folgen = [f for f in ("Commits und Pushes laufen ungetestet" if {"pre-commit", "pre-push"} & set(hooks) else "",
+                              "git pull/checkout baut nicht neu" if any(h.startswith("post-") for h in hooks) else "") if f]
+        if hooks:
+            maengel.append(f"Git-Hooks fehlen: {', '.join(hooks)} – {', '.join(folgen)}; ./install.idem.sh richtet sie ein")
+    if not maengel:
+        return []
+    return ["Einrichtung stimmt nicht (beheben, wenn es deine ist, sonst dem Nutzer sagen):"] + [f"  - {m}" for m in maengel]
+
+
 def status_review(w):
     """status im Review eines MR: Stand des Klons, was am MR schon kommentiert ist, Review-JSON, Fäden, nächste Schritte."""
     wurzel, head = quelle(w).ort(w)
@@ -891,6 +964,8 @@ def status_review(w):
     jetzt_head = (git(wurzel, "rev-parse", "HEAD", check=False) or "").strip()
     if jetzt_head != head:
         teile.append(f"Achtung: der Klon steht nicht auf dem MR-Stand – {branch} auschecken und vorspulen (mr-review, Schritt 2)")
+    einrichtung = einrichtung_teile(wurzel, zweige=False)
+    teile += [""] + einrichtung if einrichtung else []
     teile += ["", "Review: am Code nichts ändern, nichts committen. Befunde in die Review-JSON (mr-review)."]
     try:
         review = review_daten(w)
@@ -931,11 +1006,12 @@ def status_ausgeben(name=None):
     wurzel, _ = quelle(lokal).ort(lokal)
     branch = quelle(lokal).branch(lokal)
     von = von_bis(lokal.lokal)[0]
-    st = statistik(wurzel)
+    einrichtung = einrichtung_teile(wurzel)
+    st = {"dateien": 0} if fehlende_zweige(wurzel) else statistik(wurzel)
     offen = len([z for z in git(wurzel, "status", "--porcelain", "--ignore-submodules=dirty").splitlines() if z.strip()])
     aend = (f'+{st["plus"]} −{st["minus"]} in {st["dateien"]} Datei(en) gegen {von}' if st["dateien"] else f"keine Änderungen gegen {von}")
     aend += f", {offen} Datei(en) nicht committet" if offen else ""
-    teile = [f"merge-train status · {lokal.name} · Branch {branch} · {aend}", ""]
+    teile = [f"merge-train status · {lokal.name} · Branch {branch} · {aend}", ""] + (einrichtung + [""] if einrichtung else [])
     faeden = offene_faeden(lokal, branch)
     for w in ziele:  # der eigene MR dieses Branches (ich bin Autor)
         if not w.lokal and quelle(w).branch(w) == branch:

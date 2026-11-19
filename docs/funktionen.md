@@ -130,6 +130,10 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
   Review statt Entwicklung (`review_ziel`): `status <MR>` oder im Klon auf dem Quell-Branch eines MR, dessen Autor
   ich nicht bin (`eigener_mr`, aus der MR-Liste) – `status_review`: Klon auf dem MR-Stand?, Review-JSON, was am MR
   schon kommentiert ist, Fäden, `thread -p <MR>`. Dieselbe Wahl trifft `thread` ohne `-p`.
+  Ganz oben, nur wenn etwas nicht stimmt, die Einrichtung (`einrichtung_teile`): Einstellung (`konfig_maengel` in
+  `einstellungen.py`: unbekannte Schlüssel, falscher Typ, fehlender Ordner unter projekte), fehlende von/bis im Klon
+  (`fehlende_zweige`, nur Entwicklung), im merge-train-Klon selbst fehlende Git-Hooks (`fehlende_hooks`, `HOOKS` wie
+  `install.idem.sh` sie schreibt). Erweitern: eine neue Prüfung ist eine Zeile in `einrichtung_teile`.
   `thread` nennt einen offenen Faden an derselben Stelle, den es schon gab; `antworten` nimmt wie `thread`
   `--siehe`/`--vergleich` (`siehe_eintrag`) und hängt sie an den Faden.
 - Befehlsübersicht für Agenten: `completions/merge-train.fish` (eine Zeile je Befehl, der Skill verweist darauf).
@@ -253,8 +257,8 @@ Kleiner Server auf `127.0.0.1:8771`, Routen-Tabelle mit gemeinsamer Fehler- und 
 ### 19. Kommandozeile
 `merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]`, `merge-train status` (= `agent status`) und `merge-train agent …` (`status`, `pruefen`, `zeigen`,
 `feedback`, `antworten`, `horchen`, `kommentar`, `kommentare`, `thread`, `vorfall`). MR-Verweise: URL, `!42`,
-`gruppe/projekt!42`. `agent vorfall` legt einen Bericht als GitHub-Issue an (`vorfall_issue` über `gh api`, Repo: `vorfall_github`),
-sonst im Eingang (`vorfall_ablegen`/`vorfall_ordner`: `vorfaelle/` im Klon des laufenden Skripts, sonst im Datenordner;
+`gruppe/projekt!42`. `agent vorfall` nimmt den ersten Weg, der klappt: todo-Eintrag im merge-train-Klon (`vorfall_todo`,
+`eigener_klon`), GitHub-Issue (`vorfall_issue` über `gh api`, Repo: `vorfall_github`), Datei im Eingang (`vorfall_ablegen`/`vorfall_ordner`: `vorfaelle/` im Klon des laufenden Skripts, sonst im Datenordner;
 Ablauf: `docs/vorfaelle/README.md`).
 - Ort: `cli.py`, `agent_cli.py`, MR-Verweise in `gitlab.py` (`mr_ref`, `ist_mr_ref`). Agenten-Doku:
   `skill/merge-train/SKILL.md`.

@@ -24,6 +24,8 @@ commands that make sense right now:
 The threads land in the conversation of the branch you work on; merge-train assigns them itself. Don't pass `-p`.
 If status says the repo is not in merge-train, tell the user (its folder belongs under `projekte` in the config) and
 report in the console until then.
+If status lists "Einrichtung stimmt nicht" (config, missing branches, missing git hooks), fix what is yours to fix
+(in the merge-train repo: `./install.idem.sh`), otherwise tell the user.
 In the clone of someone else's MR with its branch checked out, or as `merge-train status <MR>`, status shows the
 review of that MR instead – that is the mr-review skill's way, and status prints its commands (`-p <MR>`).
 
@@ -85,4 +87,5 @@ One line per command: `completions/merge-train.fish` in the merge-train repo (fr
 A message that sent you the wrong way, this skill not matching the CLI, a workaround you needed: file it once the
 task is unblocked with `merge-train agent vorfall "<title>" --art bug|wunsch -` (stdin: Situation, What happened,
 Assessment, Workaround, Wish). Keep it general: no names, repos, branches, tickets, paths or domain terms from the
-work at hand. Tell the user in one sentence (with the issue link).
+work at hand. It becomes a todo entry where `todo` exists, else a GitHub issue, else a file. Tell the user in one sentence
+(with the todo id or issue link).
