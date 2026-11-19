@@ -232,8 +232,9 @@ Kleiner Server auf `127.0.0.1:8771`, Routen-Tabelle mit gemeinsamer Fehler- und 
 ### 19. Kommandozeile
 `merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]` und `merge-train agent …` (`pruefen`, `zeigen`,
 `feedback`, `antworten`, `horchen`, `kommentar`, `kommentare`, `thread`, `vorfall`). MR-Verweise: URL, `!42`,
-`gruppe/projekt!42`. `agent vorfall` legt einen Bericht im Eingang ab (`vorfall_ordner`: `vorfaelle/` im Klon des
-laufenden Skripts, sonst im Datenordner; Ablauf: `docs/vorfaelle/README.md`).
+`gruppe/projekt!42`. `agent vorfall` legt einen Bericht als GitHub-Issue an (`vorfall_issue` über `gh api`, Repo: `vorfall_github`),
+sonst im Eingang (`vorfall_ablegen`/`vorfall_ordner`: `vorfaelle/` im Klon des laufenden Skripts, sonst im Datenordner;
+Ablauf: `docs/vorfaelle/README.md`).
 - Ort: `cli.py`, `agent_cli.py`, MR-Verweise in `gitlab.py` (`mr_ref`, `ist_mr_ref`). Agenten-Doku:
   `skill/merge-train/SKILL.md`.
 

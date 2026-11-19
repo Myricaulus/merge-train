@@ -65,5 +65,5 @@ umgesetzt). Soll die Session zuhören: `merge-train agent horchen` im Hintergrun
 
 ## Vorfälle
 
-Neue Berichte legen Agenten mit `merge-train agent vorfall` in `vorfaelle/` ab (gitignored), abgearbeitete mit dem Block „Umgesetzt“ in `vorfaelle/erledigt/`
+Neue Berichte legen Agenten mit `merge-train agent vorfall` als GitHub-Issue an (über `gh api`). Geht das nicht, landen sie in `vorfaelle/` (gitignored). Abgearbeitete Dateien mit dem Block „Umgesetzt“ in `vorfaelle/erledigt/`
 (ebenfalls gitignored, siehe [`docs/vorfaelle/README.md`](docs/vorfaelle/README.md)).

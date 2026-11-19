@@ -741,6 +741,43 @@ class AgentArgsTest(unittest.TestCase):
         self.assertTrue(b.endswith("-2.md"))
         self.assertIn("Agent: Claude · Repo: ~/x", lesen(a))
 
+    def test_vorfall_issue(self):
+        """agent vorfall: Issue über gh api (Repo aus vorfall_github), ohne Repo-Pfad; scheitert gh → Datei mit Grund."""
+        import json
+        from unittest import mock
+        from merge_train import agent_cli
+        from merge_train.einstellungen import KONF
+        ordner, bin_ = tempfile.mkdtemp(dir=T), tempfile.mkdtemp(dir=T)
+        gh = os.path.join(bin_, "gh")
+        with open(gh, "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" > {bin_}/args\ncat > {bin_}/ein\n'
+                    f'[ -e {bin_}/kaputt ] && {{ echo "HTTP 403: Resource not accessible" >&2; exit 1; }}\n'
+                    'echo https://github.com/o/r/issues/7\n')
+        os.chmod(gh, 0o755)
+        _, o = agent_cli.agent_args(["vorfall", "Titel", "Bericht", "--als", "Claude"])
+        def lauf():
+            aus = io.StringIO()
+            with contextlib.redirect_stdout(aus):
+                agent_cli.befehl_vorfall(o)
+            return aus.getvalue()
+        with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}), \
+             mock.patch.dict(KONF, {"vorfall_github": "o/r", "gh": gh}):
+            self.assertIn("als GitHub-Issue angelegt: https://github.com/o/r/issues/7", lauf())
+            self.assertIn("repos/o/r/issues", lesen(os.path.join(bin_, "args")))
+            daten = json.loads(lesen(os.path.join(bin_, "ein")))
+            self.assertEqual(daten["title"], "Titel")
+            self.assertIn("Agent: Claude", daten["body"])
+            self.assertNotIn("Repo:", daten["body"])
+            self.assertEqual(os.listdir(ordner), [])
+            open(os.path.join(bin_, "kaputt"), "w").close()
+            aus = lauf()
+            self.assertIn("kein Issue: HTTP 403", aus)
+            self.assertEqual(len(os.listdir(ordner)), 1)
+            KONF["vorfall_github"] = "aus"
+            self.assertIn("kein GitHub-Repo", lauf())
+        with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}), mock.patch.dict(KONF, {"vorfall_github": ""}):
+            self.assertIsNone(agent_cli.vorfall_github())  # Tests legen nie echte Issues an
+
 
 class AktualisierenTest(unittest.TestCase):
     """branch_aktualisieren: vorspulen, nach Force-Push neu setzen, eigene Commits und Änderungen schützen."""

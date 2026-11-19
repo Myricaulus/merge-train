@@ -648,10 +648,50 @@ def vorfall_ablegen(titel, text, agent, wo):
     return pfad
 
 
+def vorfall_github():
+    """GitHub-Repo („owner/repo“) für Vorfälle: Einstellung vorfall_github, „aus“ = nur Datei; leer = origin des
+    merge-train-Klons, aus dem das Skript stammt, wenn dessen Host nach GitHub aussieht (auch ein ssh-Alias wie
+    github-privat). Eigene Instanz und MERGE_TRAIN_VORFAELLE (Tests): nur mit ausdrücklicher Einstellung."""
+    wert = (KONF.get("vorfall_github") or "").strip()
+    if wert:
+        return None if wert == "aus" else wert
+    if INSTANZ or os.environ.get("MERGE_TRAIN_VORFAELLE"):
+        return None
+    klon = repo_wurzel(os.path.dirname(SKRIPT))
+    url = (git(klon, "remote", "get-url", "origin", check=False) or "").strip() if klon else ""
+    m = re.match(r"^(?:ssh://|https?://)?(?:[^@/]+@)?([^/:]*github[^/:]*)(?::\d+)?[:/](.+?/[^/]+?)(?:\.git)?/?$", url)
+    return m.group(2) if m else None
+
+
+def vorfall_issue(titel, text, agent):
+    """Vorfall als Issue im GitHub-Repo von merge-train anlegen (gh api statt gh issue create: das braucht zusätzlich
+    Leserechte am Inhalt). Rückgabe: (url, None) oder (None, Grund)."""
+    repo = vorfall_github()
+    if not repo:
+        return None, "kein GitHub-Repo (Einstellung vorfall_github)"
+    tag = datetime.now().strftime("%Y-%m-%d")
+    daten = json.dumps({"title": titel.strip(), "body": f"Datum: {tag} · Agent: {agent}\n\n{text.strip()}\n"})
+    try:
+        r = subprocess.run([KONF.get("gh") or "gh", "api", f"repos/{repo}/issues", "--input", "-", "--jq", ".html_url"],
+                           input=daten, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"gh: {e}"
+    url = r.stdout.strip()
+    if r.returncode or not url.startswith("http"):
+        return None, (r.stderr.strip() or r.stdout.strip() or f"gh: Exit {r.returncode}").splitlines()[-1][:200]
+    return url, None
+
+
 def befehl_vorfall(o):
-    wo = repo_wurzel(os.getcwd())
-    pfad = vorfall_ablegen(o.titel, text_von(o), agent_name(o.als, sonst="unbekannt"), kurzpfad(wo) if wo else os.getcwd())
-    print(f"Vorfall abgelegt: {pfad}\nDem Nutzer in einem Satz sagen, dass es ihn gibt.")
+    text, agent = text_von(o), agent_name(o.als, sonst="unbekannt")
+    url, grund = vorfall_issue(o.titel, text, agent)
+    if url:
+        print(f"Vorfall als GitHub-Issue angelegt: {url}")
+    else:
+        wo = repo_wurzel(os.getcwd())
+        pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd())
+        print(f"Vorfall abgelegt: {pfad} (kein Issue: {grund})")
+    print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
     return 0
 
 
@@ -723,10 +763,13 @@ def agent_parser():
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
-    p = sub.add_parser("vorfall", help="Bericht ablegen, wo merge-train in die Irre geführt hat (Meldung, Skill, CLI)",
+    p = sub.add_parser("vorfall", help="Bericht als GitHub-Issue (sonst Datei), wo merge-train in die Irre geführt hat (Meldung, Skill, CLI)",
                        description="Vorfall für die Entwicklung von merge-train ablegen: Situation, was passiert ist, "
-                                   "Einordnung, Workaround, Wunsch. Landet im Eingang vorfaelle/ des merge-train-Klons "
-                                   "(gitignored), siehe docs/vorfaelle/README.md dort.")
+                                   "Einordnung, Workaround, Wunsch. Wird ein Issue im GitHub-Repo von merge-train (origin des "
+                                   "merge-train-Klons bzw. Einstellung vorfall_github): allgemein halten, ohne Namen, Pfade, "
+                                   "Tickets oder Begriffe aus dem Projekt, an dem du gerade arbeitest. Geht das nicht (kein gh, "
+                                   "keine Rechte), landet er im Eingang vorfaelle/ des Klons (gitignored), siehe "
+                                   "docs/vorfaelle/README.md.")
     p.add_argument("titel", help="kurzer Titel, z. B. „pruefen wählt bei fremdem Repo das falsche Projekt“")
     p.add_argument("text", help="Bericht (Markdown); - = von stdin")
     p.add_argument("--als", help="wer berichtet (Standard: aus der Umgebung erkannt)")

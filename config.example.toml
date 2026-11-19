@@ -36,6 +36,11 @@
 # Wie viele Tage aufbewahren; 0 = kein Log.
 # log_tage = 7
 
+# agent vorfall: Berichte als Issue in diesem GitHub-Repo (owner/repo, über gh api; Token mit Issues: Read/Write).
+# Leer = origin des merge-train-Klons, wenn er auf GitHub zeigt; "aus" = nur Datei in vorfaelle/.
+# vorfall_github = ""
+# gh = "gh"
+
 # Erster Besuch eines MR: dessen Quell-Branch im lokalen Klon auschecken, wenn dort nichts Uncommittetes liegt
 # mr_auschecken = true
 

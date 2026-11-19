@@ -234,7 +234,7 @@ merge-train agent feedback gitlab.example.com/gruppe/projekt/42   # oder im Klon
 merge-train agent antworten <id> "…"
 merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "…"   # GitLab-Kommentar umformulieren (siehe unten)
 merge-train agent kommentare [MR]                                  # lesen: was am MR schon kommentiert ist
-merge-train agent vorfall "<Titel>" -                              # Bericht, wo merge-train in die Irre führte (vorfaelle/, siehe docs/vorfaelle/README.md)
+merge-train agent vorfall "<Titel>" -                              # Bericht, wo merge-train in die Irre führte: GitHub-Issue, sonst vorfaelle/ (docs/vorfaelle/README.md)
 merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   # Seite zeigt „🎧 Copilot hört zu“
 ```
 
@@ -312,6 +312,7 @@ liegen im Repo zwei Symlinks aus der [Installation](#installation) (in `.gitigno
 | `[agenten]` | leer | Agenten für Fragen zum MR: Name = Startbefehl (siehe [Fragen an einen Agenten](#fragen-an-einen-agenten-gitlab-modus)) |
 | `port`, `leerlauf` | `8771`, `3600` | Port des Servers; nach so vielen Sekunden ohne Anfrage beendet er sich. Offene Seiten fragen alle 4 s, ein kurzer Leerlauf (z. B. `120`, Hintergrund-Tabs drosselt der Browser) beendet ihn also bald nach dem Schließen des Tabs |
 | `ich_symbol` | `🤓` | dein Symbol in den Listen links („zuletzt von dir“, siehe Kommentarlisten) |
+| `vorfall_github` | leer | GitHub-Repo (`owner/repo`) für `agent vorfall`; leer = origin des merge-train-Klons, `aus` = nur Datei in `vorfaelle/` |
 | `log_tage` | `7` | Log der Anfragen an die Quellen (lokales git, GitLab) mit Dauer und Anlass, eine Datei je Tag in `~/.cache/merge-train/aussen-<datum>.log`; so viele Tage aufbewahrt, `0` = aus |
 
 Wird das Skript oder die Einstellungsdatei geändert, startet der Server mit dem neuen Stand neu.

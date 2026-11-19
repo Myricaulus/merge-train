@@ -209,8 +209,9 @@ until you fetch them with `feedback`.
 
 If merge-train itself got in your way – a message that sent you the wrong way, a skill instruction (this one,
 mr-review, a project skill) that did not match what the CLI does, a workaround you needed, or the user had to correct
-you about how merge-train works – file a short report once the task is unblocked. It goes to the inbox of the
-merge-train clone (gitignored, nothing is sent anywhere); whoever develops merge-train works through it.
+you about how merge-train works – file a short report once the task is unblocked. It becomes an issue in
+merge-train's GitHub repo (if that fails, a file in the inbox of the merge-train clone); whoever develops merge-train
+works through it.
 
 ```sh
 merge-train agent vorfall "<short title>" - <<'EOF'
@@ -222,5 +223,8 @@ merge-train agent vorfall "<short title>" - <<'EOF'
 EOF
 ```
 
-Write it in the user's language, facts only, and mark guesses as guesses. One report per incident; tell the user in
-one sentence that you filed it. Not for problems in the reviewed code or the user's repo.
+Keep it general: it describes merge-train, not the work at hand. No names of people, companies, projects, repos,
+branches, tickets, file paths or domain terms from the repo you work in; use placeholders (`<submodule>/…`, "a MR
+with submodules", "the target branch"). Write it in the user's language, facts only, and mark guesses as guesses.
+One report per incident; tell the user in one sentence that you filed it (with the issue link). Not for problems in
+the reviewed code or the user's repo.
