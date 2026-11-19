@@ -11,9 +11,9 @@ from .agent_cli import agent_main
 
 def main():
     ANLASS.name = ("cli " + " ".join(sys.argv[1:3]))[:32]
-    if len(sys.argv) > 1 and sys.argv[1] == "agent":
+    if len(sys.argv) > 1 and sys.argv[1] in ("agent", "status"):  # „merge-train status“ = „merge-train agent status“
         zur_instanz(sys.argv[1:])  # läuft für dieses Repo eine --beobachten-Instanz: dort weiter
-        sys.exit(agent_main(sys.argv[2:]))
+        sys.exit(agent_main(sys.argv[2:] if sys.argv[1] == "agent" else sys.argv[1:]))
     ap = argparse.ArgumentParser(prog="merge-train", description=f"merge-train: Merge-Requests {BIS} → {VON} aller Projekte, GitLab-MRs reviewen "
                                              "(„merge-train agent -h“ für Agent-Hinweise)")
     ap.add_argument("ordner", nargs="?", help="nur dieses Projekt (Ordner oder Name unter ~/Projects), oder ein GitLab-MR "

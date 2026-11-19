@@ -112,7 +112,11 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 - Wer schreibt: `agent_name` (`agent_cli.py`): `--als`, `MERGE_TRAIN_AGENT`, erkannt aus der Umgebung (`AI_AGENT`,
   `AGENT_UMGEBUNG`), sonst Fehler (`VORSTELLEN`). Neue Harnesses dort eintragen.
 - Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, GitLab-Kommentar, allgemein).
-- Ort: `gespraech.py`, `agent_cli.py` (`feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
+- Einstieg des Agenten: `merge-train status` (`status_ausgeben`, `agent_cli.py`): Branch, Änderungen gegen von
+  (`statistik`), MRs im Klon, Fäden des Branches je eine Zeile (`faden_zeile`) und was zu tun ist (Entwicklung:
+  an Fäden anhängen, offene Punkte als Threads; Zusammenfassung an den offenen allgemeinen). Liest nur. `thread`
+  nennt einen offenen Faden an derselben Stelle, den es schon gab.
+- Ort: `gespraech.py`, `agent_cli.py` (`status`, `feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen
 Eine Session wartet mit `agent horchen` (bzw. `agent feedback --horchen`: erst was schon wartet); sonst startet „senden“ einen Befehl: `todo`-Eintrag, `feedback_befehl` oder
@@ -230,7 +234,7 @@ Kleiner Server auf `127.0.0.1:8771`, Routen-Tabelle mit gemeinsamer Fehler- und 
   `akte_bearbeiten`/`aktion_ausfuehren`.
 
 ### 19. Kommandozeile
-`merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]` und `merge-train agent …` (`pruefen`, `zeigen`,
+`merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]`, `merge-train status` (= `agent status`) und `merge-train agent …` (`status`, `pruefen`, `zeigen`,
 `feedback`, `antworten`, `horchen`, `kommentar`, `kommentare`, `thread`, `vorfall`). MR-Verweise: URL, `!42`,
 `gruppe/projekt!42`. `agent vorfall` legt einen Bericht als GitHub-Issue an (`vorfall_issue` über `gh api`, Repo: `vorfall_github`),
 sonst im Eingang (`vorfall_ablegen`/`vorfall_ordner`: `vorfaelle/` im Klon des laufenden Skripts, sonst im Datenordner;

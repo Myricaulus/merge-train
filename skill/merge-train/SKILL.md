@@ -1,6 +1,6 @@
 ---
 name: merge-train
-description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent feedback --horchen` / `horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo under `projekte` in the merge-train config: you changed code → local conversation of the checked-out branch (`agent thread`, changes allowed); you only reviewed a MR → its review (answer only, own threads with `-p <MR>`). A MR in the same clone does not take away the local conversation.'
+description: 'Answer the user''s questions and feedback from merge-train (the user''s local diff/MR review page) — fetch them with `merge-train agent feedback`, answer each thread with `merge-train agent antworten`, reword GitLab comments with `merge-train agent kommentar`, listen for more with `merge-train agent feedback --horchen` / `horchen` in the background, and open own threads (`merge-train agent thread`) for open points and the summary after implementing something. Use when the user says "hör auf merge-train", "hör zu", "ich hab dir in merge-train was geschrieben", "Fragen/Feedback in merge-train", mentions threads/Fäden at code lines or at GitLab comments in merge-train, or talks about "Kommentare"/"Nachrichten" it wrote there (these are merge-train threads, not GitLab discussions), or when a prompt says questions are waiting in merge-train. Start with `merge-train status` in the repo: it shows branch, changes, existing threads and what to do. Works with any coding agent that has a shell (Claude Code, Copilot, Cursor …) and in any repo under `projekte` in the merge-train config: you changed code → local conversation of the checked-out branch (`agent thread`, changes allowed); you only reviewed a MR → its review (answer only, own threads with `-p <MR>`). A MR in the same clone does not take away the local conversation.'
 argument-hint: "[MR-URL | gruppe/projekt!42]"
 ---
 
@@ -37,25 +37,30 @@ The page shows the name of whoever answered, opened a thread, listens or wrote a
    Don't fetch or post GitLab MR discussions (glab, API) yourself: the GitLab comments on a line reach you through
    merge-train (listed under each thread), and you change them only via `merge-train agent kommentar` (see below).
 
-## Which conversation
+## Start here: `merge-train status`
 
-**The one question: did you change code here, or only read and comment?**
+**Run `merge-train status` in the repo first, always.** It reads only and tells you in one go: the branch, its
+changes (+/− against `von`, commits, what is not committed), which MRs share the clone, every thread of the branch
+(one line each, also those other agents opened in earlier sessions) and what to do now. Follow what it prints:
 
-- **You changed code** (implemented a story, fixed something; the repo is under `projekte` in the merge-train
-  config): that is the **local conversation** of the branch you work on. Open points, decisions and the summary go
-  there with `merge-train agent thread` **without `-p`**. merge-train assigns the thread to the right branch itself
-  (the checked-out branch, or the configured `bis` branch). This holds in every repo, not only in merge-train
-  itself, and also when the same clone serves a colleague's MR: `kommentare` and the `feedback` header then list
-  only that MR, but `thread` still lands in the local conversation (local before MR).
-- **You only reviewed** (someone else's MR, nothing changed): findings go into the review JSON as agent hints
-  (mr-review skill), rewordings through `merge-train agent kommentar`, and `kommentare` shows what is already
-  there. Own threads to that MR need `-p <MR>`, otherwise they land in the local conversation.
+- **You changed code** (it says "Du hast hier Code geändert"): the two jobs are
+  1. **append to existing threads**: a point that already has a thread, and the summary when an open general thread
+     exists (status names its id): `merge-train agent antworten <id> "…"` (the new state as the next message);
+  2. **new open points** as threads at their lines: `merge-train agent thread --ort <pfad>:<zeile> "…"`, see
+     "Starting threads yourself".
+
+  `thread` without `-p` lands in the local conversation of this branch, merge-train assigns it itself. That holds in
+  every repo under `projekte`, also when the clone serves a colleague's MR (local before MR).
+- **Threads wait for you** ("warten auf dich"): `merge-train agent feedback` shows them with code, then answer.
+- **You only reviewed** a MR (nothing changed): mr-review skill; findings go into the review JSON, rewordings through
+  `merge-train agent kommentar`, own threads to that MR with `-p <MR>`. Only then is the GitLab comment section
+  below relevant.
+- **Repo not in merge-train**: status says so; its folder belongs under `projekte` in the config (no restart).
 
 Without an argument `feedback`, `antworten` and `horchen` use the current repo: its local conversation (if local
 mode is on) and all its MRs the user has opened in merge-train. Pass an MR (URL, `host/gruppe/projekt/42`,
 `gruppe/projekt!42`) to narrow it down, e.g. when several MRs share the clone or you are not inside the clone. The
-skill argument, if given, is that MR. Don't conclude from an empty `feedback` or a MR-only `kommentare` that there
-is no local conversation: just run `thread`, it says so if the repo is not in merge-train.
+skill argument, if given, is that MR.
 
 ## Fetch
 
@@ -179,8 +184,8 @@ EOF
 #   -p <MR|Projekt>                            other conversation (default: current repo, local before MR – after a review: -p <MR>)
 ```
 
-- **First read what is already there:** `merge-train agent feedback --alle` lists the threads of the branch, also
-  those other agents opened in earlier sessions (summary of an earlier step, open points). A point that already has
+- **First read what is already there:** `merge-train status` lists the threads of the branch, also those other
+  agents opened in earlier sessions (summary of an earlier step, open points); `feedback --alle` shows them in full. A point that already has
   a thread, and the summary when an open general thread exists, **continue there** with `merge-train agent antworten
   <id>` (the new state as the next message) instead of opening a second one. A thread the new work settles: answer
   what changed. `thread` names an open thread at the same place if you open one anyway.

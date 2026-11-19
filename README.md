@@ -58,6 +58,7 @@ merge-train --beobachten [ordner] [--von REF]   # Arbeitsstand live, siehe „Be
 merge-train agent pruefen tasks/PROJ-824-review-markers.json   # siehe docs/agent-hinweise.md
 merge-train agent pruefen tasks/PROJ-824-review-markers.json --seit   # Review-Update seit reviewed_commit
 merge-train agent zeigen  tasks/PROJ-824-review-markers.json
+merge-train status [projekt|MR]            # Agent, zuerst: Branch, Änderungen, Fäden des Branches, was zu tun ist
 merge-train agent feedback [projekt|MR]     # Agent: Fragen/Feedback abholen (lokal oder zu einem MR)
 merge-train agent antworten <id> "…" [--erledigt]
 merge-train agent horchen [projekt|MR] [--als Name]   # Agent: warten, bis „An Agent senden“ gedrückt wird
