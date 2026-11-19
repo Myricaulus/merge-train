@@ -29,8 +29,10 @@ yourself (`--als`, field `agent`): "Say who you are" in the `merge-train` skill.
    Note acceptance criteria and **decisions made in comments** (who decided what, when) – they often change the scope.
 3. Read the repo conventions (`AGENTS.md`, `CONTRIBUTING.md`, `README.md`) before judging the code. Look for existing
    follow-ups/TODOs (e.g. `tasks/`) before reporting something as new.
-4. Existing comments at the MR: `merge-train agent kommentare <MR>` (drafts, staged/sent comments and GitLab
-   discussions as of the last fetch) – don't report what is already commented.
+4. **`merge-train status <MR>`** (in the clone): whether the clone is at the MR head, the review JSON registered
+   for the MR, what is already commented there (then `merge-train agent kommentare <MR>` – don't report it twice),
+   the open threads with the user and only the commands that make sense now. Run it again after step 2 and whenever
+   you are unsure what comes next; follow what it prints.
 
 ## 2. Branch
 
@@ -40,7 +42,8 @@ merge-train reads diff, files and commits only from the local clone: the MR's so
 1. `git fetch origin --prune`, find the source branch. Several candidates → ask which one.
 2. The working tree must be clean (`git status --porcelain --untracked-files=no`), otherwise ask. Switch **in place**
    (no worktree), then `git merge --ff-only origin/<branch>`. Keep it clean for the whole review: never edit reviewed
-   files, not even for markers.
+   files, not even for markers. `merge-train status <MR>` no longer prints "Achtung: der Klon steht nicht auf dem
+   MR-Stand" once this is right.
 3. Submodules: if the branch needs a submodule branch of its own, **suggest** the checkout; don't change submodules
    yourself. A submodule commit that is not committed as pointer in the parent is a finding, not a blocker.
 
@@ -121,6 +124,9 @@ What makes the entries good:
   comparison without the link is useless. Always with a line or range, the most telling one; file-only only with
   `"diff"` or when the whole file is meant. Never link the marker's own block. Copies: `"diff": true` (or
   `"diff": "other/path"`, ranges as in the docs).
+- **Rich like a thread:** the user judges each hint in merge-train next to the code, before it becomes a comment.
+  Mark the whole block that matters (`line`/`end` or a needle plus `end`), link every place it depends on, compare
+  copies side by side – the same as "Rich threads" in the merge-train skill, here via the JSON fields.
 - `title`: a few keywords in the user's language for merge-train's comment list; follow-up entries say so ("… (zu #4)").
 - `problem`/`decision`/`status`: from the chat overview (user's language). `agent` on top level, always.
 
@@ -139,11 +145,19 @@ merge-train agent zeigen  tasks/<KEY>-review-markers.json   # register the file 
 - Resolved or dropped findings: remove them from the JSON. A changed `text` shows up as a new hint; comments the user
   already took over stay in merge-train.
 
+## Threads with the user
+
+Findings go into the JSON, the overview into the chat. A question to the user about one place ("is this intended?",
+"which variant did you agree on?") or a decision you need can also go as a thread at its line, so the user answers
+next to the code: `merge-train agent thread -p <MR> --ort <pfad>:<von>-<bis> --siehe … --vergleich … "…"` (German).
+Threads the user opened come via `merge-train agent feedback <MR>`; answer them with `merge-train agent antworten`
+(see the merge-train skill, "When the user asks"). In a review you never change, commit or push code.
+
 ## Review update
 
 When the user says the branch was updated ("review update", "schau nochmal drüber, was behoben ist"):
 
-1. `git fetch`, fast-forward (step 2). Build and run the affected tests again (step 3).
+1. `git fetch`, fast-forward (step 2), `merge-train status <MR>`. Build and run the affected tests again (step 3).
 2. `merge-train agent pruefen <json> --seit` (against `reviewed_commit`; `--seit <sha>` for another base):
    - `WEG` / `GEÄNDERT`: the entry's file or line is gone → read `git diff <reviewed_commit> HEAD -- <path>` and judge
      it against `resolved_when`.

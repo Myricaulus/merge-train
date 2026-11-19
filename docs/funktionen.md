@@ -116,6 +116,9 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
   Änderungen gegen von (`statistik`), offene Fäden des Branches je eine Zeile (`faden_zeile`, auch die des MR dieses
   Branches) und nur die Befehle, die jetzt Sinn ergeben (anhängen nur bei offenen Fäden, feedback nur, wenn etwas
   wartet; Zusammenfassung an den offenen allgemeinen). MRs anderer Branches im Klon bleiben draußen. Liest nur.
+  Review statt Entwicklung (`review_ziel`): `status <MR>` oder im Klon auf dem Quell-Branch eines MR, dessen Autor
+  ich nicht bin (`eigener_mr`, aus der MR-Liste) – `status_review`: Klon auf dem MR-Stand?, Review-JSON, was am MR
+  schon kommentiert ist, Fäden, `thread -p <MR>`. Dieselbe Wahl trifft `thread` ohne `-p`.
   `thread` nennt einen offenen Faden an derselben Stelle, den es schon gab; `antworten` nimmt wie `thread`
   `--siehe`/`--vergleich` (`siehe_eintrag`) und hängt sie an den Faden.
 - Befehlsübersicht für Agenten: `completions/merge-train.fish` (eine Zeile je Befehl, der Skill verweist darauf).

@@ -436,6 +436,13 @@ def gemischt_test(mr):
         pruefe('id="fertig"' in ls_ and 'id="abschliessen"' not in ls_ and 'data-g="mrliste"' in ls_, "gemischt: lokale Seite mit fertig")
         start = urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/", timeout=60)
         pruefe(start.geturl().endswith("/proj.html"), "gemischt: Start springt zum offenen lokalen Waggon")
+        # Klon eines fremden MR, zugleich lokales Projekt, Quell-Branch ausgecheckt: status zeigt das Review, thread geht zum MR
+        env2 = dict(env, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/gemischt-klon.toml")
+        open(env2["MERGE_TRAIN_CONFIG"], "w").write(open(env["MERGE_TRAIN_CONFIG"]).read().replace(
+            f'projekte = "{T}/Projects"', f'projekte = ["{T}/Projects/proj", "{REPO}"]') + '\n[zweige.repo]\nvon = "main"\nbis = "arbeitsstand"\n')
+        r = subprocess.run([sys.executable, SKRIPT, "status"], cwd=REPO, env=env2, capture_output=True, text=True)
+        pruefe(r.returncode == 0 and "Review MR gruppe/demo!1" in r.stdout and "thread -p gruppe/demo!1" in r.stdout
+               and "Erwartet:" not in r.stdout, "status im Klon auf dem Quell-Branch eines fremden MR: Review statt Entwicklung")
     finally:
         srv.terminate(); srv.wait()
 
@@ -478,6 +485,10 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r.returncode == 0 and "Was macht Zeile 11?" in r.stdout, "feedback --horchen: was schon wartet, kommt sofort")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", cwd=REPO, env=genv, check=False)
     pruefe(r.returncode == 0 and "gruppe/demo!1" in r.stdout, "MR-Gespräch: agent feedback im Klon findet den MR")
+    r = sh(sys.executable, SKRIPT, "status", cwd=REPO, env=genv, check=False)
+    pruefe(r.returncode == 0 and "Review MR gruppe/demo!1" in r.stdout and "WARTET AUF DICH" in r.stdout
+           and "agent feedback gruppe/demo!1" in r.stdout and "Erwartet:" not in r.stdout,
+           "merge-train status im MR-Klon: Review, wartender Faden, feedback mit MR")
     r = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "Hallo", env=ohne_agent(genv), check=False)
     pruefe(r.returncode == 2 and "--als" in r.stderr, "Agent ohne Namen: thread verlangt --als")
     r = sh(sys.executable, SKRIPT, "agent", "antworten", f["id"][:6], "Sie loggt.", env=ohne_agent(genv), check=False)
