@@ -112,10 +112,13 @@ Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleic
 - Wer schreibt: `agent_name` (`agent_cli.py`): `--als`, `MERGE_TRAIN_AGENT`, erkannt aus der Umgebung (`AI_AGENT`,
   `AGENT_UMGEBUNG`), sonst Fehler (`VORSTELLEN`). Neue Harnesses dort eintragen.
 - Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, GitLab-Kommentar, allgemein).
-- Einstieg des Agenten: `merge-train status` (`status_ausgeben`, `agent_cli.py`): Branch, Änderungen gegen von
-  (`statistik`), MRs im Klon, Fäden des Branches je eine Zeile (`faden_zeile`) und was zu tun ist (Entwicklung:
-  an Fäden anhängen, offene Punkte als Threads; Zusammenfassung an den offenen allgemeinen). Liest nur. `thread`
-  nennt einen offenen Faden an derselben Stelle, den es schon gab.
+- Einstieg des Agenten nach einer Entwicklung: `merge-train status` (`status_ausgeben`, `agent_cli.py`): Branch,
+  Änderungen gegen von (`statistik`), offene Fäden des Branches je eine Zeile (`faden_zeile`, auch die des MR dieses
+  Branches) und nur die Befehle, die jetzt Sinn ergeben (anhängen nur bei offenen Fäden, feedback nur, wenn etwas
+  wartet; Zusammenfassung an den offenen allgemeinen). MRs anderer Branches im Klon bleiben draußen. Liest nur.
+  `thread` nennt einen offenen Faden an derselben Stelle, den es schon gab; `antworten` nimmt wie `thread`
+  `--siehe`/`--vergleich` (`siehe_eintrag`) und hängt sie an den Faden.
+- Befehlsübersicht für Agenten: `completions/merge-train.fish` (eine Zeile je Befehl, der Skill verweist darauf).
 - Ort: `gespraech.py`, `agent_cli.py` (`status`, `feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen

@@ -475,8 +475,9 @@ def faden_ungelesen(k):
     return [m for m in k["nachrichten"] if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt")]
 
 
-def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
-    """Antwort auf Faden fid (Anfang genügt) – gesucht in ziele, sonst in allen Gesprächen."""
+def faden_antworten(fid, text, erledigt=False, als=None, ziele=None, siehe=()):
+    """Antwort auf Faden fid (Anfang genügt) – gesucht in ziele, sonst in allen Gesprächen. siehe: weitere see_also-
+    Einträge für den Faden (wie bei faden_anlegen), geprüft gegen den aktuellen Stand."""
     treffer = []
     for waggon in ziele or alle_gespraeche():
         akte = akte_lesen(waggon)
@@ -496,6 +497,12 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None):
                                f'erst „merge-train agent feedback“, dann antworten:\n' +
                                "\n".join(f'    Nutzer ({zeit_kurz(m["gesendet"])}): {m["text"]}' for m in neu))
         wer = agent_name(als, sonst=k.get("an"))
+        if siehe:
+            wurzel, head = quelle(waggon).ort(waggon)
+            kaputt = [f'{x["path"] or "?"}: {x["problem"]}' for x in see_also_aufloesen(wurzel, head, list(siehe), None, k.get("path")) if x["problem"]]
+            if kaputt:
+                raise Fehler("siehe auch: " + "; ".join(kaputt))
+            k["see_also"] = (k.get("see_also") or []) + [x for x in siehe if x not in (k.get("see_also") or [])]
         if text:
             k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=wer))
         if erledigt:
@@ -749,6 +756,10 @@ def agent_parser():
     p.add_argument("id", help="id des Fadens (aus „agent feedback“, Anfang genügt)")
     p.add_argument("text", nargs="?", default="", help="Antwort (Markdown-artig, mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
+    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
+                   help="Siehe-auch-Link zum Faden hinzufügen (mehrfach möglich)")
+    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][|LABEL]"),
+                   help="Vergleich (Popup nebeneinander) zum Faden hinzufügen; mehrfach möglich")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: aus der Umgebung erkannt, sonst der gefragte Agent)")
     p.set_defaults(aufruf=befehl_antworten)
@@ -827,68 +838,48 @@ def faden_zeile(k):
 
 
 def status_ausgeben(name=None):
-    """merge-train status: wo bin ich (Repo, Branch, Änderungen gegen von, MRs im Klon), welche Fäden hat der Branch,
-    und was ist jetzt zu tun – Entwicklung: offene Punkte als Threads, an bestehende anhängen. Nur lesen."""
+    """merge-train status, der Einstieg nach einer Entwicklung: Branch, Änderungen gegen von, die Fäden des Branches
+    (eine Zeile je Faden) und nur die Befehle, die jetzt Sinn ergeben (anhängen nur, wenn es offene Fäden gibt). MRs
+    anderer Branches im Klon bleiben draußen. Liest nur."""
     try:
         ziele = gespraech_ziele(name)
     except Fehler as e:
         return (f"merge-train status: {e}\nDas Repo ist nicht in merge-train: seinen Ordner unter „projekte“ in "
-                f"{kurzpfad(KONFIG_DATEI)} eintragen (gilt ohne Neustart).")
+                f"{kurzpfad(KONFIG_DATEI)} eintragen (gilt ohne Neustart), bis dahin in der Konsole berichten.")
     lokal = next((w for w in ziele if w.lokal), None)
-    mrs = [w for w in ziele if not w.lokal]
-    teile, faeden, geaendert = [], [], False
-    if lokal:
-        wurzel, head = quelle(lokal).ort(lokal)
-        branch = quelle(lokal).branch(lokal)
-        von, bis = von_bis(lokal.lokal)
-        st = statistik(wurzel)
-        offen = len([z for z in git(wurzel, "status", "--porcelain", "--ignore-submodules=dirty").splitlines() if z.strip()])
-        geaendert = bool(st["dateien"] or offen)
-        aend = (f'+{st["plus"]} −{st["minus"]} in {st["dateien"]} Datei(en) gegen {von}' if st["dateien"] else f"keine Änderungen gegen {von}")
-        aend += f', {st["commits"]} Commit(s)' if st["commits"] else ""
-        aend += f", {offen} Datei(en) nicht committet" if offen else ""
-        teile.append(f"merge-train status · {lokal.name} ({kurzpfad(wurzel)})")
-        teile.append(f"Branch {branch}" + (" · Arbeitsstand" if bis == ARBEITSSTAND else "") + f" · {aend}")
-        with akte_bearbeiten(lokal, speichern=False) as akte:
-            faeden = [k for k in faeden_von(akte, branch) if faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"])]
-    else:
-        branch = None
-        teile.append("merge-train status · lokaler Modus aus (lokal = false) – nur MRs")
-    eigen = [w for w in mrs if branch and quelle(w).branch(w) == branch]
-    teile += [f"MR {w.name} zu diesem Branch" for w in eigen]
-    andere = [w.name for w in mrs if w not in eigen]
-    if andere:
-        teile.append(f"{len(andere)} MR(s) anderer Branches im selben Klon (für Reviews): {', '.join(andere)}")
-    if lokal and not eigen:
-        teile.append("Kein MR zu diesem Branch in merge-train.")
-    teile.append("")
-    if faeden:
-        fertig = [k for k in faeden if faden_status(k) == "erledigt"]
-        teile.append(f"Fäden zum Branch {branch} ({len(faeden) - len(fertig)} offen" + (f", {len(fertig)} erledigt" if fertig else "") + "):")
-        teile += [faden_zeile(k) for k in faeden if k not in fertig]
-    elif lokal:
-        teile.append(f"Noch keine Fäden zum Branch {branch}.")
+    if not lokal:
+        return "merge-train status: lokaler Modus aus (lokal = false in der Einstellung) – kein Gespräch zum Branch."
+    wurzel, _ = quelle(lokal).ort(lokal)
+    branch = quelle(lokal).branch(lokal)
+    von = von_bis(lokal.lokal)[0]
+    st = statistik(wurzel)
+    offen = len([z for z in git(wurzel, "status", "--porcelain", "--ignore-submodules=dirty").splitlines() if z.strip()])
+    aend = (f'+{st["plus"]} −{st["minus"]} in {st["dateien"]} Datei(en) gegen {von}' if st["dateien"] else f"keine Änderungen gegen {von}")
+    aend += f", {offen} Datei(en) nicht committet" if offen else ""
+    teile = [f"merge-train status · {lokal.name} · Branch {branch} · {aend}", ""]
+    faeden = []
+    for w in [lokal] + [w for w in ziele if not w.lokal and quelle(w).branch(w) == branch]:  # auch der MR dieses Branches
+        with akte_bearbeiten(w, speichern=False) as akte:
+            faeden += [k for k in faeden_von(akte, branch) if faden_status(k) != "erledigt"
+                       and (faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"]))]
     wartet = [k for k in faeden if faden_status(k) == "wartet" or faden_ungelesen(k)]
-    allgemein = [k for k in faeden if not k.get("path") and faden_status(k) != "erledigt"]
-    teile.append("")
+    allgemein = [k for k in faeden if not k.get("path")]
+    if faeden:
+        teile.append(f"Offene Fäden zum Branch ({len(faeden)}):")
+        teile += [faden_zeile(k) for k in faeden] + [""]
     if wartet:
-        teile.append(f"{len(wartet)} Faden/Fäden warten auf dich: merge-train agent feedback (zeigt sie mit Code, markiert als abgeholt), "
-                     'dann merge-train agent antworten <id> "…"')
-    if lokal and geaendert:
-        teile.append("Du hast hier Code geändert (Entwicklung) – offene Punkte, Entscheidungen und die Zusammenfassung gehören "
-                     "in merge-train, nicht in die Konsole:")
-        if faeden:
-            teile.append('  - Punkt hat schon einen Faden (Liste oben): merge-train agent antworten <id> "neuer Stand"')
-        teile.append('  - neuer Punkt, je einer an seiner Zeile: merge-train agent thread --ort <pfad>:<zeile>[-<bis>] "…"  '
-                     "(Zeilen mit grep -n messen)")
-        teile.append(f"  - Zusammenfassung: merge-train agent antworten {allgemein[0]['id']} - <<'EOF' … EOF  (offener allgemeiner Faden"
-                     + (f"; weitere: {', '.join(k['id'] for k in allgemein[1:])}" if allgemein[1:] else "") + ")"
-                     if allgemein else "  - Zusammenfassung: merge-train agent thread - <<'EOF' … EOF  (ein allgemeiner Faden je Branch)")
-    elif lokal:
-        teile.append(f"Keine Änderungen gegen {von} – nichts entwickelt, nichts zu melden.")
-    if mrs:
-        teile.append("Nur einen MR reviewt (nichts geändert): Skill mr-review; Hinweise in die Review-JSON, eigene Threads mit -p <MR>.")
-    teile.append("Mehr (zuhören, GitLab-Kommentare umformulieren): Skill merge-train.")
+        teile.append(f'{len(wartet)} warten auf dich: merge-train agent feedback (zeigt sie mit Code), dann merge-train agent antworten <id> "…"')
+    if not (st["dateien"] or offen):
+        teile.append("Nichts entwickelt – nichts zu berichten." if not wartet else "")
+        return "\n".join(teile).rstrip()
+    rich = '--siehe <pfad>[:<z>[-<bis>]][|Label] (Aufrufer, Test, altes Verhalten) · --vergleich <A>[:von-bis] <B>[:von-bis] (Kopie, alt/neu)'
+    teile.append("Erwartet: offene Punkte, eigene Entscheidungen und die Zusammenfassung in merge-train, nicht in der Konsole.")
+    if [k for k in faeden if k.get("path")]:
+        teile.append(f'- Punkt hat schon einen Faden (oben): merge-train agent antworten <id> [--siehe …] [--vergleich …] "neuer Stand"')
+    teile.append(f'- neuer Punkt, je einer an seiner Zeile: merge-train agent thread --ort <pfad>:<von>-<bis> [--siehe …] [--vergleich …] "…"')
+    teile.append(f"  Zeilen mit grep -n messen; reich machen: {rich}; pfad:zeile im Text wird ein Link")
+    teile.append(f"- Zusammenfassung: merge-train agent antworten {allgemein[0]['id']} - <<'EOF' … EOF  (offener allgemeiner Faden)"
+                 if allgemein else "- Zusammenfassung (ein allgemeiner Faden je Branch): merge-train agent thread - <<'EOF' … EOF")
     return "\n".join(teile)
 
 
@@ -951,7 +942,8 @@ def befehl_antworten(o):
     text = text_von(o)
     if not text and not o.erledigt:
         print("merge-train: Antworttext fehlt", file=sys.stderr); return 2
-    fid, rest = faden_antworten(o.id, text, o.erledigt, o.als, gespraech_ziele(o.projekt) if o.projekt else None)
+    siehe = [siehe_eintrag(x) for x in o.siehe] + [siehe_eintrag(b, a) for a, b in o.vergleich]
+    fid, rest = faden_antworten(o.id, text, o.erledigt, o.als, gespraech_ziele(o.projekt) if o.projekt else None, siehe)
     print(f"[{fid}] beantwortet" + (" und erledigt" if o.erledigt else "")
           + (f" · {rest} weitere(r) wartet/warten noch" if rest else " · nichts mehr offen"))
     return 0

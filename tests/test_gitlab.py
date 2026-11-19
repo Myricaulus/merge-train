@@ -276,9 +276,14 @@ def gespraech_test(proj, env, k, hol, g):
     r = subprocess.run([sys.executable, SKRIPT, "status"], cwd=proj, env=env, capture_output=True, text=True)
     allg = next(x["id"] for x in rv["faeden"] if not x["path"])
     pruefe(r.returncode == 0 and "Branch claude" in r.stdout and "gegen reviewed" in r.stdout and f"[{fid}] a.py:20 · offen" in r.stdout
-           and f"[{allg}] allgemein · WARTET AUF DICH" in r.stdout and "1 Faden/Fäden warten" in r.stdout
-           and "Code geändert" in r.stdout and f"agent antworten {allg}" in r.stdout,
+           and f"[{allg}] allgemein · WARTET AUF DICH" in r.stdout and "1 warten auf dich" in r.stdout
+           and "Erwartet:" in r.stdout and f"agent antworten {allg}" in r.stdout and "--vergleich" in r.stdout,
            "merge-train status: Branch, Änderungen, Fäden und was zu tun ist (Zusammenfassung an den offenen allgemeinen)")
+    r = agent("antworten", fid, "--siehe", "a.py:1-2|Anfang", "--vergleich", "a.py:1-2", "a.py:3-4", "Mit Links.")
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    sa = next(x for x in rv["faeden"] if x["id"] == fid)["see_also"]
+    pruefe(r.returncode == 0 and len(sa) == 2 and agent("antworten", fid, "--siehe", "fehlt.py", "x").returncode != 0,
+           "agent antworten --siehe/--vergleich: hängt Links an den Faden, prüft sie")
     # Rückfrage des Nutzers, Agent hört zu
     post_l("/api/kommentar", dict(basis, aktion="antworten", id=fid, text="Und warum nicht drei?"))
     lauscher = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", "--timeout", "30"], cwd=proj, env=env,
