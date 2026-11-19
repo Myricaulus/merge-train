@@ -415,7 +415,37 @@ def inhalt(ordner, sha, pfad):
         if len(INHALT) > 3000:
             INHALT.clear()
         INHALT[k] = git(ordner, "show", f"{sha}:{pfad}", check=False)
+        sub = INHALT[k] is None and submodul_stelle(ordner, sha, pfad)
+        if sub and os.path.exists(os.path.join(sub[0], ".git")):
+            INHALT[k] = inhalt(*sub)
     return INHALT[k]
+
+
+def submodul_stelle(ordner, sha, pfad):
+    """Liegt pfad im Stand sha unter einem Submodul (Gitlink): (Ordner des Submoduls im Klon, sein Commit laut sha,
+    Pfad darin), sonst None. inhalt liest solche Dateien aus dem Submodul (auch verschachtelt)."""
+    teile = pfad.split("/")
+    for i in range(1, len(teile)):
+        vorn = "/".join(teile[:i])
+        m = re.match(r"\d+ (\w+) ([0-9a-f]+)\t", git(ordner, "ls-tree", sha, "--", vorn, check=False) or "")
+        if not m or m.group(1) == "blob":
+            return None
+        if m.group(1) == "commit":
+            return os.path.join(ordner, vorn), m.group(2), "/".join(teile[i:])
+    return None
+
+
+def fehlt_grund(ordner, sha, pfad, wo):
+    """Warum inhalt(ordner, sha, pfad) nichts liefert, als Text für Seite und Agent; wo = „im MR-Stand“, „auf main“ …"""
+    sub = submodul_stelle(ordner, sha, pfad)
+    if not sub:
+        return f"Datei nicht {wo}"
+    name = os.path.relpath(sub[0], ordner)
+    if not os.path.exists(os.path.join(sub[0], ".git")):
+        return f"Submodul {name} nicht ausgecheckt (git submodule update --init {name})"
+    if git(sub[0], "cat-file", "-e", sub[1] + "^{commit}", check=False) is None:
+        return f"Stand {sub[1][:8]} des Submoduls {name} nicht im Klon (git -C {name} fetch)"
+    return f"{name}: " + fehlt_grund(*sub, f"im Submodul (Stand {sub[1][:8]})")
 
 
 def git_commits(ordner, von=None, bis=None, *, nur=None):

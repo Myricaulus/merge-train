@@ -245,7 +245,7 @@ def projekt_seite(wurzel, ansicht=None):
     waggon = Waggon(lokal=projekt)
     head = bis_sha(wurzel, bis)
     refs = {"base_sha": diff_basis(wurzel, von, head), "start_sha": git(wurzel, "rev-parse", von).strip(),
-            "head_sha": head}
+            "head_sha": head, "ziel": von}
     praefix = os.path.join(LOKAL_ORDNER, f'{waggon.dateiname}-{von}-{bis}-{head[:12]}-{refs["base_sha"][:12]}'
                            .replace("/", "_"))
     pfad, struktur = seite_bauen(waggon.id, wurzel, refs, praefix,

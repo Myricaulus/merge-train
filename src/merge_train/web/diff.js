@@ -21,9 +21,17 @@
   }
   // ---- Kontext nachladen, Zeile zeigen, Popup
   const projektUrl = (waggon.web_url || '').split('/-/merge_requests/')[0];
-  function zeilenHolen(pfad, von, bis, mrStand) {
+  function zeilenHolen(pfad, von, bis, mrStand, sha) {
     return fetch(
-      '/api/zeilen?' + waggonAbfrage(mrStand) + '&pfad=' + encodeURIComponent(pfad) + '&von=' + von + '&bis=' + bis
+      '/api/zeilen?' +
+        waggonAbfrage(mrStand) +
+        '&pfad=' +
+        encodeURIComponent(pfad) +
+        '&von=' +
+        von +
+        '&bis=' +
+        bis +
+        (sha ? '&sha=' + sha : '')
     )
       .then(r => r.json())
       .catch(() => ({ok: false, text: 'merge-train-Server nicht erreichbar'}));
@@ -427,7 +435,11 @@
             {class: 'warn', title: s.problem},
             (s.label ? s.label + ' · ' : '') + wo + ' (' + s.problem + ')'
           );
-        const name = s.label || s.path.split('/').pop() + (s.zeile ? ':' + s.zeile + (s.bis ? '-' + s.bis : '') : '');
+        // "ref": Datei aus einem anderen Stand (Zielbranch …): Popup mit dem Code dort, Vergleich MR-Stand ⇄ dort
+        const stand = s.sha ? {sha: s.sha, ref: s.ref} : null,
+          name =
+            (s.label || s.path.split('/').pop() + (s.zeile ? ':' + s.zeile + (s.bis ? '-' + s.bis : '') : '')) +
+            (stand ? ' @' + s.ref : '');
         // Vergleich: je Seite nur ihr Bereich, wenn einer angegeben ist (B: zeile–bis des Eintrags, A: vzeile–vbis)
         const va = s.vergleich && [s.vergleich, s.vzeile, s.vbis],
           vb = s.vergleich && [s.path, s.bis ? s.zeile : null, s.bis],
@@ -436,12 +448,17 @@
                 'a',
                 {
                   class: 'vgl',
-                  title: 'Vergleich nebeneinander: ' + bereichText(va) + ' ⇄ ' + bereichText(vb),
-                  onclick: () => vergleich(va, vb, s.label)
+                  title:
+                    'Vergleich nebeneinander: ' + bereichText(va) + ' ⇄ ' + bereichText(vb) + (stand ? ' auf ' + s.ref : ''),
+                  onclick: () => vergleich(va, vb, s.label, stand)
                 },
                 '⇄ ' + name
               )
-            : el('a', {title: wo, onclick: () => popup(s.path, s.zeile, s.label, s.bis)}, name);
+            : el(
+                'a',
+                {title: wo + (stand ? ' auf ' + s.ref : ''), onclick: () => popup(s.path, s.zeile, s.label, s.bis, stand)},
+                name
+              );
         return s.warnung ? el('span', {}, link, el('span', {class: 'warn', title: s.warnung}, ' ⚠')) : link;
       })
     );
@@ -450,8 +467,8 @@
   function bereichText(x) {
     return x[0] + (x[1] ? ':' + x[1] + (x[2] ? '-' + x[2] : '') : '');
   }
-  function vergleich(va, vb, label) {
-    schliessen(); // see_also mit "diff": zwei Dateien (bzw. Bereiche) des MR-Stands nebeneinander
+  function vergleich(va, vb, label, stand) {
+    schliessen(); // see_also mit "diff": zwei Dateien (bzw. Bereiche) des MR-Stands nebeneinander (stand: B von dort)
     const a = va[0],
       b = vb[0],
       kurz = x => bereichText([x[0].split('/').pop(), x[1], x[2]]),
@@ -468,7 +485,11 @@
         el(
           'div',
           {class: 'pk'},
-          el('b', {title: bereichText(va) + ' ⇄ ' + bereichText(vb)}, (label ? label + ' – ' : '') + kurz(va) + ' ⇄ ' + kurz(vb)),
+          el(
+            'b',
+            {title: bereichText(va) + ' ⇄ ' + bereichText(vb)},
+            (label ? label + ' – ' : '') + kurz(va) + ' ⇄ ' + kurz(vb) + (stand ? ' @' + stand.ref : '')
+          ),
           info,
           kn
         ),
@@ -478,7 +499,9 @@
     kn.append(el('button', {title: 'schließen (Esc)', onclick: schliessen}, '✕'));
     fetch(
       '/api/vergleich?' + waggonAbfrage(true) + '&a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) +
-        bereich('a', va) + bereich('b', vb)
+        bereich('a', va) +
+        bereich('b', vb) +
+        (stand ? '&b_sha=' + stand.sha : '')
     )
       .then(r => r.json())
       .catch(() => ({ok: false, text: 'merge-train-Server nicht erreichbar'}))
@@ -490,7 +513,7 @@
           return;
         }
         const ka = bereichText([a, ...(r.a || [])]),
-          kb = bereichText([b, ...(r.b || [])]);
+          kb = bereichText([b, ...(r.b || [])]) + (stand ? ' @' + stand.ref : '');
         pb.append(el('div', {class: 'vkopf'}, el('span', {title: ka}, ka), el('span', {title: kb}, kb)));
         const t = document.createElement('div');
         t.innerHTML = r.html;
@@ -534,19 +557,19 @@
       if (e) e.remove();
     });
   }
-  function gitlabLink(pfad, zeile, bisZ) {
+  function gitlabLink(pfad, zeile, bisZ, sha) {
     if (!projektUrl) return null;
     const href =
       projektUrl +
       '/-/blob/' +
-      waggon.sha +
+      (sha || waggon.sha) +
       '/' +
       pfad.split('/').map(encodeURIComponent).join('/') +
       (zeile ? '#L' + zeile + (bisZ ? '-' + bisZ : '') : '');
     return el('a', {class: 'gl-link', target: '_blank', rel: 'noopener', href}, 'GitLab ↗');
   }
-  /** Popup mit Code im MR-Stand; liegt die Datei im Diff: deren Diff (aufklappbar). */
-  function popup(pfad, zeile, label, bisZ) {
+  /** Popup mit Code im MR-Stand; liegt die Datei im Diff: deren Diff (aufklappbar). stand {sha, ref}: Code von dort. */
+  function popup(pfad, zeile, label, bisZ, stand) {
     schliessen();
     const di = dateien.findIndex(d => d.dataset.pfad === pfad),
       p = {
@@ -556,10 +579,11 @@
         info: el('span', {class: 'sub'}),
         pb: el('div', {class: 'pb'}),
         knoepfe: el('span', {class: 'knoepfe'}),
-        gitlab: gitlabLink(pfad, zeile, bisZ),
+        stand,
+        gitlab: gitlabLink(pfad, zeile, bisZ, stand && stand.sha),
         zu: el('button', {title: 'schließen (Esc)', onclick: schliessen}, '✕')
       },
-      wo = pfad + (zeile ? ':' + zeile + (bisZ ? '-' + bisZ : '') : '');
+      wo = pfad + (zeile ? ':' + zeile + (bisZ ? '-' + bisZ : '') : '') + (stand ? ' @' + stand.ref : '');
     document.body.append(
       el('div', {id: 'schleier', onclick: schliessen}),
       el(
@@ -569,7 +593,7 @@
         p.pb
       )
     );
-    if (di >= 0 && !nurLesen) popupMitDiff(p, di);
+    if (di >= 0 && !nurLesen && !stand) popupMitDiff(p, di);
     else popupMitCode(p);
   }
   /** Popup: die Datei des Diffs selbst (geliehen, nicht kopiert), Zeilen markiert. */
@@ -653,7 +677,7 @@
     pb.append(el('table', {}, el('colgroup', {}, el('col', {class: 'cn'}), el('col', {})), tb));
     function lade(wie) {
       const rest = pb.scrollHeight - pb.scrollTop;
-      zeilenHolen(pfad, bereich.von, bereich.bis, true).then(r => {
+      zeilenHolen(pfad, bereich.von, bereich.bis, true, p.stand && p.stand.sha).then(r => {
         if (!r.ok) {
           tb.replaceChildren(el('tr', {}, el('td', {}, ''), el('td', {class: 'warn'}, r.text)));
           return;
@@ -670,7 +694,7 @@
         );
         hoch.disabled = bereich.von <= 1;
         runter.disabled = ganz.disabled = bereich.bis >= r.n;
-        info.textContent = r.n + ' Zeilen · Stand ' + r.sha.slice(0, 8);
+        info.textContent = r.n + ' Zeilen · Stand ' + (p.stand ? p.stand.ref + ' ' : '') + r.sha.slice(0, 8);
         if (wie === 'erst') {
           const z = tb.querySelector('tr.ziel');
           if (z) pb.scrollTop = z.offsetTop - pb.clientHeight / 2;

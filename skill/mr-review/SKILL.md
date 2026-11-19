@@ -123,7 +123,8 @@ What makes the entries good:
 - `see_also`: **every place the `text` mentions** (another file, class, i18n key, "already exists in …") gets one – a
   comparison without the link is useless. Always with a line or range, the most telling one; file-only only with
   `"diff"` or when the whole file is meant. Never link the marker's own block. Copies: `"diff": true` (or
-  `"diff": "other/path"`, ranges as in the docs).
+  `"diff": "other/path"`, ranges as in the docs). Code that exists only on the target branch (coming merge conflict,
+  "main is ahead"): `"ref": "ziel"` (also `"basis"` or any ref); files in submodules work as plain paths.
 - **Rich like a thread:** the user judges each hint in merge-train next to the code, before it becomes a comment.
   Mark the whole block that matters (`line`/`end` or a needle plus `end`), link every place it depends on, compare
   copies side by side – the same as "Rich threads" in the merge-train skill, here via the JSON fields.

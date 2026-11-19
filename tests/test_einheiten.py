@@ -6,6 +6,7 @@ Aufruf:  python3 tests/test_einheiten.py [Klasse …]     (vor tests/test_gitlab
 Für Zeilen-Arithmetik, Diff-Zerlegung und see_also legt der Test ein kleines Git-Repo im Temp-Ordner an. Akten liegen
 im Temp-Ordner (XDG_DATA_HOME), GitLab ersetzt ein Fake für review.glab.
 """
+from pathlib import Path
 import contextlib, glob, io, os, subprocess, sys, tempfile, threading, unittest, urllib.parse
 
 T = tempfile.mkdtemp(prefix="merge-train-einheiten-")
@@ -335,6 +336,53 @@ class Hinweise(unittest.TestCase):
         self.assertEqual(r[3]["warnung"], f"diff a.txt: Bereich seit dem Review ({A[:8]}) geändert")
         self.assertEqual(see_also_aufloesen(REPO, B, ["a.txt:11"], "", seit=B)[0]["zeile"], 11)  # gleicher Stand
         self.assertIn("nicht im Klon", see_also_aufloesen(REPO, B, ["a.txt:11"], "", seit="deadbeef")[0]["warnung"])
+
+    def test_see_also_ref(self):
+        """"ref": Datei aus einem anderen Stand (Ziel, Basis, Ref); needle nur auf dem Ziel → Vorschlag."""
+        r = see_also_aufloesen(REPO, B, [{"path": "weg.txt", "line": 2, "ref": A}, {"path": "weg.txt", "needle": "w2", "ref": "ziel"},
+                                         {"path": "a.txt", "needle": "z15"}, {"path": "a.txt", "ref": "basis"},
+                                         {"path": "a.txt", "ref": "gibtsnicht"}, {"path": "weg.txt", "ref": "ziel", "diff": True},
+                                         {"path": "neuer name.txt", "ref": "ziel"}],
+                               "", eigene="a.txt", ziel=A)
+        kurz = [(x["zeile"], x.get("ref"), x.get("sha"), x["problem"]) for x in r]
+        self.assertEqual(kurz[0], (2, A, A, None))
+        self.assertEqual(kurz[1], (2, A, A, None))
+        self.assertEqual(kurz[2][3], f'needle nicht gefunden – steht aber auf {A}: "ref": "ziel" angeben')
+        self.assertEqual(kurz[3][1:], ("Basis", A, None))
+        self.assertEqual(kurz[4], (None, None, None, "Stand gibtsnicht nicht im Klon"))
+        self.assertEqual((r[5]["vergleich"], r[5]["sha"], r[5]["problem"]), ("a.txt", A, None))  # MR-Stand ⇄ Ziel
+        self.assertEqual(kurz[6][3], f"Datei nicht auf {A}")
+        self.assertEqual(see_also_aufloesen(REPO, B, [{"path": "a.txt", "ref": "ziel"}], "")[0]["problem"], "kein Zielbranch bekannt")
+        st = {"ordner": REPO, "refs": {"base_sha": A, "head_sha": B}}
+        self.assertEqual(review.zeilen_daten(st, "weg.txt", 1, 9, A)["n"], 2)
+        self.assertFalse(review.zeilen_daten(st, "weg.txt", 1, 9)["ok"])
+        v = vergleich_daten(st, "a.txt", "a.txt", stand_b=A)
+        self.assertEqual((v["ok"], v["plus"], v["minus"]), (True, 2, 2))
+
+    def test_see_also_submodul(self):
+        """Dateien in Submodulen: aus dem Submodul-Repo im Stand laut Gitlink; fehlt der Stand, sagt das die Meldung."""
+        sub, haupt = f"{T}/sm-sub", f"{T}/sm-haupt"
+        g = lambda o, *a: subprocess.run(["git", "-C", o, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "protocol.file.allow=always", *a],
+                                         capture_output=True, text=True, check=True).stdout
+        os.makedirs(f"{sub}/lib"); os.makedirs(haupt)
+        g(sub, "init", "-q"); Path(f"{sub}/lib/x.txt").write_text("eins\nzwei\n"); g(sub, "add", "-A"); g(sub, "commit", "-qm", "x")
+        g(haupt, "init", "-q"); g(haupt, "submodule", "add", "-q", sub, "ext/sub"); g(haupt, "commit", "-qm", "s")
+        h = g(haupt, "rev-parse", "HEAD").strip()
+        r = see_also_aufloesen(haupt, h, ["ext/sub/lib/x.txt:2", {"path": "ext/sub/lib/x.txt", "needle": "eins"}, "ext/sub/fehlt.txt"], "")
+        self.assertEqual([(x["zeile"], x["problem"]) for x in r[:2]], [(2, None), (1, None)])
+        self.assertIn("ext/sub: Datei nicht im Submodul", r[2]["problem"])
+        g(f"{haupt}/ext/sub", "commit", "-q", "--allow-empty", "-m", "y"); g(haupt, "commit", "-qam", "s2")
+        neu = g(f"{haupt}/ext/sub", "rev-parse", "HEAD").strip()
+        g(f"{haupt}/ext/sub", "reset", "-q", "--hard", "HEAD~1"); g(f"{haupt}/ext/sub", "reflog", "expire", "--expire=now", "--all")
+        g(f"{haupt}/ext/sub", "gc", "-q", "--prune=now")
+        r = see_also_aufloesen(haupt, g(haupt, "rev-parse", "HEAD").strip(), ["ext/sub/lib/x.txt"], "")
+        self.assertEqual(r[0]["problem"], f"Stand {neu[:8]} des Submoduls ext/sub nicht im Klon (git -C ext/sub fetch)")
+
+    def test_siehe_eintrag_ref(self):
+        from merge_train.agent_cli import siehe_eintrag
+        self.assertEqual(siehe_eintrag("a.txt:3-5@ziel|L"), {"path": "a.txt", "line": 3, "end": 5, "ref": "ziel", "label": "L"})
+        self.assertEqual(siehe_eintrag("a.txt@origin/main"), {"path": "a.txt", "ref": "origin/main"})
+        self.assertEqual(siehe_eintrag("node_modules/@types/x.d.ts:2"), {"path": "node_modules/@types/x.d.ts", "line": 2})
 
     def test_vergleich_bereiche(self):
         st = {"ordner": REPO, "refs": {"base_sha": A, "head_sha": B}}

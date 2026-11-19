@@ -104,9 +104,15 @@ wenn sie im Diff liegt, sonst den Inhalt. Dateivergleich zeigt zwei Dateien nebe
 Zeilenangaben der Agent-Hinweise werden von `reviewed_commit` auf den MR-Stand umgerechnet, Änderungen im Bereich als
 `warnung` (⚠) gemeldet.
 - Achsen: Verweisart (Zeile, Bereich, needle, Vergleich, Bereichsvergleich), Herkunft (Agent-Hinweis, Nachricht, Thread
-  des Agenten).
-- Ort: `ort_lesen`, `ort_mitziehen`, `see_also_aufloesen` (`hinweise.py`), `code_links` (`gespraech.py`),
-  `vergleich_daten` (`review.py`), `popup`/`sieheAuch`/`ortLink`/`vergleich` in `web/diff.js`; Route `api/vergleich`.
+  des Agenten), Stand (MR-Stand, `"ref"`/`@ref`: Zielbranch, Merge-Basis, beliebiger Ref – `stand_waehlen`; Zielbranch aus
+  `refs["ziel"]` bzw. `Quelle.ziel`), Repo (Hauptrepo, Submodul).
+- Dateien aus einem anderen Repo-Stand: `inhalt` (`git.py`) liest Pfade unter einem Gitlink aus dem Submodul
+  (`submodul_stelle`), `fehlt_grund` sagt, warum eine Datei fehlt (Stand, Submodul nicht ausgecheckt, Submodul-Stand
+  nicht geholt). Begleitdateien eines Myrling-Laufs aus anderen Repos (heute „Fehlt im Diff“) brauchen dasselbe für
+  ein Repo, das kein Submodul ist: dann hier erweitern statt daneben bauen.
+- Ort: `ort_lesen`, `ort_mitziehen`, `see_also_aufloesen`, `stand_waehlen`, `needle_anderswo` (`hinweise.py`),
+  `code_links` (`gespraech.py`), `vergleich_daten`, `zeilen_daten` (`review.py`, beide mit anderem Stand),
+  `popup`/`sieheAuch`/`ortLink`/`vergleich` in `web/diff.js`; Routen `api/zeilen` (`sha`), `api/vergleich` (`b_sha`).
 
 ### 8. Gespräch mit Agenten (Fäden an Zeilen)
 Fragen und Wünsche an einer Zeile oder allgemein; erst Entwurf, dann „senden“; Antworten, erledigen, wieder öffnen.

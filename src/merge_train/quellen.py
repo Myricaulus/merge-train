@@ -253,6 +253,10 @@ class Lokal:
             raise Fehler(f"Branch {bis} fehlt in {wurzel}")
         return wurzel, head
 
+    def ziel(self, waggon):
+        """Ref des Zielbranchs (see_also "ref": "ziel"): von."""
+        return von_bis(waggon.lokal)[0]
+
     def seite(self, waggon, ansicht=None):
         return projekt_seite(projekt_wurzel(waggon.lokal), ansicht=ansicht)
 
@@ -330,6 +334,10 @@ class Myrling:
             _, struktur = self.seite(waggon)
         return struktur["ordner"], struktur["refs"]["head_sha"]
 
+    def ziel(self, waggon):
+        """Ein Lauf hat keinen Zielbranch: jede Datei steht gegen ihre zuletzt angesehene Fassung."""
+        return None
+
     def seite(self, waggon, ansicht=None):
         return myrling_seite(waggon, ansicht=ansicht)
 
@@ -362,6 +370,11 @@ class GitLab:
         if struktur is None:
             _, struktur = self.seite(waggon)
         return struktur["ordner"], struktur["refs"]["head_sha"]
+
+    def ziel(self, waggon):
+        """Ref des Zielbranchs im Klon (origin/<target_branch>, wie mr_lokal ihn nimmt)."""
+        akte = akte_lesen(waggon)
+        return ((struktur_laden(akte) or {}).get("refs") or {}).get("ziel") or (akte.get("mr") or {}).get("target_branch") or None
 
     def seite(self, waggon, ansicht=None):
         pfad, struktur, _ = mr_seite(waggon, ansicht=ansicht)

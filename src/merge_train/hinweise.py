@@ -2,11 +2,27 @@
 import glob, hashlib, json, os, re
 from .einstellungen import KONF
 from .waggon import Fehler
-from .git import git, inhalt
+from .git import fehlt_grund, git, inhalt
 from .zeilen import alt_zeile, bereich_vorwaerts, im_diff
 from .diff_html import zeilenzahl
 from .akte import datei_index
 from .gitlab import mr_ref
+
+def stand_waehlen(ordner, head, ref, ziel):
+    """"ref" eines Verweises → (Commit, Name für die Seite) bzw. (None, Problem). "ziel" = Zielbranch (ziel: sein Ref
+    im Klon, z. B. origin/main bzw. von), "basis" = Merge-Basis von MR-Stand und Ziel, sonst ein Ref oder Commit."""
+    def sha(r):
+        return (git(ordner, "rev-parse", "--verify", "-q", f"{r}^{{commit}}", check=False) or "").strip() or None
+    if ref in ("ziel", "basis"):
+        z = sha(ziel) if ziel else None
+        if not z:
+            return None, f"Zielbranch {ziel} nicht im Klon" if ziel else "kein Zielbranch bekannt"
+        if ref == "ziel":
+            return z, ziel.removeprefix("origin/")
+        b = (git(ordner, "merge-base", head, z, check=False) or "").strip() if head else ""
+        return (b, "Basis") if b else (None, "keine gemeinsame Basis mit dem Zielbranch")
+    return (sha(ref), ref) if sha(ref) else (None, f"Stand {ref} nicht im Klon")
+
 
 HINWEIS_FELDER = {"finding", "title", "path", "needle", "text", "rationale", "resolved_when", "line", "see_also", "agent"}
 
@@ -34,13 +50,16 @@ def ort_mitziehen(ordner, seit, head, path, zeile, bis):
     return z, e, (f"{'Bereich' if bis else 'Zeile'} seit dem Review ({seit[:8]}) geändert" if geaendert else None)
 
 
-def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None):
+def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None, ziel=None):
     """see_also: Liste aus "pfad", "pfad:zeile", "pfad:von-bis" oder {"path", "line"|"needle", "end", "label", "diff"}
     → Zeilen im MR-Stand. Nur für merge-train (Links/Popup), nie Teil des GitLab-Kommentars.
     "diff": true vergleicht die eigene Datei des Hinweises mit dieser (Popup nebeneinander), "diff": "pfad" bzw.
     "pfad:von-bis" eine andere (bzw. nur deren Bereich); mit "end" vergleicht die Gegenseite nur ihren Bereich.
     seit (reviewed_commit): Zeilenangaben (nicht needle) beziehen sich auf diesen Stand und werden auf head
-    umgerechnet; ist dazwischen etwas im Bereich geändert, steht das in „warnung“ (kein Fehler)."""
+    umgerechnet; ist dazwischen etwas im Bereich geändert, steht das in „warnung“ (kein Fehler).
+    "ref": die Datei aus einem anderen Stand (stand_waehlen: "ziel", "basis", Ref) – Zeilen gelten dort, die Seite
+    zeigt sie „auf <name>“; die Gegenseite eines "diff" bleibt im MR-Stand. ziel: Ref des Zielbranchs (refs["ziel"]).
+    Dateien in Submodulen liest inhalt aus dem Submodul."""
     if isinstance(eintraege, (str, dict)):
         eintraege = [eintraege]
     out = []
@@ -51,23 +70,29 @@ def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None):
         if not isinstance(e, dict):
             continue
         path, zeile, problem, warnung = pfad_norm(e.get("path")), None, None, None
+        stand, name = head, None
+        if e.get("ref") and head:
+            stand, name = stand_waehlen(ordner, head, str(e["ref"]), ziel)
+            if not stand:
+                problem, name = name, None
         if isinstance(e.get("line"), int) and e["line"] > 0:
             zeile = e["line"]
         bis = e.get("end") if isinstance(e.get("end"), int) and zeile and e["end"] > zeile else None
         if not path:
             problem = "kein Pfad"
-        elif head:
-            t = inhalt(ordner, head, path)
+        elif head and stand:
+            t = inhalt(ordner, stand, path)
             if t is None:
-                problem = "Datei nicht im MR-Stand"
+                problem = fehlt_grund(ordner, stand, path, f"auf {name}" if name else "im MR-Stand")
             elif zeile:
-                zeile, bis, warnung = ort_mitziehen(ordner, seit, head, path, zeile, bis)
+                if not name:
+                    zeile, bis, warnung = ort_mitziehen(ordner, seit, head, path, zeile, bis)
                 if zeile > zeilenzahl(t):
                     problem = f"Zeile {zeile} gibt es nicht ({zeilenzahl(t)} Zeilen)"
             elif e.get("needle"):
                 z = needle_zeilen(t, str(e["needle"]), tag)
                 zeile = z[0] if z else None
-                problem = None if z else "needle nicht gefunden"
+                problem = None if z else "needle nicht gefunden" + needle_anderswo(ordner, head, path, str(e["needle"]), tag, ziel, name)
                 if zeile and isinstance(e.get("end"), int) and e["end"] > zeile:
                     bis = e["end"]
         gegen = gz = gb = None
@@ -78,7 +103,7 @@ def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None):
             if not gegen:
                 problem = problem or "diff: Hinweis hat keine eigene Datei – Pfad angeben"
             elif head and not problem and tg is None:
-                problem = f"diff: {gegen} nicht im MR-Stand"
+                problem = "diff: " + fehlt_grund(ordner, head, gegen, "im MR-Stand").replace("Datei", gegen, 1)
             elif tg is not None and gz:
                 gb = gb if gb and gb > gz else None
                 gz, gb, w = ort_mitziehen(ordner, seit, head, gegen, gz, gb)
@@ -86,8 +111,16 @@ def see_also_aufloesen(ordner, head, eintraege, tag, eigene=None, seit=None):
                 if gz > zeilenzahl(tg):
                     problem = problem or f"diff: Zeile {gz} gibt es in {gegen} nicht ({zeilenzahl(tg)} Zeilen)"
         out.append({"path": path, "zeile": zeile, "bis": bis, "label": e.get("label"), "problem": problem,
-                    "warnung": warnung, "vergleich": gegen, "vzeile": gz, "vbis": gb})
+                    "warnung": warnung, "vergleich": gegen, "vzeile": gz, "vbis": gb,
+                    **({"ref": name, "sha": stand} if name else {})})
     return out
+
+
+def needle_anderswo(ordner, head, path, needle, tag, ziel, name):
+    """Zusatz zu „needle nicht gefunden“ im MR-Stand: steht sie auf dem Zielbranch, "ref": "ziel" vorschlagen."""
+    z = None if name or not ziel else stand_waehlen(ordner, head, "ziel", ziel)[0]
+    t = z and inhalt(ordner, z, path)
+    return f' – steht aber auf {ziel.removeprefix("origin/")}: "ref": "ziel" angeben' if t and needle_zeilen(t, needle, tag) else ""
 
 
 _HW_CACHE = {}
@@ -154,6 +187,7 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
     hinweise, quellen = [], []
     head = (struktur or {}).get("refs", {}).get("head_sha")
     ordner = (struktur or {}).get("ordner")
+    ziel = (struktur or {}).get("refs", {}).get("ziel")
     for pfad in (nur if nur is not None else hinweis_dateien(mr, akte)):
         try:
             h = hinweise_lesen(pfad)
@@ -176,7 +210,7 @@ def hinweise_aufloesen(mr, akte, struktur, nur=None):
                      "agent": str(m.get("agent") or agent).strip() or None,
                      "json": pfad, "nr": nr,  # Herkunft: für „merge-train agent kommentar h:<key>“
                      "see_also": see_also_aufloesen(ordner, head, m.get("see_also"), tag, path,
-                                                     str(h.get("reviewed_commit") or "") or None),
+                                                     str(h.get("reviewed_commit") or "") or None, ziel),
                      "title": str(m.get("title") or "").strip() or None}
             zeilen, problem = [], None
             if not path:

@@ -436,7 +436,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
         k.update(path=path, b=b, zeile_text=zeilen[b - 1] if b else None)
         if ab:
             k["ab"] = ab
-    sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"])
+    sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"], ziel=quelle(waggon).ziel(waggon))
     kaputt = [f'{s["path"] or "?"}: {s["problem"]}' for s in sa if s["problem"]]
     if kaputt:
         raise Fehler("siehe auch: " + "; ".join(kaputt))
@@ -507,7 +507,8 @@ def faden_antworten(fid, text, erledigt=False, als=None, ziele=None, siehe=()):
         wer = agent_name(als, sonst=k.get("an"))
         if siehe:
             wurzel, head = quelle(waggon).ort(waggon)
-            kaputt = [f'{x["path"] or "?"}: {x["problem"]}' for x in see_also_aufloesen(wurzel, head, list(siehe), None, k.get("path")) if x["problem"]]
+            kaputt = [f'{x["path"] or "?"}: {x["problem"]}' for x in see_also_aufloesen(wurzel, head, list(siehe), None, k.get("path"),
+                                                                                     ziel=quelle(waggon).ziel(waggon)) if x["problem"]]
             if kaputt:
                 raise Fehler("siehe auch: " + "; ".join(kaputt))
             k["see_also"] = (k.get("see_also") or []) + [x for x in siehe if x not in (k.get("see_also") or [])]
@@ -800,10 +801,10 @@ def agent_parser():
     p.add_argument("id", help="id des Fadens (aus „agent feedback“, Anfang genügt)")
     p.add_argument("text", nargs="?", default="", help="Antwort (Markdown-artig, mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--erledigt", action="store_true", help="Faden als erledigt markieren (z. B. Wunsch umgesetzt)")
-    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
-                   help="Siehe-auch-Link zum Faden hinzufügen (mehrfach möglich)")
-    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][|LABEL]"),
-                   help="Vergleich (Popup nebeneinander) zum Faden hinzufügen; mehrfach möglich")
+    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][@REF][|LABEL]",
+                   help="Siehe-auch-Link zum Faden hinzufügen (mehrfach möglich). @REF: Datei aus diesem Stand – ziel (Zielbranch), basis (Merge-Basis) oder ein Ref/Commit; Submodul-Pfade gehen auch")
+    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][@REF][|LABEL]"),
+                   help="Vergleich (Popup nebeneinander) zum Faden hinzufügen; mehrfach möglich. B@ziel: A im MR-Stand gegen B auf dem Zielbranch")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: Faden in allen Gesprächen suchen)")
     p.add_argument("--als", help="Name, unter dem die Antwort erscheint (Standard: aus der Umgebung erkannt, sonst der gefragte Agent)")
     p.set_defaults(aufruf=befehl_antworten)
@@ -839,10 +840,10 @@ def agent_parser():
     p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")
     p.add_argument("--ort", metavar="PFAD[:ZEILE[-BIS]]",
                    help="Zeile oder Bereich im aktuellen Stand (lokal: Arbeitsstand bzw. Branch, MR: Klon); einmal je Thread")
-    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][|LABEL]",
-                   help="Siehe-auch-Link (mehrfach möglich)")
-    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][|LABEL]"),
-                   help="zwei Dateien (bzw. mit VON-BIS nur diese Bereiche) nebeneinander vergleichen (Popup); mehrfach möglich")
+    p.add_argument("--siehe", action="append", default=[], metavar="PFAD[:ZEILE[-BIS]][@REF][|LABEL]",
+                   help="Siehe-auch-Link (mehrfach möglich). @REF: Datei aus diesem Stand – ziel (Zielbranch), basis (Merge-Basis) oder ein Ref/Commit; Submodul-Pfade gehen auch")
+    p.add_argument("--vergleich", action="append", nargs=2, default=[], metavar=("A[:VON-BIS]", "B[:VON-BIS][@REF][|LABEL]"),
+                   help="zwei Dateien (bzw. mit VON-BIS nur diese Bereiche) nebeneinander vergleichen (Popup); mehrfach möglich. B@ziel: A im MR-Stand gegen B auf dem Zielbranch")
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR; nach einem Review: der MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
@@ -907,8 +908,8 @@ def offene_faeden(waggon, branch):
                 and (faden_status(k) != "entwurf" or any(m.get("gesendet") for m in k["nachrichten"]))]
 
 
-RICH = ('  reich machen: --ort über den ganzen Block (Zeilen mit grep -n messen) · --siehe <pfad>[:<z>[-<bis>]][|Label] '
-        '(Aufrufer, Test, altes Verhalten) · --vergleich <A>[:von-bis] <B>[:von-bis] (Kopie, alt/neu) · pfad:zeile im Text wird ein Link')
+RICH = ('  reich machen: --ort über den ganzen Block (Zeilen mit grep -n messen) · --siehe <pfad>[:<z>[-<bis>]][@ziel][|Label] '
+        '(Aufrufer, Test, altes Verhalten; @ziel/@basis/@<ref>: aus diesem Stand) · --vergleich <A>[:von-bis] <B>[:von-bis][@ziel] (Kopie, alt/neu, MR gegen Ziel) · pfad:zeile im Text wird ein Link')
 
 
 def faeden_teile(faeden, feedback):
@@ -1062,10 +1063,18 @@ def text_von(o):
 
 
 def siehe_eintrag(angabe, diff=None):
-    """--siehe/--vergleich „pfad[:zeile[-bis]][|label]“ → see_also-Eintrag wie in den Hinweis-Dateien."""
+    """--siehe/--vergleich „pfad[:zeile[-bis]][@ref][|label]“ → see_also-Eintrag wie in den Hinweis-Dateien; @ref:
+    die Datei aus einem anderen Stand (ziel, basis, Ref – nicht hinter einem „/“, damit @types/… Pfad bleibt)."""
     angabe, _, label = angabe.partition("|")
+    vorn, at, ref = angabe.rpartition("@")
+    if at and vorn and not vorn.endswith("/") and ref:
+        angabe = vorn
+    else:
+        ref = None
     pfad, zeile, bis = ort_lesen(angabe)
     eintrag = {"path": pfad}
+    if ref:
+        eintrag["ref"] = ref
     if zeile:
         eintrag["line"] = zeile
     if bis:

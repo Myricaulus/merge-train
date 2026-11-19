@@ -77,7 +77,8 @@ def gespraech_daten(waggon, ansicht=None):
                     **dict(zip(("stand", "wer"), faden_stand(k))),
                     "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
                     "vom_agenten": bool(k.get("vom_agenten")), "zu": k.get("zu"),
-                    "see_also": see_also_aufloesen(struktur["ordner"], head, k.get("see_also"), None, k.get("path"))
+                    "see_also": see_also_aufloesen(struktur["ordner"], head, k.get("see_also"), None, k.get("path"),
+                                                  ziel=struktur["refs"].get("ziel"))
                     if k.get("see_also") else [],
                     "links": code_links(struktur["ordner"], head, [m["text"] for m in k["nachrichten"]],
                                         [d["neu"] for d in struktur["dateien"]])})

@@ -91,6 +91,13 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
   Zeilenangaben (nicht `needle`) beziehen sich auf `reviewed_commit`: Hat sich der Branch seitdem bewegt, rechnet
   merge-train sie auf den MR-Stand um. Ist im Bereich selbst etwas geändert worden, zeigt die Seite ⚠ am Link und
   `pruefen` meldet „siehe auch …: Achtung: …“ (kein Fehler, Exit-Code unverändert).
+  Anderer Stand mit `"ref"`: `"ziel"` (Zielbranch, im Klon `origin/<target>`), `"basis"` (Merge-Basis von MR und Ziel)
+  oder ein Ref/Commit. Zeilen und `needle` gelten dann dort, der Link heißt „… @main“, das Popup zeigt den Code aus
+  diesem Stand. Mit `"diff"` steht die Gegenseite im MR-Stand: `{"path": "Liste.cs", "ref": "ziel", "diff": true}`
+  vergleicht die Datei des Hinweises im MR mit der auf dem Ziel. Gedacht für „der Zielbranch ist weiter“ und kommende
+  Merge-Konflikte. Findet `pruefen` eine needle nur auf dem Zielbranch, schlägt es `"ref": "ziel"` vor.
+  Pfade in Submodulen gehen wie andere: merge-train liest die Datei aus dem Submodul im Stand laut Gitlink. Fehlt der
+  Stand im Klon, nennt `pruefen` das Submodul und den Befehl, der ihn holt.
   Die Verweise gehören **nicht** zum GitLab-Kommentar.
 - `problem`, `decision`, `status` und weitere Felder erscheinen unter „Details“, `status` zusätzlich als Etikett.
 - Oben optional `"mr": "<MR-URL>"`.

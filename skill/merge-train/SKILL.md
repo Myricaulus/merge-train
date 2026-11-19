@@ -40,8 +40,9 @@ The user reads a thread next to the code. Give them everything to judge the poin
 
 - **Place:** `--ort <pfad>:<von>-<bis>` over the whole block that matters (method, condition, test), not one line.
   Measure with `grep -n` (signature, closing brace), check `wc -l` near the end of a file.
-- **See also:** `--siehe <pfad>[:<z>[-<bis>]][|Label]` for every other place the point depends on or you mention:
-  caller, test, config, the old behaviour, the related TODO. Repeatable.
+- **See also:** `--siehe <pfad>[:<z>[-<bis>]][@ref][|Label]` for every other place the point depends on or you mention:
+  caller, test, config, the old behaviour, the related TODO. Repeatable. `@ziel` (target branch), `@basis` or `@<ref>`
+  shows the file from that state; `--vergleich A B@ziel` compares the branch against the target.
 - **Compare:** `--vergleich <A>[:von-bis] <B>[:von-bis][|Label]` opens two files or ranges side by side: a copied
   handler and its original, old and new variant, test double and real class, two plants' configurations.
 - **Text:** German, 2–5 sentences: what, why, what is open or what the user should decide. `pfad:zeile` and file

@@ -330,7 +330,10 @@ def api_zeilen(anfrage, struktur):
         von, bis = int(anfrage.daten.get("von", 1)), int(anfrage.daten.get("bis", 1))
     except ValueError:
         return abgelehnt(400, "von/bis ungültig")
-    return zeilen_daten(struktur, anfrage.daten.get("pfad", ""), von, bis)
+    stand = anfrage.daten.get("sha") or None  # see_also "ref": Datei aus einem anderen Commit des Klons
+    if stand and not re.fullmatch(r"[0-9a-f]{7,40}", stand):
+        return abgelehnt(400, "sha ungültig")
+    return zeilen_daten(struktur, anfrage.daten.get("pfad", ""), von, bis, stand)
 
 
 @route("GET", "api/datei", struktur=True)
@@ -350,7 +353,10 @@ def api_vergleich(anfrage, struktur):
             return int(d[seite + "_von"]), int(d.get(seite + "_bis") or d[seite + "_von"])
         except (KeyError, ValueError):
             return None
-    return vergleich_daten(struktur, d.get("a", ""), d.get("b", ""), bereich("a"), bereich("b"))
+    stand_b = d.get("b_sha") or None
+    if stand_b and not re.fullmatch(r"[0-9a-f]{7,40}", stand_b):
+        return abgelehnt(400, "b_sha ungültig")
+    return vergleich_daten(struktur, d.get("a", ""), d.get("b", ""), bereich("a"), bereich("b"), stand_b)
 
 
 def haken_struktur(waggon):

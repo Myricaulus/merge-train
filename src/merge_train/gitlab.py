@@ -196,13 +196,14 @@ def mr_lokal(mr, meta):
             head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
         if not head or not tgt:
             gruende.append(f"{kurzpfad(o)}: Branch {quelle if not head else ziel} fehlt (auch nach git fetch)"); continue
+        zref = f"origin/{ziel}" if git(o, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{ziel}", check=False) else ziel  # wie tgt; see_also "ref": "ziel"
         if gl.get("head_sha") == head and gl.get("base_sha") and \
            git(o, "cat-file", "-e", gl["base_sha"] + "^{commit}", check=False) is not None:
-            return o, {"base_sha": gl["base_sha"], "start_sha": gl.get("start_sha") or tgt, "head_sha": head}
+            return o, {"base_sha": gl["base_sha"], "start_sha": gl.get("start_sha") or tgt, "head_sha": head, "ziel": zref}
         base = (git(o, "merge-base", tgt, head, check=False) or "").strip()
         if not base:
             gruende.append(f"{kurzpfad(o)}: kein gemeinsamer Vorgänger von {ziel} und {quelle}"); continue
-        return o, {"base_sha": base, "start_sha": tgt, "head_sha": head}
+        return o, {"base_sha": base, "start_sha": tgt, "head_sha": head, "ziel": zref}
     raise Fehler("kein lokaler Klon für " + f'{mr.projekt}!{mr.iid}: '
                        + ("; ".join(gruende) or "unter [repos] eintragen, klon_ordner setzen oder „merge-train agent zeigen“ im Repo aufrufen"))
 

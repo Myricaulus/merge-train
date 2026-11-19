@@ -215,9 +215,10 @@ def datei_nachladen(struktur, i):
 _TOKENS = {}
 
 
-def zeilen_daten(struktur, pfad, von, bis):
-    """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht) als HTML – zum Nachladen von Kontext und fürs Popup."""
-    head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
+def zeilen_daten(struktur, pfad, von, bis, stand=None):
+    """Zeilen von..bis (neue Seite: MR-Stand bzw. Stand der Ansicht; stand: ein anderer Commit, see_also "ref") als
+    HTML – zum Nachladen von Kontext und fürs Popup."""
+    head = stand or (diff_enden(struktur)[1] if struktur and struktur.get("refs") else None)
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
     pfad = pfad_norm(pfad)
@@ -239,17 +240,17 @@ def zeilen_daten(struktur, pfad, von, bis):
                        for i in range(von, bis + 1)]}
 
 
-def vergleich_daten(struktur, a, b, bereich_a=None, bereich_b=None):
+def vergleich_daten(struktur, a, b, bereich_a=None, bereich_b=None, stand_b=None):
     """Zwei Dateien des MR-Stands gegeneinander (see_also mit "diff") nebeneinander als Tabelle: ganz oder nur je ein
-    Bereich (von, bis); die Zeilennummern bleiben die der Dateien."""
+    Bereich (von, bis); die Zeilennummern bleiben die der Dateien. stand_b: b aus diesem Commit (see_also "ref")."""
     head = diff_enden(struktur)[1] if struktur and struktur.get("refs") else None
     if not head:
         return {"ok": False, "text": "MR-Stand unbekannt – Seite neu laden"}
     a, b = pfad_norm(a), pfad_norm(b)
-    ta, tb = inhalt(struktur["ordner"], head, a), inhalt(struktur["ordner"], head, b)
-    for p, t in ((a, ta), (b, tb)):
+    ta, tb = inhalt(struktur["ordner"], head, a), inhalt(struktur["ordner"], stand_b or head, b)
+    for p, t, s in ((a, ta, head), (b, tb, stand_b or head)):
         if t is None:
-            return {"ok": False, "text": f"{p} gibt es im Stand {head[:8]} nicht"}
+            return {"ok": False, "text": f"{p} gibt es im Stand {s[:8]} nicht"}
     teile = []
     for t, bereich in ((ta, bereich_a), (tb, bereich_b)):
         zeilen = t.splitlines(keepends=True)
