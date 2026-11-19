@@ -1,6 +1,5 @@
 """Review eines MRs: Kommentare anlegen und ändern (staged), Hinweise übernehmen, mit GitLab abgleichen und abschließen."""
 import hashlib, os, re, tempfile, threading
-from datetime import datetime
 from .waggon import Fehler, Ungueltig, Waggon
 from .einstellungen import KONF, jetzt
 from .git import ANLASS, anlass, branch_auschecken, git, inhalt, zerlegen
@@ -132,11 +131,9 @@ def diskussion_aufloesen(mr, eingabe):
             if neu:
                 d.update(neu)
             else:
-                d["erledigt"] = {"wer": "", "wer_id": akte.get("ich_id"),
-                                 "zeit": datetime.now().astimezone().isoformat(timespec="seconds")} if zu else None
-            for k in review_kommentare(akte):
-                if (k.get("gitlab_diskussion") or {}).get("id") == did:
-                    k["gitlab_diskussion"]["erledigt"] = d["erledigt"]
+                d["erledigt"] = {"wer": "", "wer_id": akte.get("ich_id"), "zeit": jetzt(zone=True)} if zu else None
+            for kopie in diskussion_kopien(akte, did):
+                kopie["erledigt"] = d["erledigt"]
     return True, "in GitLab erledigt" if zu else "in GitLab wieder geöffnet"
 
 
@@ -307,7 +304,7 @@ def kommentar_neu(waggon, akte, eingabe, ansicht):
     struktur = struktur_laden(akte)
     text = str(eingabe.get("text") or "").strip()
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
-         "erstellt": datetime.now().isoformat(timespec="seconds")}
+         "erstellt": jetzt()}
     if eingabe.get("hinweis"):
         h = next((h for h in hinweise_aufloesen(waggon, akte, struktur)[0] if h["key"] == eingabe["hinweis"]), None)
         if not h:
@@ -377,9 +374,15 @@ def antwort_entwurf(mr, akte, eingabe, ansicht):
         return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
     if not text:
         return False, "leere Antwort"
-    kommentar_anhaengen(akte, {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "erstellt": datetime.now().isoformat(timespec="seconds"),
+    kommentar_anhaengen(akte, {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "erstellt": jetzt(),
                                "text": text, "antwort_auf": d["id"], "path": d.get("path"), "a": d.get("a"), "b": d.get("b")})
     return True, ""
+
+
+def diskussion_kopien(akte, did):
+    """Die Kopien der Diskussion did an den eigenen Kommentaren (gitlab_diskussion): ändert sich die Diskussion,
+    ändern sie sich mit."""
+    return [k["gitlab_diskussion"] for k in review_kommentare(akte) if (k.get("gitlab_diskussion") or {}).get("id") == did]
 
 
 def diskussion_finden(akte, did):
@@ -398,14 +401,11 @@ def antwort_senden(mr, eingabe):
     note = glab(mr.host, f"{mr_pfad(mr)}/discussions/{did}/notes", "POST", {"body": text}) or {}  # GitLab, ohne Sperre
     antwort = {"id": note.get("id"), "wer": (note.get("author") or {}).get("name") or "",
                "wer_id": (note.get("author") or {}).get("id"), "text": note.get("body") or text,
-               "zeit": note.get("created_at") or datetime.now().astimezone().isoformat(timespec="seconds")}
+               "zeit": note.get("created_at") or jetzt(zone=True)}
     with akte_bearbeiten(mr) as akte:
         d = diskussion_finden(akte, did)
-        if d is not None:
-            d.setdefault("antworten", []).append(antwort)
-        for k in review_kommentare(akte):
-            if (k.get("gitlab_diskussion") or {}).get("id") == did:
-                k["gitlab_diskussion"].setdefault("antworten", []).append(antwort)
+        for x in ([d] if d is not None else []) + diskussion_kopien(akte, did):
+            x.setdefault("antworten", []).append(antwort)
     return True, "Antwort in GitLab veröffentlicht"
 
 
@@ -897,7 +897,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
             fehler.append(f"{URTEILE[urteil]}: nicht geklappt – {e}")
     if not fehler:
         with akte_bearbeiten(mr) as akte:
-            akte["abgeschlossen"] = datetime.now().isoformat(timespec="seconds")
+            akte["abgeschlossen"] = jetzt()
     text = abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt, urteil)
     return not fehler, " · ".join([text] + [t for t in teile if "veröffentlicht" not in t]), web
 

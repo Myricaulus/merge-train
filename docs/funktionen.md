@@ -201,8 +201,8 @@ Zeile und in einer Liste. „↩ antworten“: sofort senden oder als lokaler En
 Draft-Antwort anlegt. „☑ abwarten“ (`abhaken`, nur in der Akte) gibt den Ball ohne Antwort ab, bis ein anderer
 danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion gleich in GitLab auf, wie ein KI-Thread
 erledigt wird – auch per Klick auf das Zeichen in der Liste (`fadenErledigen`). Stand: `diskussion_stand`.
-- Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`
-  (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
+- Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`,
+  `diskussion_kopien` (die Kopien an eigenen Kommentaren ändern sich mit) (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
 - Liste links: siehe Baustein „Liste links über den Dateien“.
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
@@ -350,6 +350,7 @@ Jeder Eintrag hat zwei Achsen, beide vom Server berechnet:
 |---|---|
 | Daten je Waggon speichern | Akte: `akte_bearbeiten`, `akte_lesen` (`akte.py`) |
 | git aufrufen | `git()` (`git.py`), protokolliert mit Anlass |
+| Zeitstempel | `jetzt()` (`einstellungen.py`), `jetzt(zone=True)` neben Zeiten aus GitLab |
 | GitLab aufrufen | `gitlab.py` (glab), nur auf Knopfdruck |
 | Zeile zwischen Ständen zuordnen | `zeilen.py` |
 | Code-Stelle verlinken | `pfad:zeile` im Text bzw. `see_also`, Popup aus `web/diff.js` |

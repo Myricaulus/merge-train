@@ -187,5 +187,7 @@ def melden(text):
         subprocess.run(["notify-send", "-a", "merge-train", "-i", "vcs-merge-request", "merge-train", text], check=False)
 
 
-def jetzt():
-    return datetime.now().isoformat(timespec="seconds")
+def jetzt(zone=False):
+    """Jetzt als ISO-Zeit, sekundengenau; zone: mit Zeitzone (wie die Zeiten aus GitLab)."""
+    t = datetime.now()
+    return (t.astimezone() if zone else t).isoformat(timespec="seconds")
