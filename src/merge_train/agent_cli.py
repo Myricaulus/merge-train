@@ -436,10 +436,15 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
         k["see_also"] = list(siehe)
     k["nachrichten"].append(neue_nachricht("claude", text, gesendet=True, wer=als))
     with akte_bearbeiten(waggon) as akte:
+        schon = [x["id"] for x in akte["kommentare"] if x.get("nachrichten") is not None and not x.get("erledigt")
+                 and x.get("branch") == k["branch"] and x.get("path") == k["path"] and x.get("b") == k["b"]]
         faden_anhaengen(akte, k)
     wo = f'{k["path"]}:{k.get("ab") or k["b"]}' + (f'-{k["b"]}' if k.get("ab") else "") if k["b"] else (k["path"] or "allgemein")
     melden(f"{waggon.name}: {als} hat einen Thread angelegt ({wo})")
-    return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt'
+    hinweis = (f'\nHinweis: an dieser Stelle ({wo}) war schon ein offener Faden: {", ".join(schon)} – einen weiteren Stand '
+               f'dort mit „merge-train agent antworten <id>“ fortsetzen statt neu anlegen (vorher „feedback --alle“ lesen)'
+               if schon else "")
+    return k["id"], f'[{k["id"]}] Thread bei {wo} in {waggon.name} angelegt' + hinweis
 
 
 def hinweis_text_aendern(h, text):
@@ -763,7 +768,10 @@ def agent_parser():
                                    "Entscheidungen und die Zusammenfassung hierher, je Punkt ein Thread an seiner Zeile, statt "
                                    "in die Konsole: ohne -p landet der Thread im lokalen Gespräch des Repos (jedes Repo unter "
                                    "projekte, auch wenn der Klon zugleich zu einem MR gehört), zugeordnet zum ausgecheckten "
-                                   "bzw. eingestellten bis-Branch. Nach einem reinen Review stattdessen -p <MR>. Datei- und "
+                                   "bzw. eingestellten bis-Branch. Nach einem reinen Review stattdessen -p <MR>. Vorher mit "
+                                   "„feedback --alle“ die Fäden lesen, die es zum Branch schon gibt (auch von anderen Agenten): "
+                                   "gibt es einen zum Punkt oder den allgemeinen mit der letzten Zusammenfassung, dort mit "
+                                   "antworten <id> fortsetzen statt neu anlegen. Datei- und "
                                    "pfad:zeile-Angaben im Text werden auf der Seite zu Links. Antworten des Nutzers kommen wie "
                                    "sonst über feedback/horchen.")
     p.add_argument("text", help="Text (mehrzeilig erlaubt); - = von stdin")

@@ -491,6 +491,13 @@ def mr_gespraech_test(mr, k, basis, struktur):
     akte = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
     pruefe(any(k.get("nachrichten") for k in akte["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
+    r1 = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "--als", "Copilot", "Stand 1", env=genv, check=False)
+    r2 = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "--als", "Copilot", "Stand 2", env=genv, check=False)
+    erst = r1.stdout.split("]")[0].lstrip("[")
+    pruefe(r1.returncode == 0 and "Hinweis" not in r1.stdout and r2.returncode == 0 and "Hinweis" in r2.stdout and erst in r2.stdout,
+           "agent thread: zweiter allgemeiner Faden nennt den offenen ersten (dort fortsetzen)")
+    for x in (erst, r2.stdout.split("]")[0].lstrip("[")):
+        sh(sys.executable, SKRIPT, "agent", "antworten", x, "--erledigt", "--als", "Copilot", env=genv, check=False)
     # GitLab-Kommentar umformulieren: draft ändern, sonst neuer draft daneben; staged nur per „übernehmen“
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     an11 = [h for h in rv["hinweise"] if h["path"] == "App.cs" and h["b"] == 11 and h["status"] == "offen"]
