@@ -14,7 +14,8 @@ Takt im pre-commit (./testen ohne Argumente): der erste Commit des Tages läuft 
 letzten vollen Lauf TAKT_STUNDEN vergangen und TAKT_COMMITS Commits durch sind (was später eintrifft) – damit
 Regressionen auch zwischen zwei Pushes auffallen. Stand in .git/merge-train-takt (Zeit des letzten vollen Laufs, Commits seither).
 
-Merkzettel: Ein grünes --voll auf einem sauberen Stand trägt dessen Baum (Tree-ID) in .git/merge-train-getestet ein;
+Merkzettel: Ein grünes --voll auf einem sauberen Stand (im pre-commit: der Index, wenn das Arbeitsverzeichnis ihm
+gleicht) trägt dessen Baum (Tree-ID) in .git/merge-train-getestet ein;
 derselbe Inhalt gilt dann als getestet, egal unter welchem Commit oder Branch.
 
 Auswahl:
@@ -233,6 +234,17 @@ def sauber():
     return not any(git("status", "--porcelain"))
 
 
+def getesteter_baum(precommit):
+    """Baum (Tree-ID) des Stands, den dieser Lauf testet, oder None, wenn der Arbeitsstand davon abweicht. pre-commit:
+    der Index, also der Baum des entstehenden Commits – nur, wenn Arbeitsverzeichnis und Index gleich sind und nichts
+    Ungetracktes herumliegt (getestet wird das Arbeitsverzeichnis). Sonst: HEAD bei sauberem Stand."""
+    if not precommit:
+        return git("rev-parse", "HEAD^{tree}")[0] if sauber() else None
+    if any(z and (z.startswith("??") or z[1] != " ") for z in git("status", "--porcelain")):
+        return None
+    return git("write-tree")[0] or None
+
+
 def push(zeilen):
     """pre-push: jeden gepushten Stand, der noch nicht voll getestet ist, voll testen (genau diesen Stand)."""
     shas = []
@@ -289,7 +301,7 @@ def main():
         global TAKT_VOLL
         voll = TAKT_VOLL = True
         print(f"• {grund} → --voll")
-    baum = git("rev-parse", "HEAD^{tree}")[0] if voll and sauber() else None  # vor dem Lauf: danach eintragen
+    baum = getesteter_baum(takt) if voll else None  # vor dem Lauf: danach eintragen
     seit = args[args.index("--seit") + 1] if "--seit" in args else "HEAD"
     pfade = geaendert(seit)
     pruefen, smoke, klassen, teile, gruende = auswahl(pfade, voll)
