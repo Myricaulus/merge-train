@@ -22,7 +22,7 @@ The page shows the name of whoever answered, opened a thread, listens or wrote a
 - merge-train recognizes some harnesses from the environment (Claude Code → "Claude", Cursor, Gemini CLI, Codex, the
   `AI_AGENT` variable). Then you need nothing.
 - **Otherwise pass `--als "<Harness> (<Model>)"`** to every `antworten`, `thread`, `kommentar`, `horchen`, `pruefen`,
-  `zeigen`, e.g. `--als "Copilot (Claude Sonnet 4.5)"`, always the same string. Without a name, `thread`, `horchen` and
+  `zeigen` (`feedback` needs none but tolerates it), e.g. `--als "Copilot (Claude Sonnet 4.5)"`, always the same string. Without a name, `thread`, `horchen` and
   `kommentar` fail with "stell dich mit --als vor". Then repeat the call with `--als`.
 - In a review JSON (agent hints, see the mr-review skill and `docs/agent-hinweise.md` in the merge-train repo) put
   the same name in the top-level field `"agent"`.

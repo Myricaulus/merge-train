@@ -661,6 +661,7 @@ def agent_parser():
     p.add_argument("projekt", nargs="?", help="Projektordner, Name unter ~/Projects oder MR (Kennung/URL/gruppe/projekt!42); "
                                               "Standard: aktuelles Repo samt seinen MRs")
     p.add_argument("--alle", action="store_true", help="auch beantwortete Fäden zeigen")
+    p.add_argument("--als", help="wird ignoriert (feedback braucht keinen Namen), damit ein Agent es überall anhängen kann")
     p.set_defaults(aufruf=befehl_feedback)
     p = sub.add_parser("antworten", help="Gespräch: auf einen Faden antworten",
                        description=gespraech + "auf einen Faden antworten; der Nutzer sieht die Antwort sofort in merge-train")
