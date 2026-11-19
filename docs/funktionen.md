@@ -28,7 +28,7 @@ zusammen in einem Zug.
 - Erweitern: eine neue Quelle ist eine neue Klasse in `quellen.py` plus eine Waggon-Art, keine eigene Seite.
 - von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`): auf der Seite gewählt (Akte `zweige`) vor
   `[zweige.<projekt>]` vor `von`/`bis`. Fehlt ein Branch: `fehlende_zweige` (`git.py`), Waggon „⚠ fehlt“
-  (`stand_oder_fehlt`), nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).
+  (`stand_oder_fehlt`); ohne gemeinsamen Vorgänger (`ohne_basis`, z. B. nach einem Rebase ab der Wurzel) „⚠ keine Basis“, nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).
 - Waggon-Karte („▾“ am lokalen Waggon): Projektinfos, von/bis wählen. `projekt_einstellung`/`projekt_einstellen`
   (`quellen.py`), Route `api/projekt`, `karteOeffnen` in `web/zug.js`. Erweitern: weitere Projekt-Einstellungen dort
   und in der Akte, keine eigene Seite.

@@ -169,6 +169,15 @@ def diff_basis(wurzel, von, bis):
     return wip_sha(wurzel, von) or git(wurzel, "merge-base", von, bis).strip()
 
 
+def ohne_basis(wurzel, von=None, bis=None):
+    """True, wenn von und bis (Standard: die des Projekts) keinen gemeinsamen Vorgänger und keinen Teilstand haben,
+    z. B. nach einem Rebase ab der Wurzel, solange von noch auf der alten Historie steht: diff_basis ginge nicht."""
+    if not (von and bis):
+        von, bis = von_bis(projektname(wurzel))
+    return not wip_sha(wurzel, von) and git(wurzel, "merge-base", von, "HEAD" if bis == ARBEITSSTAND else bis,
+                                            check=False) is None
+
+
 def fehlende_zweige(wurzel, von=None, bis=None):
     """Welche von von/bis (Standard: die des Projekts) es im Klon nicht gibt."""
     if not (von and bis):

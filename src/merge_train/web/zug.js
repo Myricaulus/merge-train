@@ -266,7 +266,9 @@
             : null,
           d.fehlt.length
             ? el('div', {class: 'warn'}, '⚠ fehlt im Klon: ' + d.fehlt.join(', '))
-            : el(
+            : d.ohne_basis
+              ? el('div', {class: 'warn'}, `⚠ ${d.bis} und ${d.von} haben keinen gemeinsamen Vorgänger (Rebase?)`)
+              : el(
                 'div',
                 {},
                 el('span', {class: 'p'}, '+' + d.plus),

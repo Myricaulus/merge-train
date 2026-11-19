@@ -3,7 +3,7 @@ import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
-from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, kurzpfad, projekt_wurzel, statistik, wip_name,
+from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, ohne_basis, kurzpfad, projekt_wurzel, statistik, wip_name,
                   wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
@@ -125,15 +125,18 @@ def fertig(projekt, sha):
 
 
 def stand_oder_fehlt(wurzel):
-    """statistik; fehlt von oder bis im Klon, ein Waggon „⚠ fehlt“ – aufklappen und andere Zweige wählen."""
+    """statistik; fehlt von oder bis im Klon oder haben sie keinen gemeinsamen Vorgänger (ohne_basis), ein Waggon
+    „⚠ fehlt“ bzw. „⚠ keine Basis“ – aufklappen und andere Zweige wählen."""
     fehlt = fehlende_zweige(wurzel)
-    if not fehlt:
+    if not fehlt and not ohne_basis(wurzel):
         return statistik(wurzel)
     p = projektname(wurzel)
     von, bis = von_bis(p)
+    marke, titel = (("⚠ fehlt", f"{', '.join(fehlt)} fehlt im Klon") if fehlt else
+                    ("⚠ keine Basis", f"{bis} und {von} haben keinen gemeinsamen Vorgänger (Rebase?)"))
     return {"p": p, "datei": dateiname(p), "plus": 0, "minus": 0, "dateien": 0, "commits": 0, "todos": [],
-            "status": "fehlt", "sha": "", "zeile2": f"{bis} → {von}", "marke": "⚠ fehlt",
-            "titel": f"{p}: {', '.join(fehlt)} fehlt im Klon – ▾ zum Einstellen"}
+            "status": "fehlt", "sha": "", "zeile2": f"{bis} → {von}", "marke": marke,
+            "titel": f"{p}: {titel} – ▾ zum Einstellen"}
 
 
 def projekt_einstellung(projekt):
@@ -146,12 +149,13 @@ def projekt_einstellung(projekt):
     lokal = [r[len("refs/heads/"):] for r in refs if r.startswith("refs/heads/")]
     remote = [r[len("refs/remotes/"):] for r in refs if r.startswith("refs/remotes/") and not r.endswith("/HEAD")]
     fehlt = fehlende_zweige(wurzel)
+    basislos = not fehlt and ohne_basis(wurzel)
     info = {"p": projekt, "ordner": kurzpfad(wurzel), "von": von, "bis": bis, "standard": {"von": std_von, "bis": std_bis},
             "gewaehlt": bool(zweige_gewaehlt(projekt)), "lokal": lokal, "remote": remote, "fehlt": fehlt,
-            "ausgecheckt": (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(losgelöst)",
+            "ohne_basis": basislos, "ausgecheckt": (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(losgelöst)",
             "origin": (git(wurzel, "remote", "get-url", "origin", check=False) or "").strip(),
             "fertig": fertig_moeglich(projekt), "arbeitsstand": ARBEITSSTAND}
-    if not fehlt:
+    if not fehlt and not basislos:
         st = statistik(wurzel)
         info.update({k: st[k] for k in ("plus", "minus", "dateien", "commits")})
         letzter = (git(wurzel, "log", "-1", "--format=%h%x1f%cd%x1f%s", "--date=format:%d.%m. %H:%M",
