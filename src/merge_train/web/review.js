@@ -900,7 +900,10 @@
         el('label', {class: 'sofort', title: '„An Agent senden“ zeigt erst, was der Agent bekommt'}, haken, ' vor dem Senden zeigen'),
         el('button', {onclick: zu}, weiter ? 'abbrechen' : 'schließen'),
         weiter
-          ? el('button', {class: 'pd-senden', onclick: () => (zu(), weiter())}, 'senden')
+          ? el('button', {class: 'pd-senden', onclick: () => {
+              zu();
+              weiter();
+            }}, 'senden')
           : null
       )
     );
