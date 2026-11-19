@@ -3,7 +3,7 @@
 import json, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
-from .waggon import Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
+from .waggon import LOKAL_ART, MR_ART, MYRLING_ART, Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
 from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, ohne_basis, kurzpfad, projekt_wurzel, statistik, wip_name,
                   wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
@@ -233,14 +233,33 @@ def mr_wagen(akt=None):
 # GitHub-Quelle wäre eine weitere Klasse. Der Zug mischt die Waggons aller eingeschalteten Quellen. Eine Quelle weiß,
 # wo der Klon und Stand eines Waggons liegt (ort), baut seine Seite (seite), zählt ihre Waggons auf (wagen) und sagt
 # dem Agenten, was zu tun ist (prompt). Bringt sie Einträge von außen (Diskussionen), dann mit titel und logo: das
-# Symbol für „zuletzt von extern“ in den Listen (Stände: docs/funktionen.md). Was ein Waggon kann, steht am Waggon selbst (waggon.py).
+# Symbol für „zuletzt von extern“ in den Listen (Stände: docs/funktionen.md). Kennung, Seite, Dateiname und was ein
+# Waggon kann, stehen an seiner Art (art, waggon.py).
 
-class Lokal:
-    name, titel = "lokal", "lokal"
-    logo = None  # Logo (Datei in web/) für Einträge von außen („wer“ = extern); lokal gibt es kein außen
+class Quelle:
+    name = titel = art = None
+    logo = None  # Logo (Datei in web/) für Einträge von außen („wer“ = extern); ohne: kein außen
 
     def an(self):
-        return bool(KONF["lokal"])
+        return bool(KONF[self.name])
+
+    def ort(self, waggon):
+        """(Klon, Stand), wie ihn die Seite zuletzt gebaut hat (sonst neu)."""
+        struktur = struktur_laden(akte_lesen(waggon))
+        if struktur is None:
+            _, struktur = self.seite(waggon)
+        return struktur["ordner"], struktur["refs"]["head_sha"]
+
+    def waggon_von(self, p):
+        """Waggon zum Feld „p“ eines Wagens im Zug (wagen)."""
+        return Waggon.aus_id(p)
+
+
+class Lokal(Quelle):
+    name, titel, art = "lokal", "lokal", LOKAL_ART
+
+    def waggon_von(self, p):
+        return Waggon(lokal=p)  # p ist hier der Projektname, nicht die Kennung
 
     def ort(self, waggon):
         """(Klon, Stand), auf den sich Zeilen beziehen: der Branch bis des Projekts."""
@@ -272,6 +291,16 @@ class Lokal:
         repos = finde_repos(alle=True)
         with ThreadPoolExecutor(8) as ex:
             return lokal_wagen(list(ex.map(stand_oder_fehlt, repos)), {projektname(r): r for r in repos})
+
+    def stand_kurz(self, waggon, branch, head, wurzel):
+        """Für den Kopf von feedback: worauf sich die Fäden beziehen."""
+        return f"{branch}{' · Arbeitsstand' if von_bis(waggon.lokal)[1] == ARBEITSSTAND else ''} {head[:8]}"
+
+    def zeilen_stand(self, waggon, head):
+        """Für feedback: „Code-Zeilen beziehen sich auf …“ und was der Agent dort tun darf."""
+        bis = von_bis(waggon.lokal)[1]
+        return ("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, nicht committen." if bis == ARBEITSSTAND
+                else f"den aktuellen Stand von {bis}.")
 
     def prompt(self, waggon, wurzel):
         von, bis = von_bis(waggon.lokal)
@@ -320,19 +349,11 @@ def myrling_wagen(akt=None):
     return wagen
 
 
-class Myrling:
-    name, titel = "myrling", "Myrling"
-    logo = None
+class Myrling(Quelle):
+    name, titel, art = "myrling", "Myrling", MYRLING_ART
 
     def an(self):
-        return bool(KONF["myrling"]) and myrling.befehl_da()
-
-    def ort(self, waggon):
-        """(Klon, Stand) des Laufs, wie ihn die Seite zuletzt gebaut hat (sonst neu: fragt den Befehl)."""
-        struktur = struktur_laden(akte_lesen(waggon))
-        if struktur is None:
-            _, struktur = self.seite(waggon)
-        return struktur["ordner"], struktur["refs"]["head_sha"]
+        return super().an() and myrling.befehl_da()
 
     def ziel(self, waggon):
         """Ein Lauf hat keinen Zielbranch: jede Datei steht gegen ihre zuletzt angesehene Fassung."""
@@ -348,6 +369,13 @@ class Myrling:
     def wagen(self, akt=None):
         return myrling_wagen(akt)
 
+    def stand_kurz(self, waggon, branch, head, wurzel):
+        return f"Lauf {waggon.myrling} · Stand {head[:8]} · Repo {wurzel}"
+
+    def zeilen_stand(self, waggon, head):
+        return (f"den Stand {head[:8]} des Skripts; Änderungen im Repo committen, der Myrling führt erst die neu geprüfte "
+                "Fassung aus.")
+
     def prompt(self, waggon, wurzel):
         z = waggon.id
         return (f"In merge-train liegen Fragen des Nutzers zum Skript {waggon.myrling}, das der Myrling ausführen soll "
@@ -358,18 +386,9 @@ class Myrling:
                 f"`merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 
-class GitLab:
-    name, titel = "gitlab", "GitLab"
+class GitLab(Quelle):
+    name, titel, art = "gitlab", "GitLab", MR_ART
     logo = "gitlab.svg"
-    def an(self):
-        return bool(KONF["gitlab"])
-
-    def ort(self, waggon):
-        """(Klon, Stand) des MR, wie ihn die Seite zuletzt gebaut hat."""
-        struktur = struktur_laden(akte_lesen(waggon))
-        if struktur is None:
-            _, struktur = self.seite(waggon)
-        return struktur["ordner"], struktur["refs"]["head_sha"]
 
     def ziel(self, waggon):
         """Ref des Zielbranchs im Klon (origin/<target_branch>, wie mr_lokal ihn nimmt)."""
@@ -387,6 +406,12 @@ class GitLab:
     def wagen(self, akt=None):
         return mr_wagen(akt)
 
+    def stand_kurz(self, waggon, branch, head, wurzel):
+        return f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
+
+    def zeilen_stand(self, waggon, head):
+        return f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten)."
+
     def prompt(self, waggon, wurzel):
         z = waggon.id
         return (f"In merge-train liegen Fragen des Nutzers zum Merge-Request {waggon.name} (lokaler Klon: {wurzel}). "
@@ -401,8 +426,11 @@ LOKAL, MYRLING, GITLAB = Lokal(), Myrling(), GitLab()
 QUELLEN = (LOKAL, MYRLING, GITLAB)
 
 
+QUELLE_JE_ART = {q.art: q for q in QUELLEN}
+
+
 def quelle(waggon):
-    return LOKAL if waggon.lokal else MYRLING if waggon.myrling else GITLAB
+    return QUELLE_JE_ART[waggon.art]
 
 
 def extern_von(waggon):
@@ -427,6 +455,6 @@ def alle_wagen(akt=None):
             for w in q.wagen(akt):
                 w = dict(w, quelle=q.name)
                 if w.get("status") == "offen":  # Füllung aus den abgehakten Dateien (abhaken.py)
-                    w["fuellung"] = akte_lesen(Waggon(lokal=w["p"]) if q is LOKAL else Waggon.aus_id(w["p"])).get("fuellung")
+                    w["fuellung"] = akte_lesen(q.waggon_von(w["p"])).get("fuellung")
                 wagen.append(w)
     return wagen

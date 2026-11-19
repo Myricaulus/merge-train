@@ -47,15 +47,8 @@ from .einstellungen import DATEN, SPERRE, ersetzen, jetzt
 from contextlib import contextmanager
 
 def akte_datei(waggon):
-    return os.path.join(DATEN, AKTEN_ORDNER[waggon_art(waggon)], waggon.dateiname + ".json")
-
-
-def waggon_art(waggon):
-    """lokal | myrling | mr"""
-    return "lokal" if waggon.lokal else "myrling" if waggon.myrling else "mr"
-
-
-AKTEN_ORDNER = {"lokal": "lokal", "myrling": "myrling", "mr": "reviews"}
+    """Ordner je Art des Waggons (Art.ordner in waggon.py)."""
+    return os.path.join(DATEN, waggon.art.ordner, waggon.dateiname + ".json")
 
 
 def akte_laden(waggon, kaputte_beiseite=False):

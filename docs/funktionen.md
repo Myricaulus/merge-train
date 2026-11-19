@@ -24,9 +24,11 @@ abschaltbar, alle zusammen in einem Zug.
 - Achsen: Quelle (lokal, Myrling, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`, dazu
   `titel` und `logo` (Datei in `web/`, Route `logo/<name>.svg`): das Symbol für „wer = extern“, Pflicht für jede
   Quelle mit Einträgen von außen.
-- Ort: `quellen.py` (Klassen `Lokal`, `Myrling`, `GitLab`), `gitlab.py` (glab), `myrling.py` (Befehl des Myrlings),
-  `cli.py` (MR-Verweise). Waggon-Art: `Waggon.lokal` | `.myrling` | sonst MR (`ist_mr`), Akten-Ordner `AKTEN_ORDNER`.
-- Erweitern: eine neue Quelle ist eine neue Klasse in `quellen.py` plus eine Waggon-Art, keine eigene Seite.
+- Ort: `quellen.py` (Basis `Quelle`, Klassen `Lokal`, `Myrling`, `GitLab`; `quelle(waggon)`), `gitlab.py` (glab),
+  `myrling.py` (Befehl des Myrlings), `cli.py` (MR-Verweise). Waggon-Art (`Waggon.art`, `waggon.py`: Basis `Art`,
+  `LokalArt`, `MyrlingArt`, `MrArt` in `ARTEN`): Kennung, Seite, Dateiname, Akten-Ordner, `kann`.
+- Erweitern: eine neue Quelle ist eine Unterklasse von `Quelle` plus eine von `Art`, keine eigene Seite und keine
+  `if lokal`-Ketten.
 - von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`): auf der Seite gewählt (Akte `zweige`) vor
   `[zweige.<projekt>]` vor `von`/`bis`. Fehlt ein Branch: `fehlende_zweige` (`git.py`), Waggon „⚠ fehlt“
   (`stand_oder_fehlt`); ohne gemeinsamen Vorgänger (`ohne_basis`, z. B. nach einem Rebase ab der Wurzel) „⚠ keine Basis“, nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).

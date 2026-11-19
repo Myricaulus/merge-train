@@ -1,7 +1,7 @@
 """merge-train agent …: die Befehle für den Agenten (status, feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
 import argparse, hashlib, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden, projektname
+from .einstellungen import DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
 from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
@@ -202,10 +202,7 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
                     for m in k["nachrichten"]:
                         if m["von"] == "ich" and m.get("gesendet") and not m.get("abgeholt"):
                             m["abgeholt"] = jetzt()
-        bis = von_bis(waggon.lokal)[1] if waggon.lokal else None
-        wo = (f"{branch}{' · Arbeitsstand' if bis == ARBEITSSTAND else ''} {head[:8]}" if waggon.lokal else
-              f"Lauf {waggon.myrling} · Stand {head[:8]} · Repo {wurzel}" if waggon.myrling else
-              f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}")
+        wo = quelle(waggon).stand_kurz(waggon, branch, head, wurzel)
         kopf = (f'merge-train · {waggon.name} · {wo} · {sum(1 for k in faeden if faden_status(k) == "wartet")} '
                 f'Gespräch(e) warten auf Antwort' + (f', {len(faeden)} insgesamt' if alle else ""))
         if not zeigen:
@@ -221,12 +218,7 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
             except Fehler:
                 pass
         teile += [kopf, ""] + [faden_ausgeben(k, wurzel, head, review=review, waggon=waggon) + "\n" for k in zeigen]
-        teile.append("Code-Zeilen beziehen sich auf " + (
-            f"den Stand {head[:8]} des Skripts; Änderungen im Repo committen, der Myrling führt erst die neu geprüfte "
-            "Fassung aus." if waggon.myrling else
-            ("den Arbeitsstand (auch nicht Committetes); Wünsche dort umsetzen, "
-             "nicht committen." if bis == ARBEITSSTAND else f"den aktuellen Stand von {bis}.") if waggon.kann["committen"]
-            else f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten).") + "\n")
+        teile.append("Code-Zeilen beziehen sich auf " + quelle(waggon).zeilen_stand(waggon, head) + "\n")
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
         if any(waggon.kann["review"] for waggon in ziele):

@@ -39,6 +39,120 @@ def fertig_moeglich(projekt):
     return bis != ARBEITSSTAND and not von.startswith(("origin/", "refs/remotes/"))
 
 
+# ---- Arten von Waggons: was an der Art hängt und ohne Klon, Seite oder GitLab auskommt – Kennung, Seite, Dateiname,
+# Akten-Ordner, Fähigkeiten. Die Quelle dazu (Klon, Seite, Zug, Prompt) steht in quellen.py und nennt ihre Art
+# (Quelle.art). Eine neue Quelle (GitHub) bekommt hier eine weitere Art.
+
+class Art:
+    """Art mit einem Feld des Waggons als Schlüssel; Kennung „<praefix><schlüssel>“."""
+    feld = praefix = titel = None
+    ordner = None  # Akten-Ordner unter DATEN
+
+    def erkennt(self, d):
+        """Gehört der Waggon (als dict: Feld „mr“ einer Akte, Waggon._asdict()) zu dieser Art?"""
+        return bool(d.get(self.feld))
+
+    def erkennt_kennung(self, kennung):
+        return kennung.startswith(self.praefix)
+
+    def gueltig(self, name):
+        raise NotImplementedError
+
+    def aus_kennung(self, kennung):
+        name = kennung[len(self.praefix):]
+        if not self.gueltig(name):
+            raise Ungueltig(f"ungültige {self.titel}-Kennung: {kennung}")
+        return Waggon(**{self.feld: name})
+
+    def aus_dict(self, d):
+        return Waggon(**{self.feld: d[self.feld]})
+
+    def als_dict(self, w):
+        return {self.feld: getattr(w, self.feld)}
+
+    def id(self, w):
+        return self.praefix + getattr(w, self.feld)
+
+    def name(self, w):
+        return getattr(w, self.feld)
+
+
+class LokalArt(Art):
+    feld, praefix, titel, ordner = "lokal", "projekt:", "Projekt", "lokal"
+
+    def gueltig(self, name):
+        return name and not any(t in ("", ".", "..") for t in name.split("/"))
+
+    def url(self, w):
+        return "/" + dateiname(w.lokal)
+
+    def dateiname(self, w):
+        return dateiname(w.lokal)[:-5]
+
+    def kann(self, w):
+        return {"review": False, "fertig": fertig_moeglich(w.lokal), "committen": True}
+
+
+class MyrlingArt(Art):
+    """Myrling: der Agent im Repo des Skripts darf es ändern; die Entscheidung über den Lauf trifft der Nutzer."""
+    feld, praefix, titel, ordner = "myrling", "myrling:", "Myrling", "myrling"
+
+    def gueltig(self, name):
+        return re.fullmatch(r"[\w][\w.+-]*", name) and ".." not in name
+
+    def url(self, w):
+        return "/myrling/" + w.myrling
+
+    def dateiname(self, w):
+        return w.myrling
+
+    def kann(self, w):
+        return {"review": False, "fertig": False, "committen": True}
+
+
+class MrArt(Art):
+    """Merge-Request: alles, was keine andere Art erkennt; Kennung „host/gruppe/projekt/42“."""
+    titel, ordner = "MR", "reviews"
+
+    def erkennt(self, d):
+        return True
+
+    def erkennt_kennung(self, kennung):
+        return True
+
+    def aus_kennung(self, kennung):
+        teile = kennung.split("/")
+        if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
+           or any(t in ("", ".", "..") for t in teile[1:-1]):
+            raise Ungueltig(f"ungültige MR-Kennung: {kennung}")
+        return Waggon(host=teile[0], projekt="/".join(teile[1:-1]), iid=int(teile[-1]))
+
+    def aus_dict(self, d):
+        return Waggon(host=d["host"], projekt=d["projekt"], iid=d["iid"])
+
+    def als_dict(self, w):
+        return {"host": w.host, "projekt": w.projekt, "iid": w.iid}
+
+    def id(self, w):
+        return f"{w.host}/{w.projekt}/{w.iid}"
+
+    def name(self, w):
+        return f"{w.projekt}!{w.iid}"
+
+    def url(self, w):
+        return "/mr/" + self.id(w)
+
+    def dateiname(self, w):
+        return re.sub(r"[^\w.-]", "_", f"{w.host or 'gitlab'}_{w.projekt}_{w.iid}")
+
+    def kann(self, w):
+        return {"review": True, "fertig": False, "committen": False}
+
+
+LOKAL_ART, MYRLING_ART, MR_ART = LokalArt(), MyrlingArt(), MrArt()
+ARTEN = (LOKAL_ART, MYRLING_ART, MR_ART)  # in dieser Reihenfolge gefragt: MR_ART nimmt den Rest
+
+
 class Waggon(NamedTuple):
     lokal: Optional[str] = None    # Name des lokalen Projekts – oder der MR:
     host: Optional[str] = None     # None = Standardhost von glab
@@ -51,80 +165,45 @@ class Waggon(NamedTuple):
         """Kennung (wie sie die Seite und der Agent nennen) → Waggon. „projekt:name“ = lokales Projekt, sonst
         „myrling:skript“ = Lauf des Myrlings, sonst „host/gruppe/projekt/42“."""
         kennung = str(kennung)
-        if kennung.startswith("myrling:"):
-            name = kennung[len("myrling:"):]
-            if not re.fullmatch(r"[\w][\w.+-]*", name) or ".." in name:
-                raise Ungueltig(f"ungültige Myrling-Kennung: {kennung}")
-            return cls(myrling=name)
-        if kennung.startswith("projekt:"):
-            name = kennung[len("projekt:"):]
-            if not name or any(t in ("", ".", "..") for t in name.split("/")):
-                raise Ungueltig(f"ungültige Projekt-Kennung: {kennung}")
-            return cls(lokal=name)
-        teile = kennung.split("/")
-        if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
-           or any(t in ("", ".", "..") for t in teile[1:-1]):
-            raise Ungueltig(f"ungültige MR-Kennung: {kennung}")
-        return cls(host=teile[0], projekt="/".join(teile[1:-1]), iid=int(teile[-1]))
+        return next(a for a in ARTEN if a.erkennt_kennung(kennung)).aus_kennung(kennung)
 
     @classmethod
     def aus_dict(cls, d):
         """Aus dem Feld „mr“ einer Akte."""
-        if d.get("lokal"):
-            return cls(lokal=d["lokal"])
-        if d.get("myrling"):
-            return cls(myrling=d["myrling"])
-        return cls(host=d["host"], projekt=d["projekt"], iid=d["iid"])
+        return next(a for a in ARTEN if a.erkennt(d)).aus_dict(d)
+
+    @property
+    def art(self):
+        return next(a for a in ARTEN if a.erkennt(self._asdict()))
 
     def als_dict(self):
-        if self.lokal:
-            return {"lokal": self.lokal}
-        if self.myrling:
-            return {"myrling": self.myrling}
-        return {"host": self.host, "projekt": self.projekt, "iid": self.iid}
+        return self.art.als_dict(self)
 
     @property
     def ist_mr(self):
-        return not (self.lokal or self.myrling)
+        return self.art is MR_ART
 
     @property
     def id(self):
-        if self.lokal:
-            return "projekt:" + self.lokal
-        if self.myrling:
-            return "myrling:" + self.myrling
-        return f"{self.host}/{self.projekt}/{self.iid}"
+        return self.art.id(self)
 
     @property
     def name(self):
-        return self.lokal or self.myrling or f"{self.projekt}!{self.iid}"
+        return self.art.name(self)
 
     @property
     def url(self):
         """Pfad der Seite auf dem Server."""
-        if self.lokal:
-            return "/" + dateiname(self.lokal)
-        if self.myrling:
-            return "/myrling/" + self.myrling
-        return "/mr/" + self.id
+        return self.art.url(self)
 
     @property
     def dateiname(self):
         """Name (ohne Endung) für Dateien zu diesem Waggon."""
-        if self.lokal:
-            return dateiname(self.lokal)[:-5]
-        if self.myrling:
-            return self.myrling
-        return re.sub(r"[^\w.-]", "_", f"{self.host or 'gitlab'}_{self.projekt}_{self.iid}")
+        return self.art.dateiname(self)
 
     @property
     def kann(self):
         """review    – Review-Kommentare und Agent-Hinweise, „Review abschließen“ überträgt sie nach GitLab
         fertig    – „fertig ✓“ setzt den Ziel-Branch auf den gesehenen Stand
-        committen – der Agent darf Wünsche umsetzen und committen (sonst nur antworten)
-        Myrling: der Agent im Repo des Skripts darf es ändern; die Entscheidung über den Lauf trifft der Nutzer."""
-        if self.lokal:
-            return {"review": False, "fertig": fertig_moeglich(self.lokal), "committen": True}
-        if self.myrling:
-            return {"review": False, "fertig": False, "committen": True}
-        return {"review": True, "fertig": False, "committen": False}
+        committen – der Agent darf Wünsche umsetzen und committen (sonst nur antworten)"""
+        return self.art.kann(self)
