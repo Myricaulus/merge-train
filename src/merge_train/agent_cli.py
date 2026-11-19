@@ -62,7 +62,7 @@ def gespraech_ziele(name=None):
         raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
     ziele = [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
     echt = os.path.realpath(wurzel)
-    for waggon in alle_gespraeche():
+    for waggon in alle_gespraeche(leere=True):
         if not waggon.lokal:
             struktur = struktur_laden(akte_lesen(waggon))
             if struktur and os.path.realpath(struktur["ordner"]) == echt:

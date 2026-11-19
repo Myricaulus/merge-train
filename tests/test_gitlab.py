@@ -398,6 +398,16 @@ def mr_gespraech_test(mr, k, basis, struktur):
     i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
     vorher = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     pruefe(vorher["agenten"] == ["Claude", "Copilot"] and vorher["faeden"] == [], "MR-Gespräch: Claude (immer) und Agent aus [agenten] angeboten")
+    im_klon = subprocess.Popen([sys.executable, SKRIPT, "agent", "horchen", "--als", "Copilot", "--timeout", "3"], cwd=REPO,
+                               env=genv, stdout=subprocess.PIPE, text=True)
+    wer = None
+    for _ in range(25):
+        wer = json.loads(get(f"/api/review?mr={mr}&k={k}")).get("horcht")
+        if wer == "Copilot":
+            break
+        time.sleep(0.1)
+    im_klon.communicate(timeout=30)
+    pruefe(wer == "Copilot", "MR-Gespräch: horchen im Klon belauscht den MR schon vor dem ersten Faden")
     pruefe(vorher["hinweise"] and all(h["agent"] == "Claude" for h in vorher["hinweise"]),
            "Hinweise: JSON ohne agent → wer sie mit agent zeigen angemeldet hat (erkannt: Claude)")
     r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", datei=i_app, a=None, b=11, text="Was macht Zeile 11?"))

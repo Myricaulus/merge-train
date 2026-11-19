@@ -239,8 +239,9 @@ def gespraech_aktion(waggon, eingabe):
 
 # ---- Agent-Seite (CLI)
 
-def alle_gespraeche():
-    """Alle Gespräche (lokale Projekte und MRs) → Liste von Schlüsseln."""
+def alle_gespraeche(leere=False):
+    """Alle Gespräche (lokale Projekte und MRs) → Liste von Schlüsseln. MRs nur mit Faden, außer leere: auch die
+    noch ohne (horchen im Klon muss einen MR schon belauschen, bevor dort die erste Frage steht)."""
     out = []
     for unter in ("lokal", "reviews"):
         for p in glob.glob(os.path.join(DATEN, unter, "*.json")):
@@ -249,7 +250,7 @@ def alle_gespraeche():
             except (OSError, ValueError):
                 continue
             m = akte.get("mr") or {}
-            if m.get("lokal") or m.get("iid") and any(k.get("nachrichten") is not None for k in akte.get("kommentare") or []):
+            if m.get("lokal") or m.get("iid") and leere or m.get("iid") and any(k.get("nachrichten") is not None for k in akte.get("kommentare") or []):
                 out.append(Waggon.aus_dict(m))
     return out
 
