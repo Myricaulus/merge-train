@@ -213,7 +213,7 @@ zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren`, Aktio
 „⇡ pushen“, nach einem Rebase (lokal stand der Branch laut reflog auf dem GitLab-Stand) „⇡ force-push (with lease)“
 mit Lease auf den zuletzt geholten GitLab-Stand (`branch_pushen`, Aktion `pushen`, erst bestätigen); danach bzw. nach
 einem Push aus dem Terminal „gepusht“ mit „↻ MR-Daten“; auseinandergelaufen ohne Rebase: nur die Meldung. Beide
-Aktionen holen danach die MR-Daten (`mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
+Aktionen holen danach die MR-Daten (`branch_aktion` in `server.py`, `mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
 lädt offene Tabs neu (`neuLaden` in `web/review.js`). Den Klon liefert `lokale_klone` (`[repos]`, Akte `klon`, sonst
 `klon_suchen`: `<klon_ordner>/<projekt>`, wenn origin passt). Fehlt im Klon ein Branch des MR, holt `mr_lokal` origin einmal je Serverlauf. Beim ersten Besuch eines MR checkt `mr_auschecken` (`review.py`,
 im Hintergrund über `im_hintergrund` im Server) den Quell-Branch im Klon aus, wenn der Stand sauber ist

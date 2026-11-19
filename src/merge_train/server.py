@@ -505,34 +505,32 @@ def mr_daten_aktion(anfrage):
     return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
 
 
-def aktualisieren_aktion(anfrage):
-    """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren), dann
-    die MR-Daten holen – wurde inzwischen weiter gepusht, ist origin schon neuer als der zuletzt geholte GitLab-Stand,
-    und die Meldung bliebe sonst (ohne Knopf) stehen."""
+def branch_aktion(anfrage, tun):
+    """Knopf an der Stand-Meldung eines MR: tun(Klon, meta) am Quell-Branch, dann die MR-Daten holen."""
     mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
     meta = akte_lesen(mr).get("meta") or {}
     ordner, _ = mr_lokal(mr, meta)
-    text = branch_aktualisieren(ordner, meta.get("source_branch") or "")
-    try:  # der Branch ist schon nachgezogen: scheitert GitLab, trotzdem melden und neu laden
+    text = tun(ordner, meta)
+    try:  # der Branch ist schon geändert: scheitert GitLab, trotzdem melden und neu laden
         text += " · " + mr_daten_holen(mr)["text"]
     except Fehler as e:
         text += f" · MR-Daten nicht geholt: {e}"
     return {"ok": True, "text": text, "neu_laden": True}
+
+
+def aktualisieren_aktion(anfrage):
+    """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren), dann
+    die MR-Daten holen – wurde inzwischen weiter gepusht, ist origin schon neuer als der zuletzt geholte GitLab-Stand,
+    und die Meldung bliebe sonst (ohne Knopf) stehen."""
+    return branch_aktion(anfrage, lambda ordner, meta: branch_aktualisieren(ordner, meta.get("source_branch") or ""))
 
 
 def pushen_aktion(anfrage):
     """Meldung „lokal weiter / umgeschrieben“: Quell-Branch pushen (branch_pushen, umgeschrieben mit Lease auf den
     zuletzt geholten GitLab-Stand), dann die MR-Daten holen. Hat GitLab den Push noch nicht verarbeitet, sagt die
     Meldung danach „gepusht“ mit „↻ MR-Daten“."""
-    mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
-    meta = akte_lesen(mr).get("meta") or {}
-    ordner, _ = mr_lokal(mr, meta)
-    text = branch_pushen(ordner, meta.get("source_branch") or "", (meta.get("diff_refs") or {}).get("head_sha") or "")
-    try:
-        text += " · " + mr_daten_holen(mr)["text"]
-    except Fehler as e:
-        text += f" · MR-Daten nicht geholt: {e}"
-    return {"ok": True, "text": text, "neu_laden": True}
+    return branch_aktion(anfrage, lambda ordner, meta: branch_pushen(
+        ordner, meta.get("source_branch") or "", (meta.get("diff_refs") or {}).get("head_sha") or ""))
 
 
 GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion,
