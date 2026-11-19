@@ -93,8 +93,9 @@ class Browser:
 
 class Fall:
     """Ein Server mit einer Seite: mr = Kennung für die API, pfad = URL der Seite."""
-    def __init__(self, srv, mr, pfad, startet):
-        self.srv, self.mr, self.pfad, self.startet = srv, mr, pfad, startet
+    def __init__(self, srv, mr, pfad, startet, ziel):
+        """ziel: (Zielbranch, Datei, Zeile, Text dort) – eine Zeile, die im Stand der Seite anders lautet (siehe_ziel)."""
+        self.srv, self.mr, self.pfad, self.startet, self.ziel = srv, mr, pfad, startet, ziel
 
     def faeden(self):
         q = urllib.parse.urlencode({"mr": self.mr, "k": self.srv.schluessel})
@@ -127,7 +128,8 @@ def fall_lokal(t, port, agent=True):
         open(os.path.join(repo, f"viele_{i:02}.txt"), "w").write("".join(f"zeile {j}\n" for j in range(30)))
     git(repo, "add", "-A"); git(repo, "commit", "-qm", "viele Dateien")
     konfig = f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\n' + ('feedback_befehl = "true"\n' if agent else "")
-    return Fall(Server(ordner, repo, port, konfig), "projekt:probe", "/probe.html", agent)
+    return Fall(Server(ordner, repo, port, konfig), "projekt:probe", "/probe.html", agent,
+                ("reviewed", "README.md", 3, "Nur zum Vergleichen."))
 
 
 def fall_mr(t, port, agent=True):
@@ -149,7 +151,8 @@ def fall_mr(t, port, agent=True):
     srv = Server(ordner, repo, port, konfig, {"FAKE_GLAB_REPO": repo, "FAKE_GLAB_STATE": os.path.join(t, "glab")})
     subprocess.run([sys.executable, os.path.join(ordner, "merge-train"), "agent", "zeigen", hw, "--nicht-oeffnen"],
                    env=dict(srv.umgebung, MERGE_TRAIN_AGENT="Claude"), capture_output=True, check=True, cwd=repo)
-    return Fall(srv, "gitlab.example.com/gruppe/demo/1", "/mr/gitlab.example.com/gruppe/demo/1", agent)
+    return Fall(srv, "gitlab.example.com/gruppe/demo/1", "/mr/gitlab.example.com/gruppe/demo/1", agent,
+                ("main", "App.cs", 10, "// Zeile 10"))
 
 
 FAELLE = {"lokal": fall_lokal, "ohne": lambda t, port: fall_lokal(t, port, agent=False), "mr": fall_mr,
@@ -401,9 +404,33 @@ def teil_abmelden(b, f):
         ag.kill(); ag.wait(); shutil.rmtree(t, ignore_errors=True)
 
 
+def teil_siehe_ziel(b, f):
+    """Siehe auch mit @ziel (Datei aus dem Zielbranch): Link „… @<ziel>“, das Popup zeigt die Zeile von dort, der
+    Vergleich stellt den Stand der Seite dem Ziel gegenüber."""
+    ziel, pfad, zeile, dort = f.ziel
+    f.srv.agent("thread", "-p", f.mr.removeprefix("projekt:"), "--als", "Claude", "--ort", f"{pfad}:{zeile}",
+                "--siehe", f"{pfad}:{zeile}@ziel|auf dem Ziel", "--vergleich", pfad, f"{pfad}@ziel|gegen Ziel", "Wie steht es auf dem Ziel?")
+    seite(b, f)
+    finde = "[...document.querySelectorAll('.sa a')].find(a => a.textContent === '{}')"
+    b.warten_bis(finde.format(f"auf dem Ziel @{ziel}"))
+    b.js(finde.format(f"auf dem Ziel @{ziel}") + ".click()")
+    b.warten_bis("document.querySelector('#popup tr.ziel td.c')")
+    kopf, info, text = b.js("[document.querySelector('#popup .pk b').textContent, document.querySelector('#popup .pk .sub').textContent,"
+                            " document.querySelector('#popup tr.ziel td.c').textContent]")
+    assert kopf.endswith(f"{pfad}:{zeile} @{ziel}") and f"Stand {ziel} " in info, (kopf, info)
+    assert text == dort, f"Popup zeigt nicht die Zeile vom Ziel: {text!r}"
+    b.js("document.querySelector('#popup .pk button[title^=\"schließen\"]').click()")
+    b.js(finde.format(f"⇄ gegen Ziel @{ziel}") + ".click()")
+    b.warten_bis("document.querySelector('#popup.vergleich .vkopf')")
+    b.warten_bis("!document.querySelector('#popup .pk .sub').textContent.includes('lädt')")
+    kopf, info = b.js("[document.querySelector('#popup .vkopf').textContent, document.querySelector('#popup .pk .sub').textContent]")
+    assert kopf.endswith(f"{pfad} @{ziel}") and "Unterschied" in info, (kopf, info)
+    b.js("document.querySelector('#popup .pk button[title^=\"schließen\"]').click()")
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
-         "abmelden": teil_abmelden}
+         "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel}
 
 
 def main():
