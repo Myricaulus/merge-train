@@ -2,7 +2,8 @@
 
 Wozu: Vor einer neuen Änderung hier nachsehen, ob es das Gesuchte als Funktion oder Baustein schon gibt. Wenn ja, dieses
 erweitern (neue Variante, neuer Fall), statt daneben etwas Zweites zu bauen. Jede Funktion nennt ihre **Achsen** (wo
-Varianten dazukommen) und ihren **Ort** im Code. Einzelheiten stehen im README, in `docs/` und oben in jedem Modul.
+Varianten dazukommen) und ihren **Ort** im Code. Wie sie sich im Einzelnen verhält, steht im Docstring der genannten
+Funktion, oben im Modul, im README und in `docs/`.
 
 Beim Ändern mitpflegen: Eine neue Funktion bekommt hier einen Eintrag, eine neue Variante nur ein Wort in ihrer Achse.
 
@@ -19,226 +20,157 @@ Beim Ändern mitpflegen: Eine neue Funktion bekommt hier einen Eintrag, eine neu
 ## Funktionen
 
 ### 1. Mehrere Quellen für Waggons
-Lokale Branches (`bis` gegen `von` in jedem Repo unter `projekte`), Läufe des Myrlings und GitLab-MRs. Einzeln an- und
-abschaltbar, alle zusammen in einem Zug.
-- Achsen: Quelle (lokal, Myrling, GitLab; geplant GitHub). Je Quelle: `an`, `ort`, `seite`, `branch`, `wagen`, `prompt`, dazu
-  `titel` und `logo` (Datei in `web/`, Route `logo/<name>.svg`): das Symbol für „wer = extern“, Pflicht für jede
-  Quelle mit Einträgen von außen.
-- Ort: `quellen.py` (Basis `Quelle`, Klassen `Lokal`, `Myrling`, `GitLab`; `quelle(waggon)`), `gitlab.py` (glab),
-  `myrling.py` (Befehl des Myrlings), `cli.py` (MR-Verweise). Waggon-Art (`Waggon.art`, `waggon.py`: Basis `Art`,
-  `LokalArt`, `MyrlingArt`, `MrArt` in `ARTEN`): Kennung, Seite, Dateiname, Akten-Ordner, `kann`.
+Lokale Branches (`bis` gegen `von` in jedem Repo unter `projekte`), Läufe des Myrlings und GitLab-MRs, einzeln
+abschaltbar, alle in einem Zug.
+- Achsen: Quelle (lokal, Myrling, GitLab; geplant GitHub). Je Quelle (Basis `Quelle`): `an`, `ort`, `ziel`, `seite`,
+  `branch`, `wagen`, `prompt`, `stand_kurz`/`zeilen_stand` (Kopf von feedback), `waggon_von`, dazu `titel` und `logo`
+  (Datei in `web/`, Route `logo/<name>.svg`; Pflicht für jede Quelle mit Einträgen von außen). Je Waggon-Art (Basis
+  `Art`): Kennung, Seite, Dateiname, Akten-Ordner, `kann`.
+- Ort: `quellen.py` (`Lokal`, `Myrling`, `GitLab`, `quelle(waggon)`), `waggon.py` (`LokalArt`, `MyrlingArt`, `MrArt`
+  in `ARTEN`, `Waggon.art`), `gitlab.py` (glab), `myrling.py` (Befehl des Myrlings, Vertrag oben im Modul), `cli.py`
+  (MR-Verweise).
 - Erweitern: eine neue Quelle ist eine Unterklasse von `Quelle` plus eine von `Art`, keine eigene Seite und keine
   `if lokal`-Ketten.
-- von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`): auf der Seite gewählt (Akte `zweige`) vor
-  `[zweige.<projekt>]` vor `von`/`bis`. Fehlt ein Branch: `fehlende_zweige` (`git.py`), Waggon „⚠ fehlt“
-  (`stand_oder_fehlt`); ohne gemeinsamen Vorgänger (`ohne_basis`, z. B. nach einem Rebase ab der Wurzel) „⚠ keine Basis“, nur für ausdrücklich gemeinte Repos (`finde_repos(alle=True)`).
-- Myrling: Skripte, die der Myrling ausführen soll und die auf eine Prüfung warten (heute nas-lauf, `myrling_befehl`
-  mit `--anstehend --json`; Vertrag oben in `myrling.py`). Ein Waggon je Skript, Kennung `myrling:<skript>`, Seite
-  `/myrling/<skript>`. Jede Datei hat ihre eigene Vergleichsbasis: `lauf_ort` baut daraus einen Basis-Commit
-  (`stand_mit` in `git.py`: Baum des Stands, jede Datei auf ihrer Basis, kein Ref), damit Diff, Kontext und Fäden wie
-  bei den anderen Quellen laufen. Die Liste kostet etwa 1 s: `zug.js` holt sie im Hintergrund (`im_hintergrund_holen`,
-  die Seite fragt mit `api/zug?warten=1` nach), die Seite eines Laufs frisch (`FRISCH`). Fäden hängen am Skript
-  (`branch` = „myrling“) und wandern über neue Fassungen mit. Begleitdateien aus anderen Repos zeigt der Waggon noch
-  nicht (Warnung „Fehlt im Diff“). Attrappe für die Tests: `tests/fake-nas-lauf`.
-- Waggon-Karte („▾“ am lokalen Waggon): Projektinfos, von/bis wählen. `projekt_einstellung`/`projekt_einstellen`
-  (`quellen.py`), Route `api/projekt`, `karteOeffnen` in `web/zug.js`. Erweitern: weitere Projekt-Einstellungen dort
-  und in der Akte, keine eigene Seite.
+- von/bis eines lokalen Projekts nur über `von_bis(projekt)` (`waggon.py`). Fehlt ein Branch oder ein gemeinsamer
+  Vorgänger: `stand_oder_fehlt` (`fehlende_zweige`, `ohne_basis`).
+- Myrling: ein Waggon je Skript, das auf eine Prüfung wartet (`myrling_befehl`). Jede Datei steht gegen ihre eigene
+  Basis: `lauf_ort` baut daraus einen Basis-Commit (`stand_mit`), damit Diff, Kontext und Fäden wie bei den anderen
+  Quellen laufen. Die Liste holt `zug.js` im Hintergrund (`im_hintergrund_holen`). Begleitdateien aus anderen Repos
+  („Fehlt im Diff“): siehe 7, `inhalt`. Attrappe: `tests/fake-nas-lauf`.
+- Waggon-Karte („▾“ am lokalen Waggon): `projekt_einstellung`/`projekt_einstellen` (`quellen.py`), Route
+  `api/projekt`, `karteOeffnen` (`web/zug.js`). Erweitern: weitere Projekt-Einstellungen dort und in der Akte.
 
 ### 2. Fähigkeiten je Waggon (`kann`)
-Was ein Waggon darf, bestimmt seine Quelle: `review` (Kommentare nach GitLab), `fertig` (Ziel-Branch setzen),
-`committen` (Agent darf umsetzen statt nur antworten).
+`review` (Kommentare nach GitLab), `fertig` (Ziel-Branch setzen), `committen` (Agent darf umsetzen statt nur antworten).
 - Achsen: Fähigkeit.
-- Ort: `Waggon.kann` (`waggon.py`), in JS `App.kann`.
-- Erweitern: Neues Verhalten, das nur manche Waggons haben, als weitere Fähigkeit hier eintragen, nicht über
-  `if lokal` an vielen Stellen.
+- Ort: `Art.kann` (`waggon.py`), in JS `App.kann`.
+- Erweitern: Verhalten, das nur manche Waggons haben, als weitere Fähigkeit, nicht über `if lokal` an vielen Stellen.
 
 ### 3. Vergleichs-Modi (was gegen was)
-- lokal: Branch `bis` gegen `von` (Standard `claude` → `reviewed`)
-- Arbeitsstand: `bis = "arbeitsstand"`, auch nicht Committetes, ohne Index oder Branch anzufassen
-- MR: Quell-Branch gegen den gemeinsamen Vorgänger mit dem Ziel-Branch
-- Myrling: jede Datei des Laufs gegen ihre zuletzt angesehene Fassung (direkt, nicht über den gemeinsamen Vorgänger)
-- Beobachten: eigene Instanz je Repo/Worktree, live (siehe 16)
+lokal (`bis` gegen `von`, Standard `claude` → `reviewed`), Arbeitsstand (`bis = "arbeitsstand"`, auch nicht Committetes),
+MR (Quell-Branch gegen den gemeinsamen Vorgänger mit dem Ziel), Myrling (jede Datei gegen ihre zuletzt angesehene
+Fassung), Beobachten (siehe 16).
 - Achsen: `von`/`bis` in der Einstellung, Quelle.
-- Ort: `einstellungen.py` (`VON`, `BIS`, `ARBEITSSTAND`), `git.py` (`arbeitsstand`, `stand_mit`; eigene Commit-Objekte
-  mit `eigener_commit_env`), `Quelle.ort`.
+- Ort: `einstellungen.py` (`VON`, `BIS`, `ARBEITSSTAND`), `git.py` (`arbeitsstand`, `stand_mit`, `eigener_commit_env`),
+  `Quelle.ort`.
 
 ### 4. Diff-Seite (gemeinsam für alle Quellen)
-Eine Seite für jeden Waggon: Diff immer aus dem lokalen Git (nie aus der GitLab-API), Syntaxfarben, geänderte Wörter
-hervorgehoben, nebeneinander oder inline, Dateiliste, Tasten (j/k, i, z, c), Datei abhaken.
-- Datei abhaken: ☐ im Dateikopf, klappt zu und streicht in der Liste durch. Der Haken gilt je Stand der Datei
-  (Blob in bis), ein neuer Stand nimmt ihn weg. Gespeichert in der Akte (`abgehakt`), daraus die Füllung des
-  Waggons (`fuellung`: Zeilen der abgehakten Dateien / alle, je Datei mindestens `MINDEST`), im Zug als Schüttgut im
-  Kasten. „fertig“ und „abgeben“ (Abschnitt 15) räumen die Haken weg.
-  Ort: `abhaken.py` (`abhaken`, `datei_staende`, `haken_weg`), Route `api/abgehakt` (GET beim Laden, POST je
-  Haken), `web/diff.js`, `alle_wagen` (Füllung je Waggon), `App.wagenFuellen` (`zug.js`).
-- Dateien filtern: im Titel der Dateiliste das Häkchen „abgehakte“ (eingeblendet klappen sie auf) und das Klappmenü
-  „Filter ▾“ mit einem Häkchen je Endung (mit Anzahl); Ausgefiltertes verschwindet aus Liste und Diff (`ausgefiltert`),
-  je Waggon im Browser (`filter:dateien:<id>`); j/k und die
-  aktive Datei überspringen Ausgefiltertes, ein Sprung zu einer ausgefilterten Datei zeigt sie (`App.aufdecken`).
-  Ort: `dateienFiltern` (`web/navigation.js`), nach dem Abhaken aus `hakenSetzen` (`web/diff.js`).
+Diff immer aus dem lokalen Git (nie aus der GitLab-API), Syntaxfarben, geänderte Wörter, nebeneinander oder inline,
+Dateiliste, Tasten (j/k, i, z, c), Kontext nachladen (auch dort kommentierbar), große und generierte Dateien erst auf
+Klick.
+- Datei abhaken (je Stand der Datei, daraus die Füllung des Waggons): `abhaken.py` (`abhaken`, `datei_staende`,
+  `haken_weg`, `MINDEST`), Route `api/abgehakt`, `alle_wagen`, `App.wagenFuellen` (`zug.js`).
+- Dateien filtern (abgehakte, je Endung): `dateienFiltern`, `ausgefiltert`, `App.aufdecken` (`web/navigation.js`).
   Erweitern: Gruppen (etwa FE/BE nach Endungen) als weitere Zeilen im Menü.
-- Kontext zwischen Hunks nachladen (▼ 20 / ▲ 20 / alle), auch dort kommentierbar.
-- Boxen (Kommentare, Hinweise, Fäden) unter ihrer Zeile: inline über die ganze Breite, nebeneinander auf der Seite ihres
-  Orts (neue Zeile rechts, nur alte links), `einfuegen` (`web/review.js`). Eine Box mit offenem Eingabefeld zeichnet
-  `zeichnen` nicht neu; `feldMitnehmen` verschiebt sie beim Umschalten (i) samt Text in die sichtbare Tabelle. Neue,
-  leere Felder gehen bei einem Klick außerhalb ihres Rahmens zu.
-- Große und generierte Dateien erst auf Klick, automatisch, wenn ein Kommentar darin liegt.
+- Boxen (Kommentare, Hinweise, Fäden) unter ihrer Zeile: `einfuegen`, `feldMitnehmen` (`web/review.js`).
 - Achsen: Dateiart (generiert/groß), Darstellung (nebeneinander/inline).
 - Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/navigation.js`, `web/diff.js`; Routen `api/zeilen`, `api/datei`.
 
 ### 5. Ansichten eines Waggons
-`alles` (Standard), `commit:<sha>` (nur dieser Commit, nur lesen), `seit:<sha>` (alles seit dem Commit, rechts
-kommentierbar). Kommentare, Hinweise und Fäden gehören immer zum ganzen Vergleich und werden in die Ansicht
-umgerechnet; wo das nicht geht, stehen sie unter dem Dateinamen mit Grund.
+`alles` (Standard), `commit:<sha>` (nur lesen), `seit:<sha>` (rechts kommentierbar). Kommentare, Hinweise und Fäden
+gehören zum ganzen Vergleich und werden in die Ansicht umgerechnet.
 - Achsen: Ansicht.
 - Ort: `ansichten.py`, `ansicht_zuordnen` (`review.py`), `nurLesen`/`seitAnsicht` in `web/diff.js`.
 - Erweitern: eine neue Sicht auf denselben Vergleich (z. B. ohne main-Merges) ist eine weitere Ansicht.
 
 ### 6. Zeilen umrechnen (alt ↔ neu, Stand ↔ Stand)
-Ordnet Zeilen zwischen alter und neuer Seite eines Diffs und zwischen zwei Ständen zu. Darauf beruhen: Fäden wandern
-nach neuen Commits mit, Kommentare in Commit-Ansichten, fremde GitLab-Diskussionen auf dem Stand der Seite.
-- Ort: `zeilen.py` (`alt_zeile`, `im_diff`, `zeile_vorwaerts`, `bereich_vorwaerts`, `paare_und_hunks`).
+Darauf beruhen: Fäden wandern nach neuen Commits mit, Kommentare in Commit-Ansichten, fremde GitLab-Diskussionen.
+- Ort: `zeilen.py` (`alt_zeile`, `im_diff`, `zeile_vorwaerts`, `bereich_vorwaerts`, `bereich_anfang_vorwaerts`,
+  `paare_und_hunks`).
 - Erweitern: Jede neue „gehört diese Zeile noch hierher?“-Frage geht über diese Funktionen.
 
 ### 7. Code-Verweise und Popup
-`pfad`, `pfad:zeile`, `pfad:von-bis`, Siehe-auch-Einträge und Dateivergleiche (⇄) öffnen ein Popup: Diff der Datei,
-wenn sie im Diff liegt, sonst den Inhalt. Dateivergleich zeigt zwei Dateien nebeneinander, ganz oder je einen Bereich.
-Zeilenangaben der Agent-Hinweise werden von `reviewed_commit` auf den MR-Stand umgerechnet, Änderungen im Bereich als
-`warnung` (⚠) gemeldet.
+`pfad`, `pfad:zeile`, `pfad:von-bis`, Siehe-auch und Dateivergleiche (⇄) öffnen ein Popup: Diff der Datei, wenn sie im
+Diff liegt, sonst den Inhalt. Zeilen der Agent-Hinweise werden von `reviewed_commit` auf den MR-Stand umgerechnet,
+Änderungen im Bereich als `warnung` (⚠).
 - Achsen: Verweisart (Zeile, Bereich, needle, Vergleich, Bereichsvergleich), Herkunft (Agent-Hinweis, Nachricht, Thread
-  des Agenten), Stand (MR-Stand, `"ref"`/`@ref`: Zielbranch, Merge-Basis, beliebiger Ref – `stand_waehlen`; Zielbranch aus
+  des Agenten), Stand (MR-Stand, `"ref"`/`@ref`: Zielbranch, Merge-Basis, beliebiger Ref – `stand_waehlen`, Ziel aus
   `refs["ziel"]` bzw. `Quelle.ziel`), Repo (Hauptrepo, Submodul).
-- Dateien aus einem anderen Repo-Stand: `inhalt` (`git.py`) liest Pfade unter einem Gitlink aus dem Submodul
-  (`submodul_stelle`), `fehlt_grund` sagt, warum eine Datei fehlt (Stand, Submodul nicht ausgecheckt, Submodul-Stand
-  nicht geholt). Begleitdateien eines Myrling-Laufs aus anderen Repos (heute „Fehlt im Diff“) brauchen dasselbe für
-  ein Repo, das kein Submodul ist: dann hier erweitern statt daneben bauen.
+- Dateien aus einem anderen Stand oder Submodul: `inhalt` (`submodul_stelle`), `fehlt_grund` (`git.py`). Erweitern:
+  Begleitdateien eines Myrling-Laufs aus einem Repo, das kein Submodul ist, hier anschließen statt daneben bauen.
 - Ort: `ort_lesen`, `ort_mitziehen`, `see_also_aufloesen`, `stand_waehlen`, `needle_anderswo` (`hinweise.py`),
   `code_links` (`gespraech.py`), `vergleich_daten`, `zeilen_daten` (`review.py`, beide mit anderem Stand),
   `popup`/`sieheAuch`/`ortLink`/`vergleich` in `web/diff.js`; Routen `api/zeilen` (`sha`), `api/vergleich` (`b_sha`).
 
 ### 8. Gespräch mit Agenten (Fäden an Zeilen)
-Fragen und Wünsche an einer Zeile oder allgemein; erst Entwurf, dann „senden“; Antworten, erledigen, wieder öffnen.
-Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleich).
-- Modi: lokal (Agent darf umsetzen und committen bzw. im Arbeitsstand ändern) und MR (privat, nie nach GitLab, nur
-  antworten). Claude ist immer fragbar (auch im MR ohne Zuhörer, `gespraech_agenten`), weitere Agenten (Copilot …) über `[agenten]`.
-- Fäden gehören zum Branch; andere Branches nur lesend einblendbar.
-- Ort eines Fadens: eine Zeile oder ein Bereich ab–b der neuen Seite (Umschalt-Klick, `thread --ort pfad:von-bis`); der
-  Anfang wandert mit `bereich_anfang_vorwaerts` (`zeilen.py`) mit, markiert von `bereichMarkieren` (`web/review.js`).
-- Ort eines Fadens auch: ein GitLab-Kommentar (`zu` = `k:<id>` | `h:<key>`, „💬 an Agent“ an Kommentar/Hinweis): der
-  Faden steht in dessen Box (`angehaengt`, `zuSchluessel` in `web/review.js`), Ort aus `faden_zu` (`gespraech.py`);
-  `feedback` zeigt den Kommentar als Ziel (`faden_ziel`), `agent kommentar <Faden-id>` ändert ihn und erledigt den Faden
-  (`faden_nach_kommentar`, `agent_cli.py`).
-- Wer schreibt: `agent_name` (`agent_cli.py`): `--als`, `MERGE_TRAIN_AGENT`, erkannt aus der Umgebung (`AI_AGENT`,
-  `AGENT_UMGEBUNG`), sonst Fehler (`VORSTELLEN`). Neue Harnesses dort eintragen.
-- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich, GitLab-Kommentar, allgemein).
-- Einstieg des Agenten nach einer Entwicklung: `merge-train status` (`status_ausgeben`, `agent_cli.py`): Branch,
-  Änderungen gegen von (`statistik`), offene Fäden des Branches je eine Zeile (`faden_zeile`, auch die des MR dieses
-  Branches) und nur die Befehle, die jetzt Sinn ergeben (anhängen nur bei offenen Fäden, feedback nur, wenn etwas
-  wartet; Zusammenfassung an den offenen allgemeinen). MRs anderer Branches im Klon bleiben draußen. Liest nur.
-  Review statt Entwicklung (`review_ziel`): `status <MR>` oder im Klon auf dem Quell-Branch eines MR, dessen Autor
-  ich nicht bin (`eigener_mr`, aus der MR-Liste) – `status_review`: Klon auf dem MR-Stand?, Review-JSON, was am MR
-  schon kommentiert ist, Fäden, `thread -p <MR>`. Dieselbe Wahl trifft `thread` ohne `-p`.
-  Ganz oben, nur wenn etwas nicht stimmt, die Einrichtung (`einrichtung_teile`): Einstellung (`konfig_maengel` in
-  `einstellungen.py`: unbekannte Schlüssel, falscher Typ, fehlender Ordner unter projekte), fehlende von/bis im Klon
-  (`fehlende_zweige`, nur Entwicklung), im merge-train-Klon selbst fehlende Git-Hooks (`fehlende_hooks`, `HOOKS` wie
-  `install.idem.sh` sie schreibt). Erweitern: eine neue Prüfung ist eine Zeile in `einrichtung_teile`.
-  `thread` nennt einen offenen Faden an derselben Stelle, den es schon gab; `antworten` nimmt wie `thread`
-  `--siehe`/`--vergleich` (`siehe_eintrag`) und hängt sie an den Faden.
+Fragen und Wünsche an einer Zeile, einem Bereich, einem GitLab-Kommentar oder allgemein; erst Entwurf, dann „senden“.
+Der Agent holt ab, antwortet und legt eigene Threads an (mit Siehe-auch und Vergleich). Fäden gehören zum Branch.
+- Modi: lokal (Agent darf umsetzen) und MR (privat, nie nach GitLab, nur antworten). Claude ist immer fragbar
+  (`gespraech_agenten`), weitere Agenten über `[agenten]`.
+- Ort eines Fadens: Bereich ab–b (`bereich_anfang_vorwaerts`, `bereichMarkieren` in `web/review.js`); GitLab-Kommentar
+  (`zu` = `k:<id>` | `h:<key>`: `faden_zu`, `faden_ziel`, `faden_nach_kommentar`; `angehaengt`, `zuSchluessel`).
+- Wer schreibt: `agent_name` (`agent_cli.py`, Umgebung `AGENT_UMGEBUNG`, sonst `VORSTELLEN`). Neue Harnesses dort.
+- Einstieg des Agenten: `merge-train status` (`status_ausgeben`): Entwicklung oder Review (`review_ziel`,
+  `eigener_mr`, `status_review`); ganz oben, was an der Einrichtung nicht stimmt (`einrichtung_teile`: `konfig_maengel`,
+  `fehlende_zweige`, `fehlende_hooks`/`HOOKS`). Erweitern: eine neue Prüfung ist eine Zeile in `einrichtung_teile`.
+  `thread` und `antworten` nehmen `--siehe`/`--vergleich` (`siehe_eintrag`); Faden-Zeilen: `faden_zeile`.
+- Achsen: Quelle (über `kann.committen` und `Quelle.prompt`), Agent, Faden-Aktion, Ort (Zeile, Bereich,
+  GitLab-Kommentar, allgemein).
 - Befehlsübersicht für Agenten: `completions/merge-train.fish` (eine Zeile je Befehl, der Skill verweist darauf).
 - Ort: `gespraech.py`, `agent_cli.py` (`status`, `feedback`, `antworten`, `thread`), Route `api/gespraech`, `web/review.js`.
 
 ### 9. Wer hört zu / Agent benachrichtigen
-Eine Session wartet mit `agent horchen` (bzw. `agent feedback --horchen`: erst was schon wartet); sonst startet „senden“ einen Befehl: `todo`-Eintrag, `feedback_befehl` oder
-der Startbefehl aus `[agenten]`. Zeigt im HUD, wer horcht (`horcht`), auf dem Waggondach, wer zuhört und was er tut (`zuhoerer`:
-hoert, arbeitet = letzte Nachricht im Transcript ist keine fertige Antwort; wartet sie im Terminal, nichts), und den
-Kontext-Füllstand der Claude-Session (Fenster 1M, sobald sie je über 200k lag; beides aus `transcript_stand`).
-Die Emojis wechselt ein Takt in `zug.js` (`hoererZeichen`), der Zug fragt `api/zuhoerer` alle 5 s.
-Welchen Weg „senden“ nimmt, entscheidet `zustellweg`. Was beim Agenten ankam (Ausgabe von horchen/feedback,
-Startprompt), merkt sich `prompt_merken` in `<akte>.prompt` (die letzten 5, nicht in der Akte). „📨“ zeigt das, mit
-„vor dem Senden zeigen“ (`localStorage.promptVorher`) zeigt „senden“ erst `prompt_vorschau` (horchen: `faeden_abholen`
-mit `vorschau`, Entwürfe als gesendet, nichts gespeichert; davor der Startprompt, wenn „senden“ startet oder ein todo
-anlegt) – auch ohne Agent. „📨“ zeigt davor, was gesendet, aber noch nicht abgeholt ist. Dialog: `promptDialog`
-(`web/review.js`).
-Zuhören endet still (`horchen_still`, `agent_cli.py`): Seite zu, „🎧 ✕“ (`zuhoerer_abmelden`, Aktion `abmelden`)
-oder von einem neuen Zuhörer abgelöst. Die `.horcht`-Dateien sind weg, `horchen` gibt nichts aus und endet erst mit der
-Session, denn sein Ende weckt den Agenten (Request). Ziele: das Repo samt seinen MRs, auch MRs ohne Faden
-(`alle_gespraeche(leere=True)`).
+Eine Session wartet mit `agent horchen`; sonst startet „senden“ einen Befehl (`[agenten]`, `feedback_befehl`) oder legt
+einen todo-Eintrag an (`zustellweg`). HUD und Waggondach zeigen, wer zuhört, was er tut und den Kontext-Füllstand.
+„📨“ zeigt, was zuletzt beim Agenten ankam, auf Wunsch vor dem Senden eine Vorschau. Zuhören kann still enden
+(`horchen_still`).
 - Achsen: Zustellweg (horchen, todo, eigener Befehl), Agent, Tätigkeit (hoert, arbeitet), Prompt (vorher, zuletzt),
   Ende (Nachricht, Session weg, Zeit, still).
-- Ort: `zuhoerer.py` (`zuhoerer`, `agent_sitzung`, `zustellweg`, `prompt_merken`), `entwuerfe_senden` (`akte.py`,
-  senden und Vorschau), `agent_cli.py` (`horchen`),
-  Route `api/gespraech` (`vorschau`, `prompt`), `web/hud.js`, `web/zug.js`, `web/review.js`.
+- Ort: `zuhoerer.py` (`zuhoerer`, `horcht`, `agent_sitzung`, `transcript_stand`, `zustellweg`, `benachrichtigen`,
+  `prompt_merken`, `prompt_vorschau`, `zuhoerer_abmelden`), `entwuerfe_senden` (`akte.py`), `agent_cli.py` (`horchen`,
+  `faeden_abholen`, Ziele aus `alle_gespraeche(leere=True)`), Route `api/gespraech` (`vorschau`, `prompt`,
+  `abmelden`), `web/hud.js`, `web/zug.js` (`hoererZeichen`), `promptDialog` (`web/review.js`).
 - Erweitern: ein neuer Zustellweg kommt in `benachrichtigen`/`feedback_senden`, nicht in die Seite.
 
 ### 10. GitLab-Review
-Eigene Kommentare an Zeilen oder allgemein, bearbeiten, löschen, Reihenfolge (sortieren, ⤒/⤓). „Review abschließen“
-gleicht mit GitLab ab und legt Draft-Notes an, aktualisiert oder löscht sie, ohne Duplikate. Mit „☑ direkt
-veröffentlichen“ (Standard, im Browser gemerkt) danach `draft_notes/bulk_publish` und gleich `mr_gitlab_holen`: die
-Kommentare stehen dann als Diskussionen da. Ohne: sie bleiben Entwürfe in GitLab (Stand `gitlab_entwurf`). Zeilen
-außerhalb des Diffs: erst Zeilen-Kommentar, sonst allgemeiner mit Link. Zuletzt setzt das Urteil (Split-Knopf „▾“,
-`URTEILE`/`urteil_senden`) „genehmigen“ (REST `approve`) bzw. „ändern lassen“ (GraphQL `mergeRequestRequestChanges`);
-mit Urteil geht Abschließen auch ohne Kommentare, das Urteil gilt nur für ein Abschließen.
+Eigene Kommentare an Zeilen oder allgemein, bearbeiten, löschen, Reihenfolge. „Review abschließen“ gleicht mit
+GitLab ab (Draft-Notes anlegen, aktualisieren, löschen, ohne Duplikate), veröffentlicht sie auf Wunsch gleich
+(`draft_notes/bulk_publish`, danach `mr_gitlab_holen`) und setzt zuletzt das Urteil (genehmigen, ändern lassen).
 - Achsen: Senden (direkt veröffentlichen, nur Entwürfe); Urteil (kommentieren, genehmigen, ändern lassen).
-- Ort: `review.py` (planen: `abschluss_planen`, ausführen: `schritt_ausfuehren`), Routen `api/kommentar`,
-  `api/abschliessen`.
+- Ort: `review.py` (planen: `abschluss_planen`, ausführen: `schritt_ausfuehren`, `URTEILE`/`urteil_senden`), Routen
+  `api/kommentar`, `api/abschliessen`.
 - Erweitern: neue Arten von Übertragung als weiterer `Schritt`, nicht als eigener Ablauf.
 
 ### 11. Agent-Hinweise (drafts)
 Ein Review-Agent schreibt `tasks/<KEY>-review-markers.json`; merge-train zeigt die Einträge an ihrer Zeile (needle,
-`=`, `line`), mit Details, Status und Siehe-auch. Übernehmen, anpassen & übernehmen, verwerfen. `agent pruefen`
-(auch `--seit` für Review-Updates), `agent zeigen`, `agent kommentar` (draft ändern bzw. neuen daneben), `agent
-kommentare` (lesen: drafts, staged/sent, GitLab-Diskussionen; `kommentare_teile`, auch für den Zusatz „am MR: …“ zu
-„(nichts offen)“ in `feedback`).
-- Wer: Feld `agent` der JSON bzw. des Markers, sonst der Agent von `pruefen`/`zeigen` (Akte `hinweis_agenten`); geht
-  beim Übernehmen in den Kommentar mit.
-- Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`--mr`, Feld `mr`, Branch; Projekt aus cwd und Repo der
-  JSON: `mr_fuer_hinweise`).
+`=`, `line`). Übernehmen, anpassen & übernehmen, verwerfen. `agent pruefen` (auch `--seit`), `agent zeigen`,
+`agent kommentar` (draft ändern bzw. neuen daneben), `agent kommentare` (lesen, `kommentare_teile`).
+- Wer: Feld `agent` der JSON bzw. des Markers, sonst Akte `hinweis_agenten`; geht beim Übernehmen in den Kommentar mit.
+- Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`mr_fuer_hinweise`).
 - Ort: `hinweise.py`, `agent_cli.py`, `hinweis_aktion` (`review.py`), Route `api/hinweis`. Format: `docs/agent-hinweise.md`.
 
 ### 12. GitLab-Diskussionen lesen und beantworten
-Holt Diskussionen zu MRs: Antworten und Erledigt-Status an eigenen Kommentaren, fremde Diskussionen nur lesend an der
-Zeile und in einer Liste. „↩ antworten“: sofort senden oder als lokaler Entwurf, den „Review abschließen“ als
-Draft-Antwort anlegt. „☑ abwarten“ (`abhaken`, nur in der Akte) gibt den Ball ohne Antwort ab, bis ein anderer
-danach schreibt; „✓ in GitLab erledigt“ (`erledigen`) löst die Diskussion gleich in GitLab auf, wie ein KI-Thread
-erledigt wird – auch per Klick auf das Zeichen in der Liste (`fadenErledigen`). Stand: `diskussion_stand`.
+Antworten und Erledigt-Status an eigenen Kommentaren, fremde Diskussionen lesend an der Zeile und in einer Liste.
+Antworten sofort oder als lokaler Entwurf, „☑ abwarten“ (Ball ohne Antwort abgeben, nur in der Akte), „✓ erledigt“
+gleich in GitLab. Stand: `diskussion_stand`.
 - Ort: `diskussionen_abgleichen`, `antwort_entwurf`, `antwort_senden`, `diskussion_abhaken`, `diskussion_aufloesen`,
-  `diskussion_kopien` (die Kopien an eigenen Kommentaren ändern sich mit) (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`GITLAB_AKTIONEN` (`web/review.js`).
+  `diskussion_kopien` (`review.py`), `diskussion_abgehakt` (`akte.py`), `fadenKnoepfe`/`fadenErledigen`/`GITLAB_AKTIONEN`
+  (`web/review.js`).
 - Liste links: siehe Baustein „Liste links über den Dateien“.
 
 ### 13. GitLab nur auf Knopfdruck (Cache)
 Seiten fragen GitLab nie selbst. Geholt wird nur über die Knöpfe im Güterbahnhof („↻ MRs“, „↻ MR-Daten“), beim
-Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Abweichender GitLab-Stand wird angezeigt, je nach
-`stand_zu_gitlab` (`git.py`, Texte `STAND_TEXT`, Knöpfe `STAND_KNOPF`/`stand_html` in `seite.py`): ist origin weiter,
-zieht „⇣ lokal aktualisieren“ den Klon nach (`branch_aktualisieren`, Aktion `aktualisieren`); ist lokal weiter, pusht
-„⇡ pushen“, nach einem Rebase (lokal stand der Branch laut reflog auf dem GitLab-Stand) „⇡ force-push (with lease)“
-mit Lease auf den zuletzt geholten GitLab-Stand (`branch_pushen`, Aktion `pushen`, erst bestätigen); danach bzw. nach
-einem Push aus dem Terminal „gepusht“ mit „↻ MR-Daten“; auseinandergelaufen ohne Rebase: nur die Meldung. Beide
-Aktionen holen danach die MR-Daten (`branch_aktion` in `server.py`, `mr_daten_holen`). Eine im Hintergrund neu gebaute MR-Seite (`api/stand` liefert `seite`)
-lädt offene Tabs neu (`neuLaden` in `web/review.js`). Den Klon liefert `lokale_klone` (`[repos]`, Akte `klon`, sonst
-`klon_suchen`: `<klon_ordner>/<projekt>`, wenn origin passt). Fehlt im Klon ein Branch des MR, holt `mr_lokal` origin einmal je Serverlauf. Beim ersten Besuch eines MR checkt `mr_auschecken` (`review.py`,
-im Hintergrund über `im_hintergrund` im Server) den Quell-Branch im Klon aus, wenn der Stand sauber ist
-(`branch_auschecken` in `git.py`; Einstellung `mr_auschecken`, einmal je MR: Akte `ausgecheckt`). Die Seite liest die
-Branch-Refs, nicht HEAD, und lädt deshalb nicht neu; die Meldung kommt über `api/stand` (`meldung`) in die Glocke.
-- Ort: `gitlab.py`, `mr_gitlab_holen`/`mr_daten_holen` (`review.py`), Route `api/gitlab`, `web/bahnhof.js`.
+Abschließen und von `agent pruefen|zeigen` bzw. `merge-train <MR>`. Weicht der Klon vom GitLab-Stand ab, bietet die
+Seite den passenden Knopf an (aktualisieren, pushen, force-push mit Lease). Beim ersten Besuch checkt merge-train den
+Quell-Branch im Klon aus, wenn der Stand sauber ist.
+- Achsen: Stand zu GitLab (`STAND_TEXT`), Klon (`[repos]`, Akte `klon`, `klon_ordner`).
+- Ort: `gitlab.py` (`lokale_klone`, `klon_suchen`, `mr_lokal`), `stand_zu_gitlab`, `branch_aktualisieren`,
+  `branch_pushen`, `branch_auschecken` (`git.py`), `STAND_KNOPF`/`stand_html` (`seite.py`), `branch_aktion`,
+  `im_hintergrund` (`server.py`), `mr_gitlab_holen`/`mr_daten_holen`/`mr_auschecken` (`review.py`), Route
+  `api/gitlab`, `api/stand` (`seite`, `meldung`), `neuLaden` (`web/review.js`), `web/bahnhof.js`.
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen eigenen Abruf beim Laden der Seite.
 
 ### 14. Zug und Güterbahnhof
-Kopf jeder Seite: ein Wagen je Waggon (gemischt aus allen Quellen), Füllstand, Marken („💬 n neu“, „● n dran“ –
-ein eigenes „ungesehen“ gibt es nicht, ein neuer Beitrag anderer macht die Diskussion „dran“), Wechsel per Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle.
-Welche MRs: `mr_liste` (reviewer, author, assignee).
+Kopf jeder Seite: ein Wagen je Waggon (aus allen Quellen), Füllstand, Marken („💬 n neu“, „● n dran“), Wechsel per
+Klick oder n/Enter, „fertig ✓“ für lokale Waggons, Abfahrt. Leitstand-Knöpfe je Quelle. Welche MRs: `mr_liste`.
 - Achsen: Quelle, Marke am Wagen, Knopf im Leitstand.
-- Ort: `alle_wagen`/`wagen_fuer`, ein Wagen aus `wagen_eintrag`, `faeden_marke`, `faeden_text` (`quellen.py`), `seite.py`, `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`;
-  Spec und Ausbauschritte: `docs/gueterbahnhof.md`.
+- Ort: `alle_wagen`/`wagen_fuer`, `wagen_eintrag`, `faeden_marke`, `faeden_text` (`quellen.py`), `seite.py`,
+  `web/zug.js`, `web/bahnhof.js`, `web/zeichnungen.js`; Spec und Ausbauschritte: `docs/gueterbahnhof.md`.
 
 ### 15. „fertig“ / „abgeben“ (lokal)
-Setzt `von` auf den gesehenen Stand (`git push . <sha>:<von>`: nur Fast-Forward, der pre-push-Hook des Repos läuft,
-bei merge-train selbst `./testen --push`, bis ~20 s; die Seite zeigt dann „⏳ prüft …“, ein Fehlschlag ändert nichts
-und meldet die Ausgabe des Hooks), warnt bei offenen Fäden oder ungesendeten Entwürfen, räumt erledigte Fäden weg.
-Nicht bei `origin/…` oder Arbeitsstand. Ist erst ein Teil der Dateien abgehakt, heißt der Knopf „abgeben“: die
-abgehakten Dateien (Fassung aus bis) kommen per Plumbing als Commit auf den Teilstand `<von>-wip` (Arbeitsverzeichnis,
-Index und HEAD bleiben), der Diff läuft danach ab dem Teilstand (`diff_basis`). Hat der Teilstand den Baum von bis,
-ist es „fertig“ (der Teilstand wird gelöscht). Abgegeben zählt für die Abfahrt (RUNDE `abgegeben`, Waggon mit
-gestricheltem grünem Rahmen).
+„fertig“ setzt `von` auf den gesehenen Stand (`git push .`: nur Fast-Forward, der pre-push-Hook des Repos läuft) und
+räumt erledigte Fäden weg. Ist erst ein Teil der Dateien abgehakt, gibt „abgeben“ diese als Commit auf den Teilstand
+`<von>-wip` ab, ohne Arbeitsverzeichnis, Index oder HEAD anzufassen; der Diff läuft danach ab dem Teilstand.
 - Ort: `fertig_moeglich` (`waggon.py`), Route `fertig` (`server.py`, `teil` = abgeben), `fertig`, `abgeben`,
   `abgabe_pruefen`, `runde_eintragen` (`quellen.py`), `teil_abgeben` (`abhaken.py`), `wip_name`, `wip_sha`,
   `diff_basis` (`git.py`, auch für `statistik` und `projekt_seite`).
@@ -250,9 +182,8 @@ echter Änderung neu, rahmt Neues ein, endet beim Schließen des Tabs. `agent �
 - Ideen zum Ausbau: `docs/ideen.md`.
 
 ### 17. Stellwerk (HUD) und Meldungen
-LED für den Server, Stand von merge-train, Zähler, dahinter ✎ bei einem offenen Eingabefeld (hält Neuladen auf,
-Klick springt hin: `hudFeld`), wer zuhört, Kontext-Füllstand; Toasts und 🔔 mit den letzten 50.
-Auch auf der Startseite (Güterbahnhof, auch mit Fehler): HUD ohne Zähler und 🔔; Server, Zuhörer und Meldungen aus `api/hud`.
+LED für den Server, Stand von merge-train, Zähler, ✎ bei einem offenen Eingabefeld (`hudFeld`), wer zuhört,
+Kontext-Füllstand; Toasts und 🔔 mit den letzten 50. Auch auf der Startseite (ohne Zähler und 🔔).
 - Ort: `web/hud.js`, `web/toasts.js`, `kontext` (`zuhoerer.py`), Route `api/hud`.
 - Erweitern: neue Statusanzeigen ins HUD, neue Meldungen über `App.melden`, keine eigenen Banner.
 
@@ -264,11 +195,11 @@ Kleiner Server auf `127.0.0.1:8771`, Routen-Tabelle mit gemeinsamer Fehler- und 
   `akte_bearbeiten`/`aktion_ausfuehren`.
 
 ### 19. Kommandozeile
-`merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]`, `merge-train status` (= `agent status`) und `merge-train agent …` (`status`, `pruefen`, `zeigen`,
-`feedback`, `antworten`, `horchen`, `kommentar`, `kommentare`, `thread`, `vorfall`). MR-Verweise: URL, `!42`,
-`gruppe/projekt!42`. `agent vorfall` nimmt den ersten Weg, der klappt: todo-Eintrag im merge-train-Klon (`vorfall_todo`,
-`eigener_klon`), GitHub-Issue (`vorfall_issue` über `gh api`, Repo: `vorfall_github`), Datei im Eingang (`vorfall_ablegen`/`vorfall_ordner`: `vorfaelle/` im Klon des laufenden Skripts, sonst im Datenordner;
-Ablauf: `docs/vorfaelle/README.md`).
+`merge-train [projekt | MR-Verweis | --mrs | --stopp | --beobachten]`, `merge-train status` (= `agent status`) und
+`merge-train agent …` (`status`, `pruefen`, `zeigen`, `feedback`, `antworten`, `horchen`, `kommentar`, `kommentare`,
+`thread`, `vorfall`). MR-Verweise: URL, `!42`, `gruppe/projekt!42`.
+- `agent vorfall` nimmt den ersten Weg, der klappt: `vorfall_todo` (`eigener_klon`), `vorfall_issue`
+  (`vorfall_github`), `vorfall_ablegen` (`vorfall_ordner`); Ablauf: `docs/vorfaelle/README.md`.
 - Ort: `cli.py`, `agent_cli.py`, MR-Verweise in `gitlab.py` (`mr_ref`, `ist_mr_ref`). Agenten-Doku:
   `skill/merge-train/SKILL.md`.
 
@@ -280,15 +211,12 @@ Anfragen an git und GitLab (`log_tage`). Installation: README, Abschnitt „Inst
   `config.example.toml`.
 
 ### 21. Tests (Mini-CI)
-`./testen` wählt nach den geänderten Dateien aus: `./pruefen` (JS/CSS), Smoke (Bau nach `tests/bau/`, Import aller
-Module), Klassen von `tests/test_einheiten.py` (automatisch aus den Imports der Testdatei und von `src/`), Teile von
-`tests/test_gitlab.py` (`gitlab`, `lokal`, `horchen`, `arbeitsstand`, `gemischt`). Läuft als pre-commit-Hook, `--push`
-als pre-push-Hook: jeder gepushte Stand, dessen Tree-ID nicht im Merkzettel
-`.git/merge-train-getestet` steht, läuft `--voll`, genau dieser Stand (sonst im Temp-Worktree); ein grünes `--voll` auf
-sauberem Stand trägt ein. Takt im pre-commit (`voll_faellig`, `.git/merge-train-takt`): erster Commit des Tages
-`--voll`, danach erst wieder nach 2 h und 5 Commits (was später kommt). Nur `--voll` (pre-push, Takt): UI-Tests `tests/test_ui.py` (`senden`, `vorschau`, `zuletzt`) im
-headless Chromium über die DevTools-Pipe (`Pipe` aus `perf/cdp_messung.py`, Server und Test-Repo aus
-`werkzeug/seiten_vergleich.py`). Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
+`./testen` wählt nach den geänderten Dateien aus (pre-commit; `--push` als pre-push, `--voll` im Takt `voll_faellig`
+und für jeden noch nicht voll getesteten Stand, Merkzettel `.git/merge-train-getestet`; Einzelheiten oben in `testen`).
+Teile: `./pruefen` (JS/CSS), Smoke, Klassen von `tests/test_einheiten.py`, Teile von `tests/test_gitlab.py`, nur mit
+`--voll` die UI-Tests `tests/test_ui.py` (headless Chromium, `Pipe` aus `perf/cdp_messung.py`, Server und Test-Repo aus
+`werkzeug/seiten_vergleich.py`).
+- Achsen: Auswahl (Diff gegen HEAD, `--seit`, `--voll`, `--liste`, `--push`).
 - Ort: `testen`, `MODUL_TEILE` darin, `TEILE` in `tests/test_gitlab.py` und `tests/test_ui.py`.
 - Erweitern: neues Modul in `MODUL_TEILE` eintragen (fehlt es, laufen alle Teile); neuer Teil in `TEILE`, `ALLE_TEILE`
   und `main()` von `test_gitlab.py`. Tests rufen nie das echte `todo`/`notify-send` (Ersatz in `bin/` des Testordners).
