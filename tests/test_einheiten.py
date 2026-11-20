@@ -975,7 +975,7 @@ class AktualisierenTest(unittest.TestCase):
             mr, _ = agent_cli.mr_fuer_hinweise(pfad, {"mr": "!3"}, cwd=self.klon)
             self.assertEqual((mr.projekt, mr.iid), ("gruppe/kern/server", 3))  # „!3“ im Projekt des cwd
             mrs["gruppe/projekt/quelle"] = 165
-            with self.assertRaisesRegex(Fehler, "mehrere offene MRs.*server!17.*source!165"):
+            with self.assertRaisesRegex(Fehler, "mehrere offene MRs.*server!17.*quelle!165"):
                 agent_cli.mr_fuer_hinweise(pfad, {"branch": "K-1"}, cwd=self.klon)
             mr, ordner = agent_cli.mr_fuer_hinweise(pfad, {"branch": "K-1"}, cwd=f"{self.d}/projekt")
             self.assertEqual((mr.iid, os.path.realpath(ordner)), (165, os.path.realpath(f"{self.d}/projekt")))  # nur ein Repo

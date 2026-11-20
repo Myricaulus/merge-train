@@ -262,7 +262,10 @@ def push(zeilen):
         if baum in schon:
             print(f"✓ {sha[:8]} schon voll getestet")
             continue
-        if baum == git("rev-parse", "HEAD^{tree}")[0] and sauber():
+        if subprocess.run(["git", "-C", HIER, "cat-file", "-e", sha + ":testen"], capture_output=True).returncode:
+            print(f"– {sha[:8]} ist älter als ./testen, nichts zu testen")  # z. B. erster Push alter Branches in ein neues Repo
+            continue
+        if baum ==git("rev-parse", "HEAD^{tree}")[0] and sauber():
             r = subprocess.run([sys.executable, os.path.join(HIER, "testen"), "--voll"], cwd=HIER)
         else:
             with tempfile.TemporaryDirectory(prefix="merge-train-push-") as tmp:
