@@ -436,3 +436,18 @@ Ohne Biome, aber mit node prüft es nur die Syntax der Bündel (`node --check`);
 
 `tests/fake-glab` spielt `glab api` gegen ein lokales Git-Repo nach: MR, Diffs, Commits, Dateien, Draft-Notes und Diskussionen.
 Mit `--behalten` bleibt der Testordner liegen.
+
+## Lizenz
+
+Copyright © 2026 Myricaulus. merge-train steht unter der [GNU Affero General Public License v3.0](LICENSE)
+(AGPL-3.0-only): Nutzen, Ändern und Weitergeben sind frei; wer eine geänderte Fassung weitergibt oder anderen über ein
+Netzwerk anbietet, legt ihren Quelltext unter derselben Lizenz offen.
+
+**Kommerzielle Lizenz:** Für Unternehmen, die merge-train ohne die Pflichten der AGPL einsetzen oder einbauen wollen,
+gibt es eine kommerzielle Lizenz auf Anfrage (Kontakt über GitHub, [@Myricaulus](https://github.com/Myricaulus)).
+
+**Beiträge:** Damit beide Lizenzen möglich bleiben, werden Beiträge nur mit einer Übertragung der Nutzungsrechte an den
+Rechteinhaber übernommen; bitte vor einem Pull-Request ein Issue aufmachen.
+
+Ausgenommen ist `src/merge_train/web/gitlab.svg`: das GitLab-Logo, eine Marke von GitLab Inc., hier nur als Hinweis
+auf GitLab-Links.
