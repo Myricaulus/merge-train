@@ -28,6 +28,10 @@ Achtung: GitLab nennt auch sent-Kommentare „draft notes“; „draft“ meint 
 Davon getrennt zeigt die Seite je Eintrag, wer dran ist (`stand`) und wer zuletzt gehandelt hat (`wer`), siehe
 „Stände der Listen“ in [`docs/funktionen.md`](docs/funktionen.md).
 
+## Glossar
+
+Welches Wort was meint, steht in [`docs/glossar.md`](docs/glossar.md). Neue Begriffe zuerst dort eintragen.
+
 ## Funktionen und DRY
 
 Vor jeder Änderung in [`docs/funktionen.md`](docs/funktionen.md) nachsehen, ob es die Funktion oder einen passenden
