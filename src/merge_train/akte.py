@@ -334,7 +334,9 @@ def hinweis_stand(h):
 
 
 def diskussion_stand(akte, d):
-    """(stand, wer) einer GitLab-Diskussion. „☑ abwarten“ (diskussion_abgehakt) gibt den Ball ohne Antwort ab."""
+    """(stand, wer) einer GitLab-Diskussion. Vorrang: eigener Entwurf (lokal, dann in GitLab) vor erledigt, vor wartet,
+    vor dran. „☑ abwarten“ (diskussion_abgehakt) gibt den Ball ohne Antwort ab; schreibt danach jemand von außen, ist man
+    wieder dran."""
     ich_id = akte.get("ich_id")
     antworten = [k for k in review_kommentare(akte) if k.get("antwort_auf") == d.get("id")]
     stufen = {kommentar_status(k) for k in antworten}
