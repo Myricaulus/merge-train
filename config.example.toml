@@ -19,7 +19,7 @@
 # glab = "glab"               # Befehl, darf Argumente enthalten
 # mr_liste = "reviewer"       # MR-Zug: reviewer | assignee | author | keine
 
-# Läufe des Myrlings, die auf eine Prüfung warten (heute die NAS-Skripte von nas-lauf): ein Waggon je Skript, Diff
+# Läufe des Myrlings, die auf eine Prüfung warten: ein Waggon je Skript, Diff
 # gegen die zuletzt angesehene Fassung. Fehlt der Befehl, ist die Quelle aus.
 # myrling = true
 # myrling_befehl = "~/Projects/newterminal/nas-setup/werkzeuge/nas-lauf"   # mit --anstehend --json

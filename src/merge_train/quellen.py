@@ -390,7 +390,7 @@ class Myrling(Quelle):
     def prompt(self, waggon, wurzel):
         z = waggon.id
         return (f"In merge-train liegen Fragen des Nutzers zum Skript {waggon.myrling}, das der Myrling ausführen soll "
-                f"(nas-lauf, Repo {wurzel}; Diff gegen die zuletzt angesehene Fassung). Hol sie mit "
+                f"(Repo {wurzel}; Diff gegen die zuletzt angesehene Fassung). Hol sie mit "
                 f"`merge-train agent feedback {z}` ab. Fragen beantworten, Änderungswünsche am Skript im Repo umsetzen "
                 f"und committen (das Skript läuft erst nach erneuter Prüfung); zu jedem Faden mit "
                 f"`merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). Danach mit "

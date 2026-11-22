@@ -12,7 +12,7 @@
 - **Spalte „Seite“:** wie es auf der Seite heißt, wenn das anders ist. Code-Namen stehen in `Schreibmaschine`.
 - Quellen kurz: **R** = `README.md`, **A** = `AGENTS.md`, **F** = `docs/funktionen.md`, **H** = `docs/agent-hinweise.md`,
   **G** = `docs/gueterbahnhof.md`, **S** = `skill/merge-train/SKILL.md`, **M** = `src/merge_train/myrling.py` (Vertrag
-  mit nas-lauf).
+  mit der Quelle Myrling), **I** = `docs/ideen.md`.
 
 ---
 
@@ -112,10 +112,10 @@
 
 | Begriff | Bedeutung | Seite | Quelle |
 |---|---|---|---|
-| **Myrling** (Quelle) | Skripte, die der Myrling ausführen soll und die noch angesehen werden müssen. Heute liefert sie `nas-lauf` (`myrling_befehl`). | | R, M |
+| **Myrling** (Quelle) | Läufe, die der Myrling ausführen soll und die noch angesehen werden müssen. Der Befehl `myrling_befehl` liefert sie mit `--anstehend --json`. | | R, M |
 | **Lauf** | Ein Skript mit Begleitdateien, ein Waggon je Lauf. | ⛭ skript | M, F 1 |
 | **Begleitdateien** | Dateien, die ein Skript mitbringt, jede gegen ihre eigene Basis. | | M |
-| **`fp`** | Hash über Skript und Begleitdateien, vom Befehl geliefert. | | M |
+| **Lauf-Hash** | SHA-256 über `<sha256> <name>`-Zeilen, Skript zuerst. Steht für genau einen Lauf samt Begleitdateien. Kein Fingerabdruck: der ist in MyrSpace immer der Hash eines Schlüssels. Im Code und im Vertrag heißt das Feld noch `fp` (Umbau steht als todo an). | fp | M |
 | **Lauf-Stand** | Was der Befehl über einen Lauf sagt: `neu`, `geaendert`, `abgelehnt`, `gesehen`. | | M |
 
 ## 8 · Seite und Betrieb
@@ -148,3 +148,33 @@ Wörter, die in merge-train heute zwei oder mehr Bedeutungen haben. Bis entschie
 | **Hinweis** | Agent-Hinweis (draft) · Meldung oben („sagt das ein Hinweis oben“) | „Hinweis“ nur für Agent-Hinweise, sonst **Meldung** |
 | **prüfen** | `agent pruefen` (Review-JSON anmelden) · `./pruefen` (Lint) · Lauf, der „auf eine Prüfung wartet“ | Myrling: **Sichtung** (wie MyrSpace); die beiden Befehle behalten ihren Namen |
 | **Waggon / Wagen** | Vergleich (Daten) · seine Zeichnung im Zug | so lassen, aber streng trennen |
+
+---
+
+## 10 · Verhältnis zu MyrSpace
+
+merge-train wird fester Bestandteil der **Sichtung** in MyrSpace: zuerst beim Prüfen einer **sudo-Anfrage** (der Myrling
+liefert den Unterschied aus seinem Lauf-Repo, merge-train zeigt ihn und meldet „gesehen“ mit dem Lauf-Hash), später
+beim **Einlass einer Myrte** (nur das Neue gegen den letzten Befund sichten). Vorgemerkt in I, Grundlage in MyrSpace
+`ausweise/FORMATE.md` 7.5, 7.6 und `UseCases.md` U32, U4G, U4H.
+
+**Festgelegt**
+
+| Begriff | Bedeutung |
+|---|---|
+| **Agent-Hinweis** und **Befund** | Zwei Ebenen. Ein Agent-Hinweis ist ein einzelner Vorschlag eines Agenten. Ein **Befund** (MyrSpace) ist das Ergebnis der Arbeit des Nutzers mit den Agent-Hinweisen und dem Code. merge-train behält „Agent-Hinweis“. |
+| **Nutzer** und **PO** | Derselbe Mensch in zwei Rollen: in merge-train der Nutzer des Werkzeugs, in MyrSpace der PO des Projekts. Beide Wörter bleiben. |
+| **Myrling** | merge-train spricht nur vom Myrling. Welcher Befehl ihn heute vertritt, steht nur in der Einstellung. |
+| **Lauf, Begleitdateien, Lauf-Hash** | Wie in MyrSpace (siehe Abschnitt 7). |
+
+**Offen** (Kollisionen, werden später aufgeräumt; bis dahin gilt die Unterscheidung rechts)
+
+| Wort | merge-train | MyrSpace | Bis dahin |
+|---|---|---|---|
+| **Prüfung / Sichtung** | Lauf „wartet auf eine Prüfung“ | **Sichtung**: ein Mensch sieht einen Lauf oder ein Bündel an; „Prüfung“ ist dort weiter (Prüfart, Prüfweg) | im Gespräch mit MyrSpace „Sichtung“ |
+| **Quelle** | woher Waggons kommen, dazu „Quelle → Ziel“ (Quell-Branch) | Adresse und Commit des Quelltexts im Bündel | in merge-train „Waggon-Quelle“ oder „Quell-Branch“ |
+| **Hinweis** | Agent-Hinweis (draft) | Warnung in der Anzeige: unsichtbare Zeichen, Bidi, „angegeben“ statt „geprüft“ (soll merge-train bei der Sichtung auch zeigen) | in merge-train immer „Agent-Hinweis“, die Anzeige-Warnungen „Zeichen-Warnung“ |
+| **voll** | Testlauf mit allen Teilen samt UI-Tests | Teststufe 4 (VMs); UseCases.md nennt dabei „Stufen 1–3 wie bei merge-train“, merge-train hat aber Teile, keine Stufen | „voller Testlauf“ (merge-train), „Teststufe 4“ (MyrSpace) |
+| **Stufe** | Stufen eines GitLab-Kommentars (draft, staged, sent) | Schutzstufe, Teststufe | immer mit Zusatz: „Kommentar-Stufe“ |
+| **Art** | Waggon-Art, `vorfall --art bug\|wunsch` | Art eines Briefs oder Ausweises | mit Zusatz: „Waggon-Art“, „Vorfall-Art“ |
+| **Vorfall** | Bericht, wo merge-train in die Irre führte | Zweck `vorfall` eines Befunds | so lassen, verschiedene Ebenen |

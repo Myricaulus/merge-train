@@ -339,7 +339,7 @@ def ansicht_struktur(haupt, ansicht):
 MYRLING_ORDNER = os.path.join(ORDNER, "myrling")
 
 
-# stand aus nas-lauf --anstehend → Text im Kopf der Seite und Marke am Waggon
+# Lauf-Stand aus --anstehend → Text im Kopf der Seite und Marke am Waggon
 LAUF_STAND = {"neu": ("neu", "noch nie angesehen"), "geaendert": ("geändert", "seit der zuletzt angesehenen Fassung geändert"),
               "abgelehnt": ("✗ abgelehnt", "diese Fassung ist abgelehnt"),
               "gesehen": ("gesehen", "wie zuletzt angesehen, aber weder geprüft noch erfolgreich gelaufen")}

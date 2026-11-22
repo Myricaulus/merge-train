@@ -30,7 +30,7 @@ alle eingeschalteten fahren im selben Zug):
   (Projektinfos, Branches zur Auswahl, „↺ Standard“). Repos, denen ein Branch fehlt, fahren als gestrichelter
   Waggon „⚠ fehlt“ mit, wenn sie ausdrücklich unter `projekte` stehen.
 - **Myrling** (`myrling = true`, Befehl `myrling_befehl`): Skripte, die der Myrling ausführen soll und die auf eine
-  Prüfung warten, heute die NAS-Skripte von `nas-lauf`. Ein Waggon „⛭ skript“ je Skript. Der Diff zeigt das Skript und
+  Prüfung warten. Ein Waggon „⛭ skript“ je Skript. Der Diff zeigt das Skript und
   seine Begleitdateien, jede gegen die Fassung, die du zuletzt angesehen hast. Fragen an der Zeile gehen an den Agenten
   im Repo der Skripte, der sie ändern und committen darf. Fehlt der Befehl, ist die Quelle aus.
 - **GitLab** (`gitlab = true`): ein MR mit eigenen Review-Kommentaren und Agent-Hinweisen. „Review abschließen“ legt

@@ -1,8 +1,8 @@
-"""Läufe des Myrlings, die auf eine Prüfung warten: fragt den Befehl der Quelle (myrling_befehl, heute nas-lauf) mit
+"""Läufe des Myrlings, die auf eine Prüfung warten: fragt den Befehl der Quelle (myrling_befehl) mit
 `--anstehend --json` und baut daraus je Lauf Klon, Basis und Stand für die Diff-Seite. merge-train liest und schreibt
 nie selbst im Zustand des Befehls, es nimmt nur, was er ausgibt.
 
-Ausgabe des Befehls (Vertrag mit nas-lauf):
+Ausgabe des Befehls (Vertrag mit der Quelle; fp ist der Lauf-Hash, siehe docs/glossar.md):
   [{"skript": "07-luefter.sh", "fp": "<sha256>", "braucht": "02-grundsystem",
     "stand": "neu | geaendert | abgelehnt | gesehen", "abgelehnt": {"am", "grund"} | null,
     "dateien": [{"name", "repo": "/abs/repo", "pfad": "relativ/zum/repo", "basis": "<commit>" | null,

@@ -49,3 +49,9 @@ Zu `merge-train --beobachten`: zum Zuschauen und Entspannen, während ein Agent 
 - **main-Merges** aus „seit diesem“ und aus der Ansicht eines Merge-Commits herausrechnen
   (`git merge-tree --write-tree` mit der aktuellen Basis).
 - **Erstes Laden in frischem Browser** (~2 s Layout, nur unter WSL; unter Linux 0,5 s), siehe [performance.md](performance.md).
+- **Sichtung für MyrSpace** (vorgemerkt, Richtung entschieden): merge-train wird fester Teil der Sichtung einer
+  sudo-Anfrage und später des Einlasses einer Myrte. Der Myrling liefert den Unterschied aus seinem Lauf-Repo
+  (`anfrage/<n>` gegen `main`) über den sicheren Kanal, merge-train zeigt ihn mit markierten Sonderzeichen und meldet
+  „gesehen“ mit dem Lauf-Hash des Gezeigten zurück, entschieden wird am Handy. Bei Myrten nur den Unterschied zum
+  letzten eigenen Befund sichten. Grundlage: MyrSpace `ausweise/FORMATE.md` 7.5, 7.6, `UseCases.md` U32, U4G, U4H;
+  Begriffe: [glossar.md](glossar.md), Abschnitt 10.

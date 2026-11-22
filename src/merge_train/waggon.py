@@ -158,7 +158,7 @@ class Waggon(NamedTuple):
     host: Optional[str] = None     # None = Standardhost von glab
     projekt: Optional[str] = None  # gruppe/projekt
     iid: Optional[int] = None
-    myrling: Optional[str] = None  # oder ein Lauf des Myrlings: Name des Skripts (nas-lauf --anstehend)
+    myrling: Optional[str] = None  # oder ein Lauf des Myrlings: Name des Skripts (aus --anstehend)
 
     @classmethod
     def aus_id(cls, kennung):
