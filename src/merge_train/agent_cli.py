@@ -6,7 +6,8 @@ from .waggon import Fehler, Waggon, von_bis
 from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, faden_anhaengen, faden_finden, faden_status, faeden_von, kommentar_finden,
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, faden_anhaengen, faden_damals, faden_finden,
+                   faden_geaendert, faden_status, faeden_von, kommentar_finden,
     kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
@@ -142,7 +143,7 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None, waggon=None):
     ab = bereich_anfang_vorwaerts(wurzel, von, head, k.get("path"), k.get("ab"), b)
     ort = "allgemein" if not k.get("path") else \
         f'{k["path"]}:{ab}-{b}' if ab else f'{k["path"]}:{b}' if b else (f'{k["path"]} (alte Seite, Zeile {k["a"]})' if k.get("a") and not k.get("b")
-                                      else f'{k["path"]} (Zeile {k["b"]} hat sich seit dem Kommentar geändert)')
+                                      else f'{k["path"]} ({faden_geaendert(k)})')
     an = f'  · an {k["an"]}' if k.get("an") else ""
     out = [f'── [{k["id"]}] {ort}{an}' + (f'  · {faden_status(k)}' if faden_status(k) != "wartet" else "")]
     if k.get("path") and b:
@@ -150,8 +151,8 @@ def faden_ausgeben(k, wurzel, head, kontext=3, review=None, waggon=None):
         zeilen = t.split("\n")
         for i in range(max(1, (ab or b) - kontext), min(len(zeilen), b + kontext) + 1):
             out.append(f'  {"→" if (ab or b) <= i <= b else " "} {i:5} │ {zeilen[i - 1]}')
-    elif k.get("zeile_text"):
-        out.append(f'      damals │ {k["zeile_text"]}')
+    elif faden_damals(k)[1]:
+        out.append(f'      damals │ {faden_damals(k)[1]}')
     ziel = faden_ziel(waggon, k["zu"], review) if k.get("zu") and waggon else None
     if k.get("zu"):
         if ziel:
@@ -424,7 +425,7 @@ def faden_anlegen(ziele, text, ort=None, siehe=(), als=None):
             raise Fehler(f"Bereich {ab}-{b}: die erste Zeile muss vor der letzten liegen")
         k.update(path=path, b=b, zeile_text=zeilen[b - 1] if b else None)
         if ab:
-            k["ab"] = ab
+            k.update(ab=ab, ab_text=zeilen[ab - 1])
     sa = see_also_aufloesen(wurzel, head, list(siehe), None, k["path"], ziel=quelle(waggon).ziel(waggon))
     kaputt = [f'{s["path"] or "?"}: {s["problem"]}' for s in sa if s["problem"]]
     if kaputt:

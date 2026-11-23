@@ -33,7 +33,7 @@ Review-Kommentar: id, refs {head_sha, base_sha, start_sha} beim Schreiben, erste
                    bis ein anderer danach schreibt (diskussion_abgehakt)
   Stufe: kommentar_status, ist_staged, ist_sent (Begriffe in AGENTS.md).
 Gesprächsfaden: id, branch, refs, erstellt, path, old_path, a, b, ab (erste Zeile, wenn der Faden an den neuen Zeilen
-  ab–b hängt), zeile_text (Zeile b), an (Agent, sonst Claude), vom_agenten, see_also,
+  ab–b hängt), zeile_text (Zeile b), ab_text (Zeile ab), an (Agent, sonst Claude), vom_agenten, see_also,
   zu („k:<Kommentar-id>“ | „h:<Hinweis-key>“: der Faden hängt an diesem GitLab-Kommentar, Ziel ist dessen Text),
   nachrichten [{id, von: ich | claude, wer, text, zeit, gesendet, abgeholt}], erledigt {von, zeit, wer} oder None,
   archiv (nach „fertig“ aus der Ansicht genommen). Stufe: faden_status.
@@ -220,6 +220,18 @@ def datei_index(struktur, pfad):
             if f["alt"] == pfad:
                 return i
     return None
+
+
+def faden_damals(k):
+    """Ort und Code eines Fadens, wie er angelegt wurde – für „hat sich seitdem geändert“ und „damals“, wenn der Ort im
+    Stand der Seite nicht zu finden ist: („Zeilen ab–b“ bzw. „Zeile b“, Text der ersten Zeile oder None)."""
+    ab, b = k.get("ab"), k.get("b")
+    return (f"Zeilen {ab}–{b}" if ab and b else f"Zeile {b}"), k.get("ab_text") or k.get("zeile_text")
+
+
+def faden_geaendert(k):
+    """„Zeile 86 hat sich seit dem Kommentar geändert“ bzw. „Zeilen 61–86 haben sich …“."""
+    return f'{faden_damals(k)[0]} {"haben" if k.get("ab") else "hat"} sich seit dem Kommentar geändert'
 
 
 def faden_status(k):

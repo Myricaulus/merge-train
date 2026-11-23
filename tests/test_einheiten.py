@@ -831,6 +831,20 @@ class AgentArgsTest(unittest.TestCase):
                 self.assertIsNone(agent_cli.vorfall_github())
                 self.assertIn("kein Issue: vorfall_github nicht gesetzt", lauf())
 
+    def test_faden_damals(self):
+        """Ort nicht mehr zu finden: „damals“ nennt den ganzen Bereich mit seiner ersten Zeile, nicht nur die letzte (Issue #6)."""
+        from merge_train.akte import faden_damals, faden_geaendert
+        from merge_train.gespraech import damals_text
+        bereich = {"ab": 61, "b": 86, "ab_text": "  function los() {", "zeile_text": "});"}
+        self.assertEqual(faden_damals(bereich), ("Zeilen 61–86", "  function los() {"))
+        self.assertEqual(damals_text(bereich), "Zeilen 61–86: function los() {")
+        self.assertEqual(faden_geaendert(bereich), "Zeilen 61–86 haben sich seit dem Kommentar geändert")
+        zeile = {"b": 86, "zeile_text": "});"}
+        self.assertEqual(damals_text(zeile), "Zeile 86: });")
+        self.assertEqual(faden_geaendert(zeile), "Zeile 86 hat sich seit dem Kommentar geändert")
+        self.assertIsNone(damals_text({"b": 3, "zeile_text": "   "}))
+        self.assertEqual(damals_text({"ab": 1, "b": 2, "zeile_text": "x"}), "Zeilen 1–2: x")  # alter Faden ohne ab_text
+
     def test_server_wecken(self):
         """agent thread/feedback/horchen starten den Server nach dem Leerlauf wieder (Issue #7), ohne an ihm zu scheitern."""
         from unittest import mock

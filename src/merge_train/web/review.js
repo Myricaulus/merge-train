@@ -339,14 +339,8 @@
       : null;
     const badge = el('span', {class: 'badge s-' + k.stand}, werZeichen(k.wer), ' ' + standText(k));
     box.append(el('div', {class: 'kk'}, badge, branch, agent, zu, er, ort, gitlab, kn));
-    if (k.zeile_text && k.problem)
-      box.append(
-        el(
-          'div',
-          {class: 'alt', title: 'die Zeile, als der Kommentar geschrieben wurde'},
-          'damals: ' + k.zeile_text.trim()
-        )
-      );
+    if (k.damals && k.problem)
+      box.append(el('div', {class: 'alt', title: 'Ort und Code, als der Faden angelegt wurde'}, 'damals ' + k.damals));
     k.nachrichten.forEach(m => verlauf.append(nachrichtBox(k, m, wer, offen, senden)));
     box.append(verlauf);
     const sa = sieheAuch(k.see_also);

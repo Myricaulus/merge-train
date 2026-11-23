@@ -4,7 +4,8 @@ from .einstellungen import DATEN, KONF, jetzt
 from .waggon import ARTEN, Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
-from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_finden, faden_stand,
+from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
+    faden_geaendert, faden_stand,
     faden_status, faeden_von, kommentar_finden, struktur_laden)
 from .hinweise import hinweise_aufloesen, see_also_aufloesen
 from .ansichten import ansicht_lesen
@@ -63,7 +64,7 @@ def gespraech_daten(waggon, ansicht=None):
         if k.get("path") and b:
             b = zeile_vorwaerts(struktur["ordner"], von, head, k["path"], b)
             if b is None:
-                unter = f'Zeile {k["b"]} hat sich seit dem Kommentar geändert'
+                unter = faden_geaendert(k)
         ab = bereich_anfang_vorwaerts(struktur["ordner"], von, head, k.get("path"), k.get("ab"), b) if k.get("path") else None
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
@@ -73,7 +74,7 @@ def gespraech_daten(waggon, ansicht=None):
             unter = f"Zeile {b} liegt außerhalb der Änderungen"
         kommentare.append({"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
                     "a": a, "b": b, "ab": ab, "datei": i, "im_diff": zeile_im_diff, "unter": unter if i is not None else None,
-                    "problem": unter, "zeile_text": k.get("zeile_text"), "status": faden_status(k),
+                    "problem": unter, "damals": damals_text(k), "status": faden_status(k),
                     **dict(zip(("stand", "wer"), faden_stand(k))),
                     "nachrichten": k["nachrichten"], "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude",
                     "vom_agenten": bool(k.get("vom_agenten")), "zu": k.get("zu"),
@@ -96,11 +97,17 @@ def gespraech_daten(waggon, ansicht=None):
             "todo": akte.get("todo_id") if todo_offen(akte.get("todo_id")) else None}
 
 
+def damals_text(k):
+    """„Zeilen 61–86: <Code der Zeile 61>“ für die Seite (unter „damals“), None ohne gemerkten Code."""
+    ort, text = faden_damals(k)
+    return f"{ort}: {text.strip()}" if text and text.strip() else None
+
+
 def faden_fremd(k):
     """Faden eines anderen Branches für die Seite: Ort nur als Text (Zeilen gehören zu jenem Stand), nur lesen."""
     return {"id": k["id"], "text": k["nachrichten"][0]["text"] if k["nachrichten"] else "", "path": k.get("path"),
             "a": k.get("a"), "b": k.get("b"), "datei": None, "im_diff": False, "unter": None, "problem": None,
-            "zeile_text": k.get("zeile_text"), "status": faden_status(k),
+            "status": faden_status(k),
             **dict(zip(("stand", "wer"), faden_stand(k))), "nachrichten": k["nachrichten"],
             "erledigt": k.get("erledigt"), "an": k.get("an") or "Claude", "vom_agenten": bool(k.get("vom_agenten")),
             "zu": k.get("zu"), "see_also": [], "links": [], "lesen": True, "fremd": k.get("branch") or "ohne Branch"}
@@ -166,6 +173,8 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
         sha = (k.get("refs") or {}).get("head_sha") or struktur["refs"]["head_sha"]
         zeilen = (inhalt(struktur["ordner"], sha, k["path"]) or "").split("\n")
         k["zeile_text"] = zeilen[k["b"] - 1] if k["b"] <= len(zeilen) else None
+        if k.get("ab"):
+            k["ab_text"] = zeilen[k["ab"] - 1]
     faden_anhaengen(akte, k)
     return True, ""
 
