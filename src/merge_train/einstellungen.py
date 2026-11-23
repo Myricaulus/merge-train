@@ -38,7 +38,7 @@ STANDARD = {
     "kontext_schwellen": [15, 20, 25, 35],  # HUD-Balken in %: bis a grün, bis b → orange, bis c → rot, ab d giftlila
     "mr_auschecken": True,    # erster Besuch eines MR: Quell-Branch im lokalen Klon auschecken, wenn der Stand sauber ist
     "ich_symbol": "🤓",       # Listen links: dein Symbol für „zuletzt von dir“ (🤖 = Agent, Logo der Quelle = extern)
-    "vorfall_github": "",     # agent vorfall: GitHub-Repo „owner/repo“ für Issues; leer = origin des merge-train-Klons, „aus“ = nur Datei
+    "vorfall_github": "",     # agent vorfall: GitHub-Repo „owner/repo“ für Issues; leer = nur Datei (nie ungefragt öffentlich)
     "gh": "gh",
     "log_tage": 7,            # Log der Anfragen an die Quellen (git, GitLab): ~/.cache/merge-train/aussen-<datum>.log; 0 = aus
 }

@@ -790,7 +790,8 @@ class AgentArgsTest(unittest.TestCase):
         self.assertIn("Agent: Claude · Repo: ~/x", lesen(a))
 
     def test_vorfall_issue(self):
-        """agent vorfall: Issue über gh api (Repo aus vorfall_github), ohne Repo-Pfad; scheitert gh → Datei mit Grund."""
+        """agent vorfall: Issue über gh api nur mit vorfall_github, ohne Repo-Pfad; scheitert gh oder fehlt die Einstellung →
+        Datei mit Grund und dem Befehl zum Einreichen."""
         import json
         from unittest import mock
         from merge_train import agent_cli
@@ -823,10 +824,12 @@ class AgentArgsTest(unittest.TestCase):
             self.assertIn("kein Issue: HTTP 403", aus)
             self.assertEqual(len(os.listdir(ordner)), 1)
             self.assertIn("· Art: Wunsch", lesen(os.path.join(ordner, os.listdir(ordner)[0])))
-            KONF["vorfall_github"] = "aus"
-            self.assertIn("kein GitHub-Repo", lauf())
-        with mock.patch.dict(os.environ, {"MERGE_TRAIN_VORFAELLE": ordner}), mock.patch.dict(KONF, {"vorfall_github": ""}):
-            self.assertIsNone(agent_cli.vorfall_github())  # Tests legen nie echte Issues an
+            self.assertIn("gh issue create -R Myricaulus/merge-train --title Titel --body-file ", aus)
+            self.assertIn("nicht selbst einreichen", aus)
+            for wert in ("aus", ""):  # leer: nie das origin des Klons (Issue #9)
+                KONF["vorfall_github"] = wert
+                self.assertIsNone(agent_cli.vorfall_github())
+                self.assertIn("kein Issue: vorfall_github nicht gesetzt", lauf())
 
     def test_vorfall_todo(self):
         """agent vorfall: gibt es todo, wird es ein Eintrag im merge-train-Klon (vor GitHub und Datei)."""

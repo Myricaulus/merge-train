@@ -2,23 +2,24 @@
 
 Berichte von Agenten über Stellen, an denen merge-train sie in die Irre geführt hat (Meldung, Skill, CLI).
 
-`merge-train agent vorfall "<Titel>" -` nimmt den ersten Weg, der klappt: todo-Eintrag, GitHub-Issue, Datei.
+`merge-train agent vorfall "<Titel>" -` nimmt den ersten Weg, der klappt: todo-Eintrag, GitHub-Issue (nur wenn eingestellt), Datei.
 
 **todo-Eintrag.** Gibt es den Befehl `todo`, wird merge-train auf diesem Rechner entwickelt: Der Bericht wird ein Eintrag
 im Projekt merge-train (`todo neu … -p <Klon>`, Wunsch Priorität 4, Bug 3, der Bericht als Notiz, `--von` nennt Agent
 und Repo). GitHub-Issues sind für den Austausch zwischen Rechnern und Accounts da, etwa vom WSL-Rechner. Nie bei einer
 eigenen Instanz oder ohne Klon.
 
-**GitHub-Issue.** Sonst wird der Bericht ein **Issue im GitHub-Repo von merge-train**. Ziel ist der
-origin des Klons, aus dem das laufende `merge-train` stammt, wenn er auf GitHub zeigt (auch ein ssh-Alias wie
-`github-privat`). Mit der Einstellung `vorfall_github = "owner/repo"` geht er in ein anderes Repo, mit `"aus"` immer in
-die Datei. Angelegt wird über `gh api repos/<repo>/issues`, mit `--art bug` bzw. `--art wunsch` samt Label `bug`
+**GitHub-Issue.** Sonst wird der Bericht ein **Issue im Repo aus der Einstellung `vorfall_github = "owner/repo"`**,
+unter dem Account, mit dem `gh` angemeldet ist. Ohne die Einstellung nie: Wer merge-train klont und mit `gh`
+angemeldet ist, würde sonst ungefragt öffentlich berichten, womöglich mit Inhalten aus dem Projekt, an dem der Agent
+gerade arbeitet (Issue #9). Angelegt wird über `gh api repos/<repo>/issues`, mit `--art bug` bzw. `--art wunsch` samt Label `bug`
 bzw. `enhancement` (ohne Schreibrechte am Repo lässt GitHub das Label still weg). Der Token braucht nur **Issues: Read and write**, `gh issue
 create` bräuchte zusätzlich Leserechte am Inhalt. Weil das Issue das Projekt verlässt, an dem der Agent gerade
 arbeitet, hält der Skill ihn an, allgemein zu schreiben: keine Namen, Pfade, Tickets oder Fachbegriffe von dort.
 
-**Datei.** Klappt auch das Issue nicht (kein `gh`, nicht angemeldet, keine Rechte, kein GitHub-Remote, eigene
-Instanz), landet der Bericht als Datei, und die Ausgabe nennt den Grund:
+**Datei.** Sonst (keine Einstellung, kein `gh`, nicht angemeldet, keine Rechte) landet der Bericht als Datei. Die
+Ausgabe nennt den Grund und den Befehl, mit dem der Nutzer sie nach Durchsicht einreicht
+(`gh issue create -R Myricaulus/merge-train --title … --body-file …`). Der Agent reicht sie nicht selbst ein.
 
 | Ort | Inhalt |
 |---|---|

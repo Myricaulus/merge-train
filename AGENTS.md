@@ -69,5 +69,5 @@ umgesetzt). Soll die Session zuhören: `merge-train agent horchen` im Hintergrun
 
 ## Vorfälle
 
-Neue Berichte legen Agenten mit `merge-train agent vorfall` an: hier als todo-Eintrag im Projekt merge-train, auf Rechnern ohne `todo` als GitHub-Issue (über `gh api`), geht beides nicht, in `vorfaelle/` (gitignored). Abgearbeitete Dateien mit dem Block „Umgesetzt“ in `vorfaelle/erledigt/`
+Neue Berichte legen Agenten mit `merge-train agent vorfall` an: hier als todo-Eintrag im Projekt merge-train, auf Rechnern ohne `todo` als GitHub-Issue (über `gh api`, nur mit der Einstellung `vorfall_github`), sonst in `vorfaelle/` (gitignored). Abgearbeitete Dateien mit dem Block „Umgesetzt“ in `vorfaelle/erledigt/`
 (ebenfalls gitignored, siehe [`docs/vorfaelle/README.md`](docs/vorfaelle/README.md)).

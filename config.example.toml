@@ -42,8 +42,8 @@
 # log_tage = 7
 
 # agent vorfall: gibt es todo, wird der Bericht ein todo-Eintrag; sonst ein Issue in diesem GitHub-Repo
-# (owner/repo, über gh api; Token mit Issues: Read/Write).
-# Leer = origin des merge-train-Klons, wenn er auf GitHub zeigt; "aus" = nur Datei in vorfaelle/.
+# (owner/repo, über gh api; Token mit Issues: Read/Write), unter dem Account, mit dem gh angemeldet ist.
+# Leer = nur Datei in vorfaelle/; die Ausgabe nennt den Befehl, mit dem man sie nach Durchsicht einreicht.
 # vorfall_github = ""
 # gh = "gh"
 

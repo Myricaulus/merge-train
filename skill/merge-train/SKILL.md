@@ -88,5 +88,6 @@ One line per command: `completions/merge-train.fish` in the merge-train repo (fr
 A message that sent you the wrong way, this skill not matching the CLI, a workaround you needed: file it once the
 task is unblocked with `merge-train agent vorfall "<title>" --art bug|wunsch -` (stdin: Situation, What happened,
 Assessment, Workaround, Wish). Keep it general: no names, repos, branches, tickets, paths or domain terms from the
-work at hand. It becomes a todo entry where `todo` exists, else a GitHub issue, else a file. Tell the user in one sentence
-(with the todo id or issue link).
+work at hand. It becomes a todo entry where `todo` exists, else a GitHub issue (only if configured), else a file. Tell the user
+in one sentence (with the todo id, issue link or file path). Never submit a file as an issue yourself: the user
+reviews it first.

@@ -1,5 +1,5 @@
 """merge-train agent …: die Befehle für den Agenten (status, feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
-import argparse, hashlib, json, os, re, shutil, subprocess, sys, time
+import argparse, hashlib, json, os, re, shlex, shutil, subprocess, sys, time
 from datetime import datetime
 from .einstellungen import DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden, projektname
 from .waggon import Fehler, Waggon, von_bis
@@ -692,19 +692,15 @@ def vorfall_todo(titel, text, agent, art=None):
     return tid, None
 
 
+VORFALL_UPSTREAM = "Myricaulus/merge-train"  # wohin ein Bericht aus der Datei nach Durchsicht von Hand geht
+
+
 def vorfall_github():
-    """GitHub-Repo („owner/repo“) für Vorfälle: Einstellung vorfall_github, „aus“ = nur Datei; leer = origin des
-    merge-train-Klons, aus dem das Skript stammt, wenn dessen Host nach GitHub aussieht (auch ein ssh-Alias wie
-    github-privat). Eigene Instanz und MERGE_TRAIN_VORFAELLE (Tests): nur mit ausdrücklicher Einstellung."""
+    """GitHub-Repo („owner/repo“) für Vorfälle: nur die Einstellung vorfall_github, leer bzw. „aus“ = nur Datei. Nie
+    von selbst aus dem origin: wer merge-train klont und mit gh angemeldet ist, würde sonst unter dem eigenen Account
+    ungefragt öffentlich berichten, womöglich mit Inhalten aus dem Projekt, an dem der Agent gerade arbeitet."""
     wert = (KONF.get("vorfall_github") or "").strip()
-    if wert:
-        return None if wert == "aus" else wert
-    if INSTANZ or os.environ.get("MERGE_TRAIN_VORFAELLE"):
-        return None
-    klon = eigener_klon()
-    url = (git(klon, "remote", "get-url", "origin", check=False) or "").strip() if klon else ""
-    m = re.match(r"^(?:ssh://|https?://)?(?:[^@/]+@)?([^/:]*github[^/:]*)(?::\d+)?[:/](.+?/[^/]+?)(?:\.git)?/?$", url)
-    return m.group(2) if m else None
+    return None if wert in ("", "aus") else wert
 
 
 def vorfall_issue(titel, text, agent, art=None):
@@ -713,7 +709,7 @@ def vorfall_issue(titel, text, agent, art=None):
     Rückgabe: (url, None) oder (None, Grund)."""
     repo = vorfall_github()
     if not repo:
-        return None, "kein GitHub-Repo (Einstellung vorfall_github)"
+        return None, "vorfall_github nicht gesetzt"
     tag = datetime.now().strftime("%Y-%m-%d")
     daten = {"title": titel.strip(), "body": f"Datum: {tag} · Agent: {agent}\n\n{text.strip()}\n"}
     if art:
@@ -731,7 +727,8 @@ def vorfall_issue(titel, text, agent, art=None):
 
 
 def befehl_vorfall(o):
-    """Erster Weg, der klappt: todo-Eintrag, GitHub-Issue, Datei im Eingang."""
+    """Erster Weg, der klappt: todo-Eintrag, GitHub-Issue (nur mit vorfall_github), Datei im Eingang – die reicht ein
+    Mensch nach Durchsicht ein, nie der Agent."""
     text, agent = text_von(o), agent_name(o.als, sonst="unbekannt")
     tid, grund_todo = vorfall_todo(o.titel, text, agent, o.art)
     if tid:
@@ -741,11 +738,13 @@ def befehl_vorfall(o):
     url, grund = vorfall_issue(o.titel, text, agent, o.art)
     if url:
         print(f"Vorfall als GitHub-Issue angelegt: {url}")
-    else:
-        wo = repo_wurzel(os.getcwd())
-        pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd(), o.art)
-        print(f"Vorfall abgelegt: {pfad} (kein todo: {grund_todo}; kein Issue: {grund})")
-    print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
+        print("Dem Nutzer in einem Satz sagen, dass es ihn gibt.")
+        return 0
+    wo = repo_wurzel(os.getcwd())
+    pfad = vorfall_ablegen(o.titel, text, agent, kurzpfad(wo) if wo else os.getcwd(), o.art)
+    print(f"Vorfall abgelegt: {pfad} (kein todo: {grund_todo}; kein Issue: {grund})")
+    print("Dem Nutzer den Pfad nennen, nicht selbst einreichen. Nach Durchsicht reicht er ihn so ein:\n"
+          f"  gh issue create -R {VORFALL_UPSTREAM} --title {shlex.quote(o.titel.strip())} --body-file {shlex.quote(pfad)}")
     return 0
 
 
@@ -836,13 +835,14 @@ def agent_parser():
     p.add_argument("-p", "--projekt", help="Projekt oder MR (Standard: aktuelles Repo, lokal vor MR; nach einem Review: der MR)")
     p.add_argument("--als", help="Name, unter dem der Thread erscheint (Standard: aus der Umgebung erkannt, sonst Pflicht)")
     p.set_defaults(aufruf=befehl_thread)
-    p = sub.add_parser("vorfall", help="Bericht als todo-Eintrag, sonst GitHub-Issue, sonst Datei: wo merge-train in die Irre geführt hat "
+    p = sub.add_parser("vorfall", help="Bericht als todo-Eintrag, sonst Datei (Issue nur mit vorfall_github): wo merge-train in die Irre geführt hat "
                                        "oder etwas fehlt (Meldung, Skill, CLI)",
                        description="Vorfall für die Entwicklung von merge-train ablegen: Situation, was passiert ist, "
                                    "Einordnung, Workaround, Wunsch. Der erste Weg, der klappt: todo-Eintrag im Projekt "
-                                   "merge-train (gibt es todo, wird merge-train hier entwickelt), Issue im GitHub-Repo von "
-                                   "merge-train (origin des merge-train-Klons bzw. Einstellung vorfall_github), Datei im "
-                                   "Eingang vorfaelle/ des Klons (gitignored, siehe docs/vorfaelle/README.md). Allgemein "
+                                   "merge-train (gibt es todo, wird merge-train hier entwickelt), Issue im GitHub-Repo aus der "
+                                   "Einstellung vorfall_github (nur wenn gesetzt), sonst Datei im Eingang vorfaelle/ des "
+                                   "Klons (gitignored, siehe docs/vorfaelle/README.md), die der Nutzer nach Durchsicht "
+                                   "einreicht. Allgemein "
                                    "halten, ohne Namen, Pfade, Tickets oder Begriffe aus dem Projekt, an dem du gerade arbeitest.")
     p.add_argument("titel", help="kurzer Titel, z. B. „pruefen wählt bei fremdem Repo das falsche Projekt“")
     p.add_argument("text", help="Bericht (Markdown); - = von stdin")
