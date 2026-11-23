@@ -112,6 +112,8 @@ Seiten fragen GitLab nie selbst; Abgleich des Klons mit dem GitLab-Stand.
 
 ### 18. Server und Prozess
 - Ort: `server.py` (`@route`, `bearbeiten`), `prozess.py`.
+- Bausteine: `server_sicherstellen` startet den Server ohne Browser (Aufrufe, nach denen der Nutzer gleich auf die
+  Seite sieht: `server_wecken` in `agent thread`/`feedback`/`horchen`).
 - Erweitern: neue Aktion der Seite = Route mit `waggon=`/`struktur=`; Akte nur über `akte_bearbeiten`/`aktion_ausfuehren`.
 
 ### 19. Kommandozeile

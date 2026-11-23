@@ -1037,6 +1037,7 @@ def befehl_status(o):
 
 def befehl_feedback(o):
     """--horchen: was schon wartet, sofort ausgeben; wartet nichts, gleich horchen (ein Aufruf statt zwei)."""
+    server_wecken()
     ziele = gespraech_ziele(o.projekt)
     wer = agent_name(o.als) if o.horchen else None
     text, n = faeden_abholen(ziele, alle=o.alle, weg="feedback", wer=wer)
@@ -1046,6 +1047,7 @@ def befehl_feedback(o):
 
 
 def befehl_horchen(o):
+    server_wecken()
     return horchen_ausgeben(gespraech_ziele(o.projekt), o.timeout, agent_name(o.als))
 
 
@@ -1085,7 +1087,19 @@ def siehe_eintrag(angabe, diff=None):
     return eintrag
 
 
+def server_wecken():
+    """Nach thread, feedback und horchen sieht der Nutzer meist gleich auf die Seite: den Server starten, falls er sich
+    nach dem Leerlauf beendet hat (ohne Browser), sonst beginnt sein Leerlauf mit dem Ping von vorn (Issue #7). Startet
+    er nicht, läuft der Befehl trotzdem – er liest und schreibt die Akte direkt."""
+    from .prozess import server_sicherstellen
+    try:
+        server_sicherstellen()
+    except OSError:
+        pass
+
+
 def befehl_thread(o):
+    server_wecken()
     siehe = [siehe_eintrag(x) for x in o.siehe] + [siehe_eintrag(b, a) for a, b in o.vergleich]
     print(faden_anlegen(gespraech_ziele(o.projekt), text_von(o), o.ort, siehe, o.als)[1]); return 0
 

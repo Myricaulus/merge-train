@@ -831,6 +831,16 @@ class AgentArgsTest(unittest.TestCase):
                 self.assertIsNone(agent_cli.vorfall_github())
                 self.assertIn("kein Issue: vorfall_github nicht gesetzt", lauf())
 
+    def test_server_wecken(self):
+        """agent thread/feedback/horchen starten den Server nach dem Leerlauf wieder (Issue #7), ohne an ihm zu scheitern."""
+        from unittest import mock
+        from merge_train import agent_cli, prozess
+        with mock.patch.object(prozess, "server_sicherstellen") as start:
+            agent_cli.server_wecken()
+        start.assert_called_once_with()
+        with mock.patch.object(prozess, "server_sicherstellen", side_effect=OSError("kein Python")):
+            agent_cli.server_wecken()  # kein Fehler: der Befehl arbeitet auch ohne Server
+
     def test_faeden_teile(self):
         """status: Hinweise oben, Liste unten (Agenten kürzen mit head, Issue #8); ab LANGE_LISTE der Weg zu allen."""
         from merge_train.agent_cli import LANGE_LISTE, faeden_teile

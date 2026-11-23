@@ -47,6 +47,7 @@ Ein einzelnes Python-Skript, ohne Abhängigkeiten außer `git` (Syntaxfarben mit
 Gebaut wird es aus `src/` (siehe [Entwicklung](#entwicklung)).
 Ein kleiner Server auf `127.0.0.1:8771` liefert die Seiten aus und beendet sich nach einer Stunde ohne Anfrage
 (`leerlauf`; offene Seiten fragen alle 4 s nach und halten ihn wach) oder mit `merge-train --stopp`.
+`merge-train agent thread`, `feedback` und `horchen` starten ihn wieder, damit die Seite gleich erreichbar ist.
 
 ## Aufruf
 
