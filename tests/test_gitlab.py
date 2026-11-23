@@ -278,8 +278,9 @@ def gespraech_test(proj, env, k, hol, g):
     allg = next(x["id"] for x in rv["faeden"] if not x["path"])
     pruefe(r.returncode == 0 and "Branch claude" in r.stdout and "gegen reviewed" in r.stdout and f"[{fid}] a.py:20 · offen" in r.stdout
            and f"[{allg}] allgemein · WARTET AUF DICH" in r.stdout and "1 warten auf dich" in r.stdout
-           and "Erwartet:" in r.stdout and f"agent antworten {allg}" in r.stdout and "--vergleich" in r.stdout,
-           "merge-train status: Branch, Änderungen, Fäden und was zu tun ist (Zusammenfassung an den offenen allgemeinen)")
+           and "Erwartet:" in r.stdout and f"agent antworten {allg}" in r.stdout and "--vergleich" in r.stdout
+           and r.stdout.index("1 warten auf dich") < r.stdout.index("Erwartet:") < r.stdout.index("Offene Fäden"),
+           "merge-train status: Branch, Änderungen, was zu tun ist (Zusammenfassung an den offenen allgemeinen), Fäden zuletzt")
     r = agent("antworten", fid, "--siehe", "a.py:1-2|Anfang", "--vergleich", "a.py:1-2", "a.py:3-4", "Mit Links.")
     rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
     sa = next(x for x in rv["faeden"] if x["id"] == fid)["see_also"]

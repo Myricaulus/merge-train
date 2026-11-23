@@ -901,13 +901,21 @@ RICH = ('  reich machen: --ort über den ganzen Block (Zeilen mit grep -n messen
         '(Aufrufer, Test, altes Verhalten; @ziel/@basis/@<ref>: aus diesem Stand) · --vergleich <A>[:von-bis] <B>[:von-bis][@ziel] (Kopie, alt/neu, MR gegen Ziel) · pfad:zeile im Text wird ein Link')
 
 
+LANGE_LISTE = 10  # ab so vielen offenen Fäden sagt status oben, wie man alle abruft
+
+
 def faeden_teile(faeden, feedback):
-    """Liste der offenen Fäden und – nur wenn etwas wartet – der Weg zu feedback."""
-    teile = ([f"Offene Fäden ({len(faeden)}):"] + [faden_zeile(k) for k in faeden] + [""]) if faeden else []
+    """(hinweise, liste) für status: hinweise – nur wenn etwas wartet – der Weg zu feedback und bei langer Liste der zu
+    allen Fäden; liste: eine Zeile je offenem Faden. Die Hinweise stehen oben, die Liste am Ende: Agenten kürzen die
+    Ausgabe mit head, abgeschnitten werden darf nur die Liste (Issue #8)."""
+    hinweise = []
     wartet = [k for k in faeden if faden_status(k) == "wartet" or faden_ungelesen(k)]
     if wartet:
-        teile.append(f'{len(wartet)} warten auf dich: {feedback} (zeigt sie mit Code), dann merge-train agent antworten <id> "…"')
-    return teile
+        hinweise.append(f'{len(wartet)} warten auf dich: {feedback} (zeigt sie mit Code), dann merge-train agent antworten <id> "…"')
+    if len(faeden) > LANGE_LISTE:
+        hinweise.append(f"{len(faeden)} offene Fäden, Liste ganz unten – alle mit Text und Code: {feedback} --alle")
+    liste = (["", f"Offene Fäden ({len(faeden)}):"] + [faden_zeile(k) for k in faeden]) if faeden else []
+    return hinweise, liste
 
 
 # Git-Hooks des merge-train-Klons und ihre Kennzeile, wie install.idem.sh sie schreibt
@@ -956,6 +964,9 @@ def status_review(w):
         teile.append(f"Achtung: der Klon steht nicht auf dem MR-Stand – {branch} auschecken und vorspulen (mr-review, Schritt 2)")
     einrichtung = einrichtung_teile(wurzel, zweige=False)
     teile += [""] + einrichtung if einrichtung else []
+    faeden = offene_faeden(w, branch)
+    hinweise, liste = faeden_teile(faeden, f"merge-train agent feedback {w.name}")
+    teile += [""] + hinweise if hinweise else []
     teile += ["", "Review: am Code nichts ändern, nichts committen. Befunde in die Review-JSON (mr-review)."]
     try:
         review = review_daten(w)
@@ -970,13 +981,11 @@ def status_review(w):
     teile.append("  reich machen: see_also mit Bereich für jede genannte Stelle, \"diff\" bei Kopien (docs/agent-hinweise.md)")
     if review and any(kommentare_teile(review).values()):
         teile.append(f"- schon am MR: {kommentare_zahl(review)} – merge-train agent kommentare {w.name} (nichts doppelt melden)")
-    faeden = offene_faeden(w, branch)
-    teile += [""] + faeden_teile(faeden, f"merge-train agent feedback {w.name}")
     teile.append(f'- Frage an den Nutzer an einer Zeile: merge-train agent thread -p {w.name} --ort <pfad>:<von>-<bis> [--siehe …] [--vergleich …] "…"')
     if faeden:
         teile.append(f'- an einen Faden anhängen: merge-train agent antworten <id> [--siehe …] [--vergleich …] "…"')
     teile.append(RICH)
-    return "\n".join(teile)
+    return "\n".join(teile + liste)
 
 
 def status_ausgeben(name=None):
@@ -1006,19 +1015,20 @@ def status_ausgeben(name=None):
     for w in ziele:  # der eigene MR dieses Branches (ich bin Autor)
         if not w.lokal and quelle(w).branch(w) == branch:
             faeden += offene_faeden(w, branch)
-    teile += faeden_teile(faeden, "merge-train agent feedback")
+    hinweise, liste = faeden_teile(faeden, "merge-train agent feedback")
+    teile += hinweise
     if not (st["dateien"] or offen):
         teile.append("Nichts entwickelt – nichts zu berichten.")
-        return "\n".join(teile)
+        return "\n".join(teile + liste)
     allgemein = [k for k in faeden if not k.get("path")]
     teile.append("Erwartet: offene Punkte, eigene Entscheidungen und die Zusammenfassung in merge-train, nicht in der Konsole.")
     if [k for k in faeden if k.get("path")]:
-        teile.append('- Punkt hat schon einen Faden (oben): merge-train agent antworten <id> [--siehe …] [--vergleich …] "neuer Stand"')
+        teile.append('- Punkt hat schon einen Faden (Liste unten): merge-train agent antworten <id> [--siehe …] [--vergleich …] "neuer Stand"')
     teile.append('- neuer Punkt, je einer an seiner Zeile: merge-train agent thread --ort <pfad>:<von>-<bis> [--siehe …] [--vergleich …] "…"')
     teile.append(RICH)
     teile.append(f"- Zusammenfassung: merge-train agent antworten {allgemein[0]['id']} - <<'EOF' … EOF  (offener allgemeiner Faden)"
                  if allgemein else "- Zusammenfassung (ein allgemeiner Faden je Branch): merge-train agent thread - <<'EOF' … EOF")
-    return "\n".join(teile)
+    return "\n".join(teile + liste)
 
 
 def befehl_status(o):

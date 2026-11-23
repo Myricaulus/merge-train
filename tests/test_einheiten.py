@@ -831,6 +831,19 @@ class AgentArgsTest(unittest.TestCase):
                 self.assertIsNone(agent_cli.vorfall_github())
                 self.assertIn("kein Issue: vorfall_github nicht gesetzt", lauf())
 
+    def test_faeden_teile(self):
+        """status: Hinweise oben, Liste unten (Agenten kürzen mit head, Issue #8); ab LANGE_LISTE der Weg zu allen."""
+        from merge_train.agent_cli import LANGE_LISTE, faeden_teile
+        ks = [{"id": f"f{i}", "path": None, "erledigt": None,
+               "nachrichten": [{"von": "claude", "wer": "Claude", "text": "x", "gesendet": "2026"}]} for i in range(LANGE_LISTE + 1)]
+        hinweise, liste = faeden_teile(ks, "merge-train agent feedback")
+        self.assertEqual(hinweise, [f"{LANGE_LISTE + 1} offene Fäden, Liste ganz unten – alle mit Text und Code: "
+                                    "merge-train agent feedback --alle"])
+        self.assertEqual(liste[1], f"Offene Fäden ({LANGE_LISTE + 1}):")
+        self.assertEqual(len(liste), LANGE_LISTE + 3)  # nicht gekürzt
+        self.assertEqual(faeden_teile(ks[:LANGE_LISTE], "x")[0], [])
+        self.assertEqual(faeden_teile([], "x"), ([], []))
+
     def test_vorfall_todo(self):
         """agent vorfall: gibt es todo, wird es ein Eintrag im merge-train-Klon (vor GitHub und Datei)."""
         from unittest import mock
