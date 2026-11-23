@@ -1,5 +1,5 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
-// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, inlineBauen,
+// Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, jedeDatei, dateiEinrichten,
 // dateiFesthalten, dateiLinks, wagenFuellen, dateiBegonnen, naechsteOffene; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
 // direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
@@ -150,8 +150,7 @@
         const t = document.createElement('div');
         t.innerHTML = r.html;
         p.replaceWith(...t.childNodes);
-        d.querySelectorAll('tr.lu').forEach(luKnoepfe);
-        if (document.body.classList.contains('inline')) App.inlineBauen(d);
+        App.dateiEinrichten(d);
         neuZeichnen();
         return true;
       })
@@ -164,10 +163,6 @@
   document.querySelector('main').addEventListener('click', e => {
     const b = e.target.closest('button.laden');
     if (b) dateiLaden(b.closest('.datei'));
-  });
-  document.addEventListener('inl', e => {
-    e.detail.forEach(t => t.querySelectorAll('tr.lu').forEach(luKnoepfe));
-    neuZeichnen();
   });
   function zeileZeigen(x, ohnePopup) {
     // Zeile im Diff zeigen (Kontext/Datei dafür nachladen), sonst Popup. Promise: true = Zeile im Diff
@@ -717,7 +712,7 @@
       schliessen();
     }
   });
-  document.querySelectorAll('tr.lu').forEach(luKnoepfe);
+  App.jedeDatei(d => d.querySelectorAll('tr.lu').forEach(luKnoepfe)); // nebeneinander und inline
   function zeileFinden(tab, a, b) {
     for (const r of tab.querySelectorAll('tr[data-a],tr[data-b]')) {
       if (
@@ -745,7 +740,8 @@
     App.wagenFuellen(r.fuellung);
   }
   if (location.protocol.startsWith('http') && !nurLesen) {
-    dateien.forEach(d => {
+    App.jedeDatei(d => {
+      if (d.querySelector('summary .haken')) return;
       const c = el('input', {type: 'checkbox', class: 'haken', title: 'Datei abhaken (fertig angesehen): klappt sie zu und füllt den Waggon'});
       c.addEventListener('click', e => e.stopPropagation());
       c.addEventListener('change', () => {

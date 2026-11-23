@@ -37,7 +37,9 @@ Diff aus dem lokalen Git, Dateiliste, Kontext nachladen, Datei abhaken und filte
   `api/abgehakt`.
 - Bausteine: Jede Seite nennt den Schlüssel ihrer Struktur (`MR.seite`, `seiten_schluessel`); der Server rechnet
   gegen genau diese (`seiten_struktur`, `struktur_der_seite`), die CLI gegen die zuletzt gebaute (`akte.struktur`).
-  Ob eine Seite noch aktuell ist: `seite_veraltet` (`beobachter.py`).
+  Ob eine Seite noch aktuell ist: `seite_veraltet` (`beobachter.py`). Einrichtung je Datei (Inline-Tabelle, Knöpfe
+  der Lücken, Haken): `App.jedeDatei`, für neue bzw. neu gefüllte Dateien `App.dateiEinrichten`; neuer Diff im DOM:
+  `App.dateienNeu` (dieselben Arrays `App.dateien`/`App.dateiLinks`).
 - Erweitern: Filtergruppen (etwa FE/BE) als weitere Zeilen im Filtermenü.
 
 ### 5. Ansichten eines Waggons

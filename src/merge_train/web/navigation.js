@@ -1,11 +1,26 @@
 // Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle
-// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen, Filter der Liste (abgehakt, Endungen).
-// Braucht von App: el, waggon, zeichnen (review.js, später geladen). Stellt bereit:
-// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten, dateienFiltern, dateiBegonnen, naechsteOffene.
+// zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen, Filter der Liste (abgehakt, Endungen),
+// Einrichtung je Datei (jedeDatei). Braucht von App: el, waggon, zeichnen (review.js, später geladen). Stellt bereit:
+// dateien, dateiLinks, kopfhoeheSetzen, jedeDatei, dateiEinrichten, dateienNeu, dateiFesthalten, dateienFiltern,
+// dateiBegonnen, naechsteOffene.
 (() => {
-  const dateien = [...document.querySelectorAll('.datei')], // die Dateien des Diffs (<details class="datei">)
-    dateiLinks = [...document.querySelectorAll('#liste a')], // ihre Links in der Liste links
+  // die Dateien des Diffs (<details class="datei">) und ihre Links in der Liste links. Andere Skripte halten dieselben
+  // Arrays: ein neuer Diff ersetzt nur ihren Inhalt (dateienNeu)
+  const dateien = [...document.querySelectorAll('main .datei')],
+    dateiLinks = [...document.querySelectorAll('#liste a')],
     kopf = document.getElementById('kopf');
+  // ---- Einrichtung je Datei: was jede Datei braucht (Inline-Tabelle, Knöpfe der Lücken, Haken …), an einem Haken.
+  // Eine neue oder neu gefüllte Datei (nachgeladen, getauscht) läuft ihn wieder durch; jede Einrichtung verträgt das.
+  const einrichtungen = [];
+  /** f(d) für jede Datei: gleich für die vorhandenen, später für jede neue bzw. neu gefüllte (dateiEinrichten) */
+  function jedeDatei(f) {
+    einrichtungen.push(f);
+    dateien.forEach(d => f(d));
+  }
+  /** Datei d einrichten wie beim Laden der Seite (Filter und Boxen danach: dateienFiltern, App.zeichnen) */
+  function dateiEinrichten(d) {
+    einrichtungen.forEach(f => f(d));
+  }
   function kopfHoehe() {
     return kopf.offsetHeight - (parseFloat(getComputedStyle(kopf).getPropertyValue('--himmel')) || 0);
   } // ohne den weggerutschten Himmel
@@ -75,10 +90,9 @@
       zuDatei(dateien[k] && dateien[k].getBoundingClientRect().top > kopfHoehe() + 30 ? k : k + 1);
     } else if (e.key === 'k' || e.key === 'ArrowLeft') {
       e.preventDefault();
-      zuDatei(dateien[k] && dateien[k].getBoundingClientRect().top < kopfHoehe() - 5 ? k : k - 1, -1);
+      zuDatei(dateien[k] && dateiBegonnen(dateien[k]) ? k : k - 1, -1);
     } else if (e.key === 'i') {
-      if (!document.body.classList.contains('inline')) inlineBauen();
-      document.body.classList.toggle('inline');
+      if (document.body.classList.toggle('inline')) dateien.forEach(dateiEinrichten); // baut die Inline-Tabellen
       try {
         localStorage.inline = document.body.classList.contains('inline') ? 1 : '';
       } catch (_) {}
@@ -91,82 +105,76 @@
       c.open = !c.open;
     }
   });
-  function inlineBauen(nur) {
-    // Inline-Tabelle aus der Tabelle nebeneinander bauen (spart die Hälfte der Seite)
-    const neu = [];
-    (nur ? [nur] : dateien).forEach(d => {
-      const s = d.querySelector('table.sbs');
-      if (!s || d.querySelector('table.inl')) return;
-      const out = [],
-        weg = [],
-        dazu = [],
-        leeren = () => {
-          out.push(...weg, ...dazu);
-          weg.length = dazu.length = 0;
-        };
-      const zeile = (a, b, h, cl, kl) =>
-        '<tr' +
-        (kl ? ' class="' + kl + '"' : '') +
-        (a != null ? ' data-a="' + a + '"' : '') +
-        (b != null ? ' data-b="' + b + '"' : '') +
-        '><td class="n">' +
-        (a == null ? '' : a) +
-        '</td><td class="n">' +
-        (b == null ? '' : b) +
-        '</td><td class="c' +
-        (cl ? ' ' + cl : '') +
-        '">' +
-        h +
-        '</td></tr>';
-      for (const r of s.rows) {
-        const cl = r.classList;
-        if (cl.contains('kr')) continue;
-        if (cl.contains('hk')) {
-          leeren();
-          out.push('<tr class="hk"><td></td><td></td><td>' + r.lastElementChild.innerHTML + '</td></tr>');
-          continue;
-        }
-        if (cl.contains('lu')) {
-          leeren();
-          const x = r.dataset;
-          out.push(
-            '<tr class="lu" data-von="' +
-              x.von +
-              '" data-bis="' +
-              x.bis +
-              '" data-d="' +
-              x.d +
-              '"><td class="n"></td><td colspan="2"></td></tr>'
-          );
-          continue;
-        }
-        const c = r.cells;
-        if (c.length < 4) continue;
-        const w = c[1].classList.contains('weg'),
-          z = c[3].classList.contains('dazu');
-        if (!w && !z && !c[1].classList.contains('nix')) {
-          leeren();
-          out.push(zeile(r.dataset.a, r.dataset.b, c[3].innerHTML, '', r.className));
-          continue;
-        }
-        if (w) weg.push(zeile(r.dataset.a, null, c[1].innerHTML, 'weg'));
-        if (z) dazu.push(zeile(null, r.dataset.b, c[3].innerHTML, 'dazu'));
+  /** Inline-Tabelle aus der Tabelle nebeneinander bauen (spart die Hälfte der Seite) – nur, wenn inline gezeigt wird */
+  function inlineBauen(d) {
+    if (!document.body.classList.contains('inline')) return;
+    const s = d.querySelector('table.sbs');
+    if (!s || d.querySelector('table.inl')) return;
+    const out = [],
+      weg = [],
+      dazu = [],
+      leeren = () => {
+        out.push(...weg, ...dazu);
+        weg.length = dazu.length = 0;
+      };
+    const zeile = (a, b, h, cl, kl) =>
+      '<tr' +
+      (kl ? ' class="' + kl + '"' : '') +
+      (a != null ? ' data-a="' + a + '"' : '') +
+      (b != null ? ' data-b="' + b + '"' : '') +
+      '><td class="n">' +
+      (a == null ? '' : a) +
+      '</td><td class="n">' +
+      (b == null ? '' : b) +
+      '</td><td class="c' +
+      (cl ? ' ' + cl : '') +
+      '">' +
+      h +
+      '</td></tr>';
+    for (const r of s.rows) {
+      const cl = r.classList;
+      if (cl.contains('kr')) continue;
+      if (cl.contains('hk')) {
+        leeren();
+        out.push('<tr class="hk"><td></td><td></td><td>' + r.lastElementChild.innerHTML + '</td></tr>');
+        continue;
       }
-      leeren();
-      const t = document.createElement('table');
-      t.className = 'inl';
-      t.innerHTML = '<colgroup><col class="cn"><col class="cn"><col></colgroup><tbody>' + out.join('') + '</tbody>';
-      s.after(t);
-      neu.push(t);
-    });
-    if (neu.length) document.dispatchEvent(new CustomEvent('inl', {detail: neu}));
+      if (cl.contains('lu')) {
+        leeren();
+        const x = r.dataset;
+        out.push(
+          '<tr class="lu" data-von="' +
+            x.von +
+            '" data-bis="' +
+            x.bis +
+            '" data-d="' +
+            x.d +
+            '"><td class="n"></td><td colspan="2"></td></tr>'
+        );
+        continue;
+      }
+      const c = r.cells;
+      if (c.length < 4) continue;
+      const w = c[1].classList.contains('weg'),
+        z = c[3].classList.contains('dazu');
+      if (!w && !z && !c[1].classList.contains('nix')) {
+        leeren();
+        out.push(zeile(r.dataset.a, r.dataset.b, c[3].innerHTML, '', r.className));
+        continue;
+      }
+      if (w) weg.push(zeile(r.dataset.a, null, c[1].innerHTML, 'weg'));
+      if (z) dazu.push(zeile(null, r.dataset.b, c[3].innerHTML, 'dazu'));
+    }
+    leeren();
+    const t = document.createElement('table');
+    t.className = 'inl';
+    t.innerHTML = '<colgroup><col class="cn"><col class="cn"><col></colgroup><tbody>' + out.join('') + '</tbody>';
+    s.after(t);
   }
   try {
-    if (localStorage.inline) {
-      inlineBauen();
-      document.body.classList.add('inline');
-    }
+    if (localStorage.inline) document.body.classList.add('inline');
   } catch (_) {}
+  jedeDatei(inlineBauen); // zuerst: die Einrichtungen danach sehen beide Tabellen
 
   // ---- Filter der Dateiliste: abgehakte Dateien und Endungen ausblenden (in der Liste und im Diff), je Waggon im
   // Browser gemerkt. Im Titel der Liste: Häkchen „abgehakte“ (oft gebraucht, daher außen) und das Klappmenü „Filter ▾“
@@ -238,14 +246,16 @@
     });
     return App.el('label', {}, c, ' ' + text, App.el('span', {class: 'sub'}, ' ' + anzahl));
   }
-  function dateienFiltern() {
+  /** Filter auf Liste und Diff anwenden. zeigen: diese Datei trotz Filter zeigen, bis zum nächsten Filtern (aufdecken) */
+  function dateienFiltern(zeigen) {
     if (!titel) return;
     const aus = dateiFilter(),
       zahl = {};
     let gezeigt = 0;
     dateien.forEach((d, i) => {
       const e = endung(d),
-        weg = aus.includes(e) || (aus.includes('abgehakt') && d.classList.contains('abgehakt'));
+        weg =
+          d !== zeigen && (aus.includes(e) || (aus.includes('abgehakt') && d.classList.contains('abgehakt')));
       zahl[e] = (zahl[e] || 0) + 1;
       d.classList.toggle('ausgefiltert', weg);
       dateiLinks[i]?.classList.toggle('ausgefiltert', weg);
@@ -288,18 +298,27 @@
   }
   dateienFiltern();
 
-  App.dateien = dateien;
-  App.dateiLinks = dateiLinks;
-  App.kopfhoeheSetzen = kopfhoeheSetzen;
-  App.inlineBauen = inlineBauen;
+  /** Liest man in Datei d (ihr Anfang liegt über dem Kopf)? Dann springt die Seite nach dem Abhaken (diff.js), und k
+   *  springt an ihren Anfang statt zur Datei davor. */
+  function dateiBegonnen(d) {
+    return d.getBoundingClientRect().top < kopfHoehe() - 5;
+  }
+  /** Neuer Diff im DOM (Dateien getauscht, dazu, weg): dateien und dateiLinks an Ort und Stelle neu füllen (dieselben
+   *  Arrays, die andere Skripte halten), dann filtern. Einrichten und Boxen zeichnen macht, wer getauscht hat. */
+  function dateienNeu() {
+    dateien.splice(0, dateien.length, ...document.querySelectorAll('main .datei'));
+    dateiLinks.splice(0, dateiLinks.length, ...document.querySelectorAll('#liste a'));
+    festeDatei = null;
+    dateienFiltern();
+  }
+
+  Object.assign(App, {dateien, dateiLinks, kopfhoeheSetzen, jedeDatei, dateiEinrichten, dateienNeu, dateiBegonnen});
+  App.dateienFiltern = dateienFiltern; // nach dem Abhaken (diff.js), aufdecken (app.js)
   /** Datei i in der Liste markieren und festhalten, bis der Nutzer selbst scrollt (Sprung aus der Kommentarliste) */
-  App.dateienFiltern = dateienFiltern; // nach dem Abhaken (diff.js)
   App.dateiFesthalten = i => {
     festeDatei = i;
     listeMarkieren();
   };
-  /** Liest man in Datei d (ihr Anfang liegt über dem Kopf)? Dann springt die Seite nach dem Abhaken (diff.js). */
-  App.dateiBegonnen = d => d.getBoundingClientRect().top < kopfHoehe() - 5;
   /** Nach dem Abhaken von d: die nächste offene Datei (nicht ausgefiltert, nicht abgehakt) oben unter den Kopf wie
    *  mit j, sonst der Kopf der zugeklappten d – sonst stünde man irgendwo weiter unten (Issue #4). */
   App.naechsteOffene = d => {

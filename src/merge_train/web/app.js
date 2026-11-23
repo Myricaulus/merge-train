@@ -1,6 +1,7 @@
 // Gemeinsamer Rahmen der Seiten-Skripte, auf allen Seiten zuerst geladen. Jede Datei läuft in ihrer eigenen Funktion
 // und sieht die anderen nur über App: was sie bereitstellt, trägt sie hier ein (steht oben in der jeweiligen Datei). MR
-// kommt vom Server (Seite davor) und heißt hier App.waggon.
+// kommt vom Server (Seite davor) und heißt hier App.waggon. Braucht von App: dateienFiltern (navigation.js, später
+// geladen, nur Diff-Seiten).
 const App = {
   waggon: MR,
   kann: MR.kann || {},
@@ -29,13 +30,7 @@ App.el = (tag, attrs, ...kinder) => {
  *  scrollIntoView allein zeigt dann nichts) und eine ausgefilterte Datei wieder zeigen (bis zum nächsten Filtern). */
 App.aufdecken = e => {
   const d = e.closest('.datei.ausgefiltert');
-  if (d) {
-    d.classList.remove('ausgefiltert');
-    let a = document.querySelector('#liste a[href="#' + d.id + '"]'); // ihr Link und die Ordner-Zeile darüber
-    a?.classList.remove('ausgefiltert');
-    while (a && a.tagName !== 'DIV') a = a.previousElementSibling;
-    a?.classList.remove('ausgefiltert');
-  }
+  if (d) App.dateienFiltern(d); // samt ihrem Link und der Ordner-Zeile darüber
   for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
 };
 /** Uhrzeit (heute) bzw. Datum und Uhrzeit aus einem ISO-Zeitpunkt */
