@@ -1,18 +1,16 @@
-// merge-train --beobachten (nur Diff-Seiten, waggon.beobachten): Tab zu → Server beendet sich (Beacon); nach dem
-// Neuladen wegen einer Änderung im Repo (review.js merkt sich den alten Stand) die neuen Zeilen einrahmen und sanft
-// dorthin scrollen. Der Rahmen bleibt bis zur nächsten Änderung.
-// Braucht von App: waggon, dateien, waggonAbfrage. Stellt bereit: nichts.
+// Diff-Seiten: Rahmen um das Neue nach einem Tausch (tausch.js) – die Zeilen, die seit dem vorher gezeigten Stand neu
+// sind (api/diff). Der Rahmen bleibt bis zur nächsten Änderung. --beobachten (waggon.beobachten): sanft zum ersten
+// Neuen scrollen, und Tab zu → Server beendet sich (Beacon).
+// Braucht von App: waggon, dateien. Stellt bereit: einrahmen.
 (() => {
   const {waggon, dateien} = App;
-  if (!waggon.beobachten) return;
-  addEventListener('pagehide', () => navigator.sendBeacon('/tschuess', JSON.stringify({mr: waggon.id, k: waggon.k})));
-  let alt = '';
-  try {
-    alt = sessionStorage.beobachtetAlt || '';
-    sessionStorage.removeItem('beobachtetAlt');
-  } catch (_) {}
-  if (!alt || alt === waggon.sha) return;
+  if (waggon.beobachten)
+    addEventListener('pagehide', () => navigator.sendBeacon('/tschuess', JSON.stringify({mr: waggon.id, k: waggon.k})));
+  /** zeilen {pfad: [[von, bis], …]} einrahmen (alte Rahmen weg). true, wenn die Seite dorthin scrollt. */
   function einrahmen(zeilen) {
+    document
+      .querySelectorAll('tr.neu-rahmen')
+      .forEach(r => r.classList.remove('neu-rahmen', 'neu-anfang', 'neu-ende'));
     let erste = null;
     for (const d of dateien) {
       const bereiche = zeilen[d.dataset.pfad];
@@ -35,11 +33,9 @@
         if (vorige) vorige.classList.add('neu-ende');
       }
     }
-    if (erste) setTimeout(() => erste.scrollIntoView({block: 'center', behavior: 'smooth'}), 150);
+    if (!erste || !waggon.beobachten) return false;
+    setTimeout(() => erste.scrollIntoView({block: 'center', behavior: 'smooth'}), 150);
+    return true;
   }
-  const abfrage = App.waggonAbfrage() + '&alt=' + encodeURIComponent(alt) + '&sha=' + encodeURIComponent(waggon.sha);
-  fetch('/api/neu?' + abfrage)
-    .then(r => r.json())
-    .then(d => d.ok && einrahmen(d.zeilen || {}))
-    .catch(() => {});
+  App.einrahmen = einrahmen;
 })();

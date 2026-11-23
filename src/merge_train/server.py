@@ -5,15 +5,16 @@ from datetime import datetime
 from .einstellungen import KONF, SKRIPT, dateiname, projektname, schluessel
 from .waggon import Fehler, Ungueltig, Waggon
 from .git import ANLASS, anlass, branch_aktualisieren, branch_pushen, finde_repos, git, statistik
+from .zeilen import diff_enden
 from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
 from .abhaken import abhaken
 from .beobachter import neue_zeilen, seite_veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
-from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, startseite
+from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, seiten_teile, startseite
 from .myrling import anstehend_warten, im_hintergrund_holen
-from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, schluessel_von
+from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, quelle, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -323,10 +324,24 @@ def api_zuhoerer(anfrage):
     return erg
 
 
-@route("GET", "api/neu", waggon=True)
-def api_neu(anfrage, waggon):
-    """--beobachten nach dem Neuladen: Zeilen, die seit dem vorher gezeigten Stand neu sind (Rahmen auf der Seite)."""
-    return {"ok": True, "zeilen": neue_zeilen(waggon, anfrage.daten.get("alt", ""), anfrage.daten.get("sha", ""))}
+@route("GET", "api/diff", waggon=True)
+def api_diff(anfrage, waggon):
+    """Neuer Stand für eine offene Seite (tausch.js), statt sie neu zu laden: baut die Seite zum heutigen Stand (derselben
+    Ansicht) und liefert ihre Teile (seiten_teile) – von den Dateien nur die, deren Schlüssel die Seite noch nicht hat
+    (die übrigen behält sie) –, dazu MR und die Zeilen, die seit ihrem Stand neu sind (Rahmen). gleich: nichts zu tun.
+    Kennt der Server die Seite nicht mehr, kommen alle Dateien."""
+    try:
+        pfad, neu = quelle(waggon).seite(waggon, ansicht=anfrage.ansicht)
+    except Fehler as e:
+        return {"ok": False, "text": str(e)}
+    teile = seiten_teile(pfad)
+    if teile["mr"]["seite"] == anfrage.seite:
+        return {"ok": True, "gleich": True}
+    alt = seiten_struktur(waggon, anfrage.seite, anfrage.ansicht) if anfrage.seite else None
+    da = {f.get("schluessel") for f in (alt or {}).get("dateien", [])}
+    teile["dateien"] = [{"schluessel": s, "html": None if s in da else h} for s, h in teile["dateien"]]
+    zeilen = neue_zeilen(neu["ordner"], diff_enden(alt)[1], diff_enden(neu)[1]) if alt else {}
+    return dict(teile, ok=True, gleich=False, zeilen=zeilen)
 
 
 @route("GET", "api/zeilen", struktur=True)

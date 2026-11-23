@@ -154,6 +154,7 @@ body.mit-hud #rvstand{display:none}
 tr.neu-rahmen>td:first-child{box-shadow:inset 3px 0 0 var(--tf)} tr.neu-rahmen>td:last-child{box-shadow:inset -3px 0 0 var(--tf)}
 tr.neu-anfang>td{border-top:3px solid var(--tf)} tr.neu-ende>td{border-bottom:3px solid var(--tf)}
 tr.neu-rahmen>td{transition:border-color .6s,box-shadow .6s}
+#titel{display:contents} .wartet-marke{margin-left:8px;color:var(--tf);border-color:var(--tf)}
 .kbox.gl{border-left-style:dashed} .gs .msg.andere{border-left-color:var(--tn)}
 .split{position:relative;display:inline-flex} .split #abschliessen{border-radius:6px 0 0 6px}
 .split .urteilauf{font:600 14px system-ui;padding:6px 8px;border:1px solid var(--p);border-left-color:rgba(255,255,255,.4);border-radius:0 6px 6px 0;background:var(--p);color:#fff;cursor:pointer}

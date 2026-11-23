@@ -83,6 +83,11 @@ In bash `'!42'` in Anführungszeichen setzen, sonst greift die History-Expansion
 - **Kontext**: Ausgeblendete Zeilen zwischen den Hunks lassen sich nachladen (▼ 20 / ▲ 20 / alle). Auch dort kann man kommentieren.
   Generierte Dateien (`*.Designer.cs`, `*ModelSnapshot.cs`, Lockfiles …) und sehr große Diffs werden erst auf Klick geladen,
   automatisch, sobald ein Kommentar oder Hinweis darin liegt.
+- **Neuer Stand ohne Neuladen**: Ändert sich der Stand (lokal: ein Watcher merkt Commits und Änderungen im Repo; neu
+  gebaut von der CLI, nach „↻ MR-Daten“ oder „↻ Änderungen“), tauscht die Seite nur die Dateien, die anders aussehen.
+  Die übrigen bleiben samt aufgeklapptem Kontext, Haken und Scroll-Lage, das Neue bekommt einen lila Rahmen (bis zur
+  nächsten Änderung). Eine geänderte Datei, in der gerade ein Eingabefeld offen ist, wartet mit der Marke „geändert“,
+  bis das Feld zu ist. Ganz neu lädt die Seite nur, wenn merge-train selbst neu gebaut ist.
 - **Commit-Ansichten**: Unter „Beschreibung & Commits“ hat jeder Commit zwei Knöpfe.
   - *nur dieser*: Diff dieses einen Commits, **nur lesen**. Kommentare und Hinweise werden auf den Stand nach dem
     Commit zurückgerechnet und stehen an ihrer Zeile. Geht das nicht (Zeile später geändert, alte Seite des Diffs, außerhalb
@@ -336,11 +341,10 @@ merge-train --beobachten --stopp [ordner]                           # diese Inst
 Ohne Ordner das aktuelle Repo. Jedes Repo bekommt eine eigene Instanz mit freiem Port. Einstellung, Cache und Gespräch
 liegen in `~/.local/share/merge-train/beobachten/<name>-<hash>/`, dein normaler Server und sein Zug bleiben unberührt.
 
-- Ein Watcher (inotify) meldet Änderungen im Arbeitsverzeichnis (ohne ignorierte Dateien, neue Ordner kommen dazu) und an
-  HEAD, Index und Branches. Erst dann prüft git, ob sich der Stand wirklich geändert hat, und die Seite lädt neu (nicht, solange
-  ein Eingabefeld offen ist). Ohne inotify wird alle 5 s geprüft.
-- Nach dem Neuladen hat das seit dem vorigen Stand Neue einen lila Rahmen, die Seite scrollt sanft zur ersten Stelle. Der
-  Rahmen bleibt bis zur nächsten Änderung.
+- Ein Watcher (inotify, wie bei jeder lokalen Seite) meldet Änderungen im Arbeitsverzeichnis (ohne ignorierte Dateien,
+  neue Ordner kommen dazu) und an HEAD, Index und Branches. Erst dann prüft git, ob sich der Stand wirklich geändert hat,
+  und die Seite tauscht die geänderten Dateien (siehe „Neuer Stand ohne Neuladen“). Ohne inotify wird alle 5 s geprüft.
+- Das seit dem vorigen Stand Neue hat einen lila Rahmen, und beim Beobachten scrollt die Seite sanft zur ersten Stelle.
 - Schließt du den Tab, beendet sich die Instanz nach etwa 10 s (Beacon beim Verlassen der Seite; Neuladen zählt nicht).
   Sonst nach 90 s ohne Anfrage.
 - `merge-train agent …` aus diesem Repo landet von selbst bei der Instanz, solange sie läuft (außer das Repo ist ohnehin im

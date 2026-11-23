@@ -1,7 +1,7 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
 // Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, jedeDatei, dateiEinrichten,
 // dateiFesthalten, dateiLinks, wagenFuellen, dateiBegonnen, naechsteOffene; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
-// direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
+// direkt, fadenErledigen, kommentarAktion. Stellt bereit: hakenLaden, waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
   const {el, waggon, dateien} = App;
@@ -761,16 +761,22 @@
       });
       d.querySelector('summary').prepend(c);
     });
+  }
+  /** Haken vom Server holen (Laden, Tausch); abgehakte unter zuklappen gehen zu. */
+  function hakenLaden(zuklappen) {
+    if (!location.protocol.startsWith('http') || nurLesen) return;
     fetch('/api/abgehakt?' + waggonAbfrage(true))
       .then(r => r.json())
       .then(r => {
         hakenSetzen(r);
-        dateien.forEach(d => d.classList.contains('abgehakt') && (d.open = false));
+        zuklappen.forEach(d => d.classList.contains('abgehakt') && (d.open = false));
       })
       .catch(() => {});
   }
+  hakenLaden(dateien);
 
   Object.assign(App, {
+    hakenLaden,
     waggonAbfrage,
     nurLesen,
     seitAnsicht,

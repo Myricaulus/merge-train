@@ -1,8 +1,8 @@
 // Diff-Seiten: Review-Kommentare, Agent-Hinweise (drafts) und Gesprächsfäden an den Zeilen; Eingabefelder, Senden,
-// Abschließen; fragt alle 4 s den Stand ab (lädt neu bei neuen Daten oder neuem Server). Braucht von App: waggon, kann,
+// Abschließen; fragt alle 4 s den Stand ab (neue Daten, neuer Stand: neuHolen, neuer Server). Braucht von App: waggon, kann,
 // el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js waggonAbfrage, nurLesen,
 // seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
-// hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js). Stellt bereit: review (Daten der Seite),
+// hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js), neuHolen (tausch.js). Stellt bereit: review (Daten der Seite),
 // zeichnen, STAENDE, werZeichen, direkt, fadenErledigen, kommentarAktion, reviewLaden.
 (() => {
   const {
@@ -1234,15 +1234,14 @@
     });
   // auch im Hintergrund: Lebenszeichen der Seite (horchen hört auf, wenn keins mehr kommt). Neuer Server (neu gebaut
   // oder Einstellung geändert): Seite neu laden, sobald kein Eingabefeld offen ist. veraltet = die Seite zeigt nicht
-  // mehr den neuesten Stand (neu gebaut: CLI, MR-Daten; --beobachten: im Repo hat sich etwas geändert) → neu laden
-  // (beobachten.js rahmt danach das Neue ein)
+  // mehr den neuesten Stand (neu gebaut: CLI, MR-Daten; lokal: im Repo hat sich etwas geändert) → je Datei tauschen
+  // (App.neuHolen, tausch.js), auch mit offenem Feld
   // Seite neu laden (mit Meldung danach), sobald kein Eingabefeld offen ist
-  function neuLaden(meldung, alt) {
+  function neuLaden(meldung) {
     App.serverLed('neu');
     if (document.querySelector('textarea')) return;
     try {
       sessionStorage.meldung = meldung;
-      if (alt !== undefined) sessionStorage.beobachtetAlt = alt;
     } catch (_) {}
     location.reload();
   }
@@ -1254,7 +1253,7 @@
         if (d.meldung) App.melden(d.meldung);
         if (d.version && waggon.version && d.version !== waggon.version)
           return neuLaden('merge-train wurde aktualisiert – Seite neu geladen');
-        if (d.veraltet) return neuLaden('Neuer Stand – Seite neu geladen', waggon.sha || '');
+        if (d.veraltet) App.neuHolen();
         App.serverLed('an');
         if (d.stand && (d.stand !== review.stand || App.meldung.textContent === App.serverWeg)) laden();
       })

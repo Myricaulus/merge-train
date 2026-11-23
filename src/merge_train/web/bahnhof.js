@@ -1,8 +1,8 @@
 // Güterbahnhof: Leitstand-Knöpfe der eingeschalteten Quellen. Der Zug kommt aus /zug.js (gemischt, ohne
 // GitLab-Anfrage); GitLab wird nur auf Knopfdruck gefragt (data-g, auch „⇣ lokal aktualisieren“/„⇡ pushen“ in der Meldung zum
-// abweichenden Stand), danach holt zugHolen den Zug neu bzw. lädt bei neu_laden die Seite. Lokal (data-l)
-// lädt zug.js neu. Holt der Server dabei die Läufe des Myrlings im Hintergrund (nachladen), fragt die Seite den Zug
-// noch einmal, sobald sie da sind. Braucht von App: waggon, melden, zugSetzen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
+// abweichenden Stand), danach holt zugHolen den Zug neu bzw. bei neu_laden den neuen Stand (neuHolen). Lokal (data-l):
+// zug.js. Holt der Server dabei die Läufe des Myrlings im Hintergrund (nachladen), fragt die Seite den Zug
+// noch einmal, sobald sie da sind. Braucht von App: waggon, melden, zugSetzen, neuHolen, reviewLaden (nur Diff-Seiten). Stellt bereit: zugHolen.
 (() => {
   const {waggon} = App;
   const mitGitlab = !!document.querySelector('#bahnhof button[data-g]');
@@ -27,41 +27,38 @@
       sessionStorage.removeItem('meldung');
     }
   } catch (_) {} // Meldung von „↻ MR-Daten“ über das Neuladen
-  document.querySelectorAll('button[data-g]').forEach(b => {
-    if (b.dataset.g === 'mrdaten' && (!waggon.id || /^(projekt|myrling):/.test(waggon.id))) b.hidden = true;
+  document.querySelectorAll('button[data-g="mrdaten"]').forEach(b => {
+    if (!waggon.id || /^(projekt|myrling):/.test(waggon.id)) b.hidden = true;
+  });
+  // ein Handler für alle data-g-Knöpfe, auch die in der Meldung über den Diffs (kommt beim Tausch neu)
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button[data-g]');
+    if (!b || b.disabled) return;
     const bh = document.querySelector('.szene');
-    b.addEventListener('click', () => {
-      if (b.dataset.frage && !confirm(b.dataset.frage)) return; // z. B. Force-Push
-      b.disabled = true;
-      App.melden(b.dataset.meldung || 'frage GitLab …');
-      bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet
-      fetch('/api/gitlab', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({aktion: b.dataset.g, mr: waggon.id, k: waggon.k})
+    if (b.dataset.frage && !confirm(b.dataset.frage)) return; // z. B. Force-Push
+    b.disabled = true;
+    App.melden(b.dataset.meldung || 'frage GitLab …');
+    bh.classList.add('laedt'); // Schüttgut rieselt, solange GitLab antwortet
+    fetch('/api/gitlab', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({aktion: b.dataset.g, mr: waggon.id, k: waggon.k})
+    })
+      .then(r => r.json())
+      .then(d => {
+        b.disabled = false;
+        bh.classList.remove('laedt');
+        if (d.ok && (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden))) return App.neuHolen(d.text);
+        App.melden(d.text || '');
+        if (!d.ok) return;
+        if (b.dataset.g === 'mrdaten') App.reviewLaden(); // Seite unverändert: nur Kommentare/Entwürfe auffrischen
+        zugHolen();
       })
-        .then(r => r.json())
-        .then(d => {
-          b.disabled = false;
-          bh.classList.remove('laedt');
-          if (d.ok && (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden))) {
-            try {
-              sessionStorage.meldung = d.text || ''; // erst nach dem Neuladen melden – sonst steht sie zweimal in der Glocke
-            } catch (_) {}
-            location.reload();
-            return;
-          }
-          App.melden(d.text || '');
-          if (!d.ok) return;
-          if (b.dataset.g === 'mrdaten') App.reviewLaden(); // Seite unverändert: nur Kommentare/Entwürfe auffrischen
-          zugHolen();
-        })
-        .catch(() => {
-          b.disabled = false;
-          bh.classList.remove('laedt');
-          App.melden('merge-train-Server nicht erreichbar');
-        });
-    });
+      .catch(() => {
+        b.disabled = false;
+        bh.classList.remove('laedt');
+        App.melden('merge-train-Server nicht erreichbar');
+      });
   });
   // Himmel rutscht weg (#kopf klebt bei top:-96px): Kulisse um bis zu 36 px nach unten schieben, Horizont landet am
   // Unterrand

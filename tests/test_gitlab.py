@@ -330,6 +330,13 @@ def gespraech_test(proj, env, k, hol, g):
            and not stand_neu["veraltet"] and not json.loads(hol(f"/api/review?mr=projekt:proj&k={k}&seite=../x.json"))["ok"],
            "Seite mit Schlüssel: die alte rechnet gegen ihren eigenen Stand (Zeile 20) und ist veraltet, die neue nicht; "
            "fremder Schlüssel abgelehnt")
+    d = json.loads(hol(f"/api/diff?mr=projekt:proj&k={k}&seite={urllib.parse.quote(alte_seite)}"))
+    a_py = next((x for x in d.get("dateien", []) if 'data-pfad="a.py"' in (x["html"] or "")), None)
+    pruefe(d["ok"] and not d["gleich"] and d["mr"]["seite"] == neue_seite and a_py and d["zeilen"].get("a.py") == [[1, 2]]
+           and all(x["html"] is None for x in d["dateien"] if x is not a_py) and 'data-schluessel="' in a_py["html"]
+           and "Stand" in d["titel"] and json.loads(hol(f"/api/diff?mr=projekt:proj&k={k}&seite={urllib.parse.quote(neue_seite)}"))["gleich"],
+           "api/diff: von der alten Seite nur die geänderte Datei (samt Schlüssel), MR, Kopf und die neuen Zeilen; "
+           "von der neuen: gleich")
     haken = f"{proj}/.git/hooks/pre-push"  # fertig = git push . claude:reviewed: ein scheiternder Hook ändert nichts
     open(haken, "w").write("#!/bin/sh\necho 'Test rot' >&2\nexit 1\n"); os.chmod(haken, 0o755)
     reviewed = g("rev-parse", "reviewed")

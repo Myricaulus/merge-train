@@ -39,7 +39,9 @@ Diff aus dem lokalen Git, Dateiliste, Kontext nachladen, Datei abhaken und filte
   gegen genau diese (`seiten_struktur`, `struktur_der_seite`), die CLI gegen die zuletzt gebaute (`akte.struktur`).
   Ob eine Seite noch aktuell ist: `seite_veraltet` (`beobachter.py`). Einrichtung je Datei (Inline-Tabelle, Knöpfe
   der Lücken, Haken): `App.jedeDatei`, für neue bzw. neu gefüllte Dateien `App.dateiEinrichten`; neuer Diff im DOM:
-  `App.dateienNeu` (dieselben Arrays `App.dateien`/`App.dateiLinks`).
+  `App.dateienNeu` (dieselben Arrays `App.dateien`/`App.dateiLinks`). Neuer Stand ohne Neuladen: `App.neuHolen`
+  (`web/tausch.js`, sonst `location.reload`), Route `api/diff` aus den Teilen der Seite (`teil`, `seiten_teile`),
+  Schlüssel je Datei `datei_schluessel` (`diff_html.py`), Rahmen `App.einrahmen` (`web/beobachten.js`, `neue_zeilen`).
 - Erweitern: Filtergruppen (etwa FE/BE) als weitere Zeilen im Filtermenü.
 
 ### 5. Ansichten eines Waggons
@@ -109,7 +111,8 @@ Seiten fragen GitLab nie selbst; Abgleich des Klons mit dem GitLab-Stand.
   (`quellen.py`), `teil_abgeben` (`abhaken.py`), `wip_name`, `diff_basis` (`git.py`).
 
 ### 16. Beobachten (Arbeitsstand live)
-- Ort: `instanz.py`, `beobachter.py`, `web/beobachten.js`, Route `api/neu`. Ideen: `docs/ideen.md`.
+- Ort: `instanz.py`, `beobachter.py` (der Watcher gilt für jede lokale Seite: `repo_bewegt`), `web/beobachten.js`.
+  Ideen: `docs/ideen.md`.
 
 ### 17. Stellwerk (HUD) und Meldungen
 - Ort: `web/hud.js`, `web/toasts.js`, Route `api/hud`.
@@ -177,6 +180,7 @@ Achsen berechnet der Server.
 | Liste links über den Dateien | `kommentarListe`, `kasten` (`web/diff.js`), neue Liste = Eintrag in `LISTEN_STATI` |
 | Stand eines Eintrags anzeigen | `stand`/`wer` vom Server, `App.STAENDE`, `App.werZeichen` |
 | Meldung an den Nutzer | `App.melden`, auf Python-Seite `Fehler` |
+| Seite auf den neuen Stand bringen | `App.neuHolen` (Tausch je Datei), nie `location.reload` – das nur bei neuer Version |
 | Langer Ablauf mit GitLab | planen und ausführen getrennt (`abschluss_planen`/`schritt_ausfuehren`) |
 | Agent soll etwas tun | `Quelle.prompt` und `benachrichtigen` (`zuhoerer.py`) |
 | Gemeinsames im JS | nur über `App`, Kopfkommentar „braucht/stellt bereit“ pflegen |

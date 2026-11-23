@@ -3,7 +3,7 @@
 // Projektinfos und von/bis des Projekts zur Auswahl (api/projekt). Füllung aus den abgehakten Dateien; ist erst ein
 // Teil abgehakt, heißt der Knopf „abgeben“ (Teilstand <von>-wip, zählt wie fertig für die Abfahrt).
 // Braucht von App: waggon, el, melden, lokSvg, anlageZeichnen, kopfhoeheSetzen (nur Diff-Seiten), review (nur
-// Diff-Seiten), serverWeg. Stellt bereit: zugSetzen, wagenFuellen.
+// Diff-Seiten), serverWeg, neuHolen. Stellt bereit: zugSetzen, wagenFuellen.
 // Kopfhörer auf dem Waggondach: wer an dem Waggon zuhört (api/zuhoerer, alle 5 s) und was er gerade tut.
 (() => {
   const {waggon, el} = App;
@@ -247,7 +247,7 @@
               App.melden(e.text);
               if (!e.ok) return;
               karteZu();
-              if (d.p === waggon.projekt) location.reload();
+              if (d.p === waggon.projekt) App.neuHolen(e.text);
               else zugSetzen(e.wagen || zugWagen);
             })
             .catch(() => App.melden(App.serverWeg));
@@ -335,7 +335,7 @@
   } // Vorschau: Band läuft dauerhaft
   document
     .querySelectorAll('#bahnhof button[data-l]')
-    .forEach(b => b.addEventListener('click', () => location.reload())); // lokal: neue Änderungen
+    .forEach(b => b.addEventListener('click', () => App.neuHolen())); // lokal: neue Änderungen
   const fertigKnopf = document.getElementById('fertig');
   const dieserWagen = zugWagen.find(w => w.p === waggon.projekt);
   /** Teil abgehakt → „abgeben“ (nur die abgehakten Dateien), sonst „fertig ✓“. */
@@ -481,7 +481,7 @@
               if (naechsterWagen()) weiterZumNaechsten();
               else {
                 abfahrtFeiern();
-                setTimeout(() => location.reload(), 3600);
+                setTimeout(() => App.neuHolen(), 3600);
               }
               return;
             }

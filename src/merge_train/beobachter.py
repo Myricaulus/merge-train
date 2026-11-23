@@ -1,11 +1,11 @@
-"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für --beobachten: merkt, wann sich im Repo etwas getan hat.
+"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für lokale Seiten: merkt, wann sich im Repo etwas getan hat.
 
 Der Beobachter (inotify über ctypes, ohne Abhängigkeit; ohne inotify alle paar Sekunden „vielleicht“) meldet nur „seit
 Zähler n hat sich etwas bewegt“. Ob sich der Stand wirklich geändert hat, prüft erst git, und das nur nach einer Meldung.
-Dazu: welche Zeilen zwischen zwei Ständen neu sind (Rahmen um das Neue nach dem Neuladen).
+Dazu: welche Zeilen zwischen zwei Ständen neu sind (Rahmen um das Neue nach dem Tausch).
 """
 import os, re, subprocess, sys, threading, time
-from .einstellungen import KONF, SPERRE
+from .einstellungen import SPERRE
 from .waggon import Fehler, von_bis
 from .git import bis_sha, git, projekt_wurzel
 from .akte import akte_lesen
@@ -102,8 +102,8 @@ def beobachter(wurzel):
 
 def seite_veraltet(waggon, seite, akte=None):
     """Zeigt die Seite mit Schlüssel seite (MR.seite) nicht mehr den neuesten Stand des Waggons? Ja, wenn seither eine
-    andere Seite gebaut wurde (akte.struktur: CLI, MR-Daten, anderer Tab) oder – lokal mit --beobachten – sich im Repo
-    etwas bewegt hat (repo_bewegt). Unbekannte Seite: ja."""
+    andere Seite gebaut wurde (akte.struktur: CLI, MR-Daten, anderer Tab) oder – lokal – sich im Repo etwas bewegt hat
+    (repo_bewegt). Unbekannte Seite: ja."""
     struktur = struktur_der_seite(waggon, seite)
     if struktur is None:
         return True
@@ -114,9 +114,9 @@ def seite_veraltet(waggon, seite, akte=None):
 
 def repo_bewegt(waggon, refs):
     """Steht das Repo nicht mehr auf refs (Arbeitsverzeichnis, HEAD oder von bewegt)? git nur nach einer Meldung des
-    Beobachters, sonst die letzte Antwort. Nur bei --beobachten und lokalen Projekten."""
+    Beobachters, sonst die letzte Antwort. Nur lokale Projekte (MRs und Läufe ändern sich nur auf Knopfdruck)."""
     sha = refs.get("head_sha")
-    if not (KONF["beobachten"] and waggon.lokal and sha):
+    if not (waggon.lokal and sha):
         return False
     try:
         wurzel = projekt_wurzel(waggon.lokal)
@@ -138,16 +138,12 @@ def repo_bewegt(waggon, refs):
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
 
 
-def neue_zeilen(waggon, alt, neu):
-    """Zeilen, die zwischen den Ständen alt und neu dazugekommen oder geändert sind: {pfad: [[von, bis], …]} (Zeilen im
-    Stand neu). Reine Löschungen markieren die Zeile danach. Unbekannter Stand alt (z. B. aufgeräumt): {}."""
-    if not (waggon.lokal and re.fullmatch(r"[0-9a-f]{7,40}", alt or "") and re.fullmatch(r"[0-9a-f]{7,40}", neu or "")):
+def neue_zeilen(ordner, alt, neu):
+    """Zeilen, die zwischen den Ständen alt und neu (im Repo ordner) dazugekommen oder geändert sind: {pfad: [[von,
+    bis], …]} (Zeilen im Stand neu). Reine Löschungen markieren die Zeile danach. Gleicher oder unbekannter Stand: {}."""
+    if alt == neu or not (re.fullmatch(r"[0-9a-f]{7,40}", alt or "") and re.fullmatch(r"[0-9a-f]{7,40}", neu or "")):
         return {}
-    try:
-        wurzel = projekt_wurzel(waggon.lokal)
-    except Fehler:
-        return {}
-    roh = git(wurzel, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U0", alt, neu,
+    roh = git(ordner, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-U0", alt, neu,
               check=False) or ""
     out, pfad = {}, None
     for z in roh.splitlines():

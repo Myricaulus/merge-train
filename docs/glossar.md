@@ -49,7 +49,10 @@
 | **Siehe-auch** | Verweis in einem Hinweis oder Thread auf eine weitere Stelle. Gehört nie zum GitLab-Kommentar. `see_also`, `--siehe` | Siehe auch | R, H |
 | **Vergleich** (⇄) | Zwei Stellen nebeneinander, auch aus verschiedenen Ständen (`@ref`). `--vergleich A B` | ⇄ | F 7 |
 | **Mitwandern** | Fäden und Hinweise folgen ihrer Zeile über neue Commits. Wurde die Zeile selbst geändert, stehen sie unter dem Dateinamen. `zeilen.py` | | R, F 6 |
-| **Beobachten** | Eigene Instanz für einen Ordner, die den Arbeitsstand live zeigt und bei Änderung neu lädt. `--beobachten` | | R, F 16 |
+| **Beobachten** | Eigene Instanz für einen Ordner, die den Arbeitsstand live zeigt und bei Änderung zum Neuen scrollt. `--beobachten` | | R, F 16 |
+| **Tausch** (je Datei) | Neuer Stand auf der offenen Seite ohne Neuladen: nur Dateien mit neuem Datei-Schlüssel kommen neu, die übrigen bleiben. `App.neuHolen`, `api/diff` | geändert (wartet) | R, F 4 |
+| **Datei-Schlüssel** | Kennung, die gleich bleibt, solange eine Datei des Diffs gleich aussieht (Pfade, Status, Blobs). `datei_schluessel`, `data-schluessel` | | F 4 |
+| **Seiten-Schlüssel** | Kennung der Struktur, die eine gebaute Seite zeigt; der Server rechnet gegen sie. `MR.seite`, `seiten_schluessel` | | F 4 |
 
 ## 3 · Gespräch mit Agenten
 
@@ -148,6 +151,7 @@ Wörter, die in merge-train heute zwei oder mehr Bedeutungen haben. Bis entschie
 | **Hinweis** | Agent-Hinweis (draft) · Meldung oben („sagt das ein Hinweis oben“) | „Hinweis“ nur für Agent-Hinweise, sonst **Meldung** |
 | **prüfen** | `agent pruefen` (Review-JSON anmelden) · `./pruefen` (Lint) · Lauf, der „auf eine Prüfung wartet“ | Myrling: **Sichtung** (wie MyrSpace); die beiden Befehle behalten ihren Namen |
 | **Waggon / Wagen** | Vergleich (Daten) · seine Zeichnung im Zug | so lassen, aber streng trennen |
+| **Schlüssel** | Server-Schlüssel der Seiten (`k`, `schluessel()`) · Datei-Schlüssel · Seiten-Schlüssel | nie allein: **Server-Schlüssel**, **Datei-Schlüssel**, **Seiten-Schlüssel** |
 
 ---
 

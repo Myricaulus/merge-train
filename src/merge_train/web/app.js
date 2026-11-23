@@ -12,6 +12,14 @@ const App = {
     App.meldung.textContent = text || '';
   }
 };
+/** Neuen Stand zeigen (nach „↻ Änderungen“, MR-Daten, neuen Zweigen …), Meldung danach. Hier: Seite neu laden; Diff-Seiten
+ *  tauschen stattdessen je Datei (tausch.js). */
+App.neuHolen = meldung => {
+  try {
+    sessionStorage.meldung = meldung || '';
+  } catch (_) {}
+  location.reload();
+};
 /** Element bauen: el('a', {class: 'x', onclick: f}, 'Text', kind, …) */
 App.el = (tag, attrs, ...kinder) => {
   const e = document.createElement(tag);

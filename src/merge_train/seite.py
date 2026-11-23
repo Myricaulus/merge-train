@@ -7,7 +7,7 @@ from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, k
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
-from .diff_html import datei_html, spaeter_grund, zeilenzahl
+from .diff_html import datei_html, datei_schluessel, spaeter_grund, zeilenzahl
 from .akte import STRUKTUR, akte_bearbeiten, akte_lesen, struktur_lesen
 from .gitlab import MetaFehlt, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
@@ -173,7 +173,7 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None, commits=None)
         return stamm + ".html", fertig
     von, bis = (ans["von"], ans["bis"]) if ans else (refs["base_sha"], refs["head_sha"])
     dateien = zerlegen(git(ordner, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
-                           "-M", "-U3", von, bis))
+                           "--full-index", "-M", "-U3", von, bis))
     if commits is None:
         commits = git_commits(ordner, refs["base_sha"], refs["head_sha"])
     def benoetigt(d):
@@ -195,7 +195,7 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None, commits=None)
     struktur = {"id": sid, "refs": refs, "ordner": ordner, "praefix": praefix, "ansicht": ans, "dateien": []}
     for d, (_, neu_text) in zip(dateien, tx):
         paare, hunks = paare_und_hunks(d)
-        struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"],
+        struktur["dateien"].append({"alt": d["alt"], "neu": d["neu"], "status": d["status"], "schluessel": datei_schluessel(d),
                                     "paare": paare, "hunks": hunks, "bn": zeilenzahl(neu_text) or None})
     ersetzen(stamm + ".html", html_fn(dateien, commits, tx, struktur))
     ersetzen(stamm + ".json", json.dumps(struktur, ensure_ascii=False))
@@ -324,18 +324,41 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
     if kann["review"]:
         knoepfe += (f'\n<button id="abschliessen"{" hidden" if lesen else ""} title="Kommentare als Entwürfe („Review starten“) '
                     'in den MR übertragen – veröffentlicht wird erst in GitLab">Review abschließen → GitLab</button>')
+    titel_zeile = (f'<h1>{h1}</h1>{nach_h1}\n<span class="sub">{sub_vor}{len(commits)} Commit(s) · {len(dateien)} Datei(en) · '
+                   f'<span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{nach_sub}')
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">{ICON}
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{titel}</title>
 <style>{CSS}{CSS_REVIEW}</style><script src="/zug.js?akt={urllib.parse.quote(sid)}"></script></head><body class="diffseite">
-<header id="kopf">{gleise_html()}<div class="zeile"><h1>{h1}</h1>{nach_h1}
-<span class="sub">{sub_vor}{len(commits)} Commit(s) · {len(dateien)} Datei(en) · <span class="p">+{plus}</span> <span class="m">−{minus}</span> · Stand {html.escape(head[:8])}</span>{nach_sub}
+<header id="kopf">{gleise_html()}<div class="zeile"><div id="titel">{teil("titel", titel_zeile)}</div>
 <span id="rvstand" class="sub"></span><span id="meldung"></span>
 <span class="kopfknoepfe">{knoepfe}</span></div>
-<details id="commits"><summary>{commits_titel}</summary><div class="liste">{commits_liste}</div>{unter_commits}</details>{nach_commits}</header>
+<details id="commits"><summary>{commits_titel}</summary>{teil("commits", f'<div class="liste">{commits_liste}</div>{unter_commits}')}</details><div id="nachcommits">{teil("nach_commits", nach_commits)}</div></header>
 <div class="rahmen"><aside class="seite"><div class="box">{hilfe}<details id="kliste" class="kliste" open hidden><summary>GitLab-Kommentare</summary><div></div></details><details id="kliste-gl" class="kliste" open hidden><summary>GitLab-Diskussionen</summary><div></div></details><details id="kliste-ki" class="kliste" open hidden><summary>KI-Threads</summary><div></div></details></div>
-<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{"".join(dateiliste_html(dateien))}</nav></aside>
-<main>{leer}{dateien_html(dateien, texte)}</main></div>
+<nav id="liste"><h2>Dateien ({len(dateien)})</h2>{teil("liste", "".join(dateiliste_html(dateien)))}</nav></aside>
+<main>{teil("leer", leer)}{teil("dateien", dateien_html(dateien, texte))}</main></div>
 <script>const MR={daten};{JS}</script></body></html>"""
+
+
+def teil(name, inhalt):
+    """Teil der Diff-Seite, den der Tausch (api/diff, seiten_teile) neu liefert: zwischen Markern im HTML."""
+    return f"<!--teil:{name}-->{inhalt}<!--/teil:{name}-->"
+
+
+_TEIL = re.compile(r"<!--teil:(\w+)-->(.*?)<!--/teil:\1-->", re.S)
+_DATEI_ANFANG = re.compile(r'<details open class="datei" [^>]*data-schluessel="([0-9a-f]+)"')
+
+
+def seiten_teile(pfad):
+    """Die Teile (teil) einer gebauten Diff-Seite und MR (const MR) für den Tausch: {mr, titel, commits, nach_commits,
+    liste, leer, dateien: [(schluessel, html)]}. Code steht im HTML escapet, die Marker kommen darin nicht vor."""
+    roh = open(pfad, encoding="utf-8").read()
+    teile = dict(_TEIL.findall(roh))
+    alle = teile.pop("dateien", "")
+    anfang = list(_DATEI_ANFANG.finditer(alle))
+    teile["dateien"] = [(m.group(1), alle[m.start():anfang[i + 1].start() if i + 1 < len(anfang) else len(alle)])
+                        for i, m in enumerate(anfang)]
+    teile["mr"] = json.JSONDecoder().raw_decode(roh.split("<script>const MR=", 1)[1])[0]
+    return teile
 
 
 def ansicht_struktur(haupt, ansicht):

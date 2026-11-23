@@ -1,5 +1,5 @@
 """HTML eines Datei-Diffs: Tabelle mit Hunks, Lücken zum Aufklappen, große Dateien erst auf Wunsch."""
-import html, re
+import hashlib, html, re
 from .syntax import darstellen, intraline, zeilen_tokens
 
 def hunk_zeilen(h, ta_tok, tb_tok):
@@ -104,6 +104,14 @@ def datei_tabelle(d, alt_text, neu_text, luecken=False):
     return f'<table class="sbs">{cs}{"".join(sbs)}</table>'
 
 
+def datei_schluessel(d):
+    """Schlüssel einer Datei des Diffs (data-schluessel, struktur): gleich, solange sie gleich aussieht – Pfade, Status
+    und die Fassungen vorher/nachher (Blob-shas aus zerlegen). Der Tausch je Datei (tausch.js) behält Dateien mit
+    gleichem Schlüssel. Nur hier gebildet: braucht es später etwas anderes (etwa SHA-256 über den Inhalt), ändert sich
+    nur diese Funktion."""
+    return hashlib.sha1("\0".join((d["alt"], d["neu"], d["status"], d.get("fassung", ""))).encode()).hexdigest()[:16]
+
+
 def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
     name = d["neu"] if d["alt"] == d["neu"] else f'{d["alt"]} → {d["neu"]}'
     kopf = (f'<summary><span class="st st-{d["status"]}">{d["status"]}</span> '
@@ -112,7 +120,7 @@ def datei_html(n, d, alt_text, neu_text, luecken=False, spaeter=None):
     # content-visibility (CSS): nur sichtbare Dateien werden gerendert; geschätzte Höhe hält Scrollbalken/Sprünge stabil
     hoehe = 40 if spaeter or not d["hunks"] else 40 + 21 * (sum(len(h["z"]) for h in d["hunks"]) + 2 * len(d["hunks"]))
     auf = (f'<details open class="datei" id="d{n}" data-pfad="{html.escape(d["neu"])}" '
-           f'style="contain-intrinsic-size:auto {hoehe}px">{kopf}')
+           f'data-schluessel="{datei_schluessel(d)}" style="contain-intrinsic-size:auto {hoehe}px">{kopf}')
     if spaeter:
         return (f'{auf}<div class="leer spaet">{html.escape(spaeter)} – '
                 f'<button class="laden">Diff laden</button></div></details>')

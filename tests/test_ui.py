@@ -93,9 +93,10 @@ class Browser:
 
 class Fall:
     """Ein Server mit einer Seite: mr = Kennung für die API, pfad = URL der Seite."""
-    def __init__(self, srv, mr, pfad, startet, ziel):
-        """ziel: (Zielbranch, Datei, Zeile, Text dort) – eine Zeile, die im Stand der Seite anders lautet (siehe_ziel)."""
-        self.srv, self.mr, self.pfad, self.startet, self.ziel = srv, mr, pfad, startet, ziel
+    def __init__(self, srv, mr, pfad, startet, ziel, repo):
+        """ziel: (Zielbranch, Datei, Zeile, Text dort) – eine Zeile, die im Stand der Seite anders lautet (siehe_ziel).
+        repo: das Repo bzw. der Klon des Waggons."""
+        self.srv, self.mr, self.pfad, self.startet, self.ziel, self.repo = srv, mr, pfad, startet, ziel, repo
 
     def faeden(self):
         q = urllib.parse.urlencode({"mr": self.mr, "k": self.srv.schluessel})
@@ -129,7 +130,7 @@ def fall_lokal(t, port, agent=True):
     git(repo, "add", "-A"); git(repo, "commit", "-qm", "viele Dateien")
     konfig = f'projekte = ["{repo}"]\ngitlab = false\nport = {port}\nleerlauf = 300\n' + ('feedback_befehl = "true"\n' if agent else "")
     return Fall(Server(ordner, repo, port, konfig), "projekt:probe", "/probe.html", agent,
-                ("reviewed", "README.md", 3, "Nur zum Vergleichen."))
+                ("reviewed", "README.md", 3, "Nur zum Vergleichen."), repo)
 
 
 def fall_mr(t, port, agent=True):
@@ -152,7 +153,7 @@ def fall_mr(t, port, agent=True):
     subprocess.run([sys.executable, os.path.join(ordner, "merge-train"), "agent", "zeigen", hw, "--nicht-oeffnen"],
                    env=dict(srv.umgebung, MERGE_TRAIN_AGENT="Claude"), capture_output=True, check=True, cwd=repo)
     return Fall(srv, "gitlab.example.com/gruppe/demo/1", "/mr/gitlab.example.com/gruppe/demo/1", agent,
-                ("main", "App.cs", 10, "// Zeile 10"))
+                ("main", "App.cs", 10, "// Zeile 10"), repo)
 
 
 FAELLE = {"lokal": fall_lokal, "ohne": lambda t, port: fall_lokal(t, port, agent=False), "mr": fall_mr,
@@ -467,9 +468,51 @@ def teil_siehe_ziel(b, f):
     b.js("document.querySelector('#popup .pk button[title^=\"schließen\"]').click()")
 
 
+def teil_tausch(b, f):
+    """Neuer Stand ohne Neuladen: die neue Datei steht an ihrem Platz in Diff und Liste, eingerahmt; die geänderte mit
+    offenem Feld wartet (Marke „geändert“), Feld und Text bleiben, die Scroll-Lage auch. Ist das Feld zu, kommt die neue
+    Fassung. Lokal merkt die Seite den Commit selbst, beim MR stößt der Test an (wie „↻ MR-Daten“)."""
+    lokal = f.mr.startswith("projekt:")
+    datei, neu, anker = ("lib/rechnen.py", "neu/dazu.txt", "viele_30.txt") if lokal else ("App.cs", "Neu.cs", None)
+    seite(b, f)
+    sel = f"document.querySelector('.datei[data-pfad=\"{datei}\"]')"
+    assert b.js(f"(() => {{ const td = [...{sel}.querySelectorAll('table.sbs tr[data-b] td.n')].find(td => "
+                "td.textContent.trim() === td.closest('tr').dataset.b); if (td) td.id = 'ui-zeile'; return !!td; })()"), \
+        f"keine Zeilennummer in {datei}"
+    b.klicken("#ui-zeile")
+    b.warten_bis("document.activeElement && document.activeElement.matches('main .kbox textarea')")
+    b.tippen("bleibt stehen")
+    lage = "(() => { const r = document.querySelector('.datei[data-pfad=\"%s\"] tr[data-b=\"5\"]'); return r && r.getBoundingClientRect().top; })()" % anker
+    if anker:
+        b.js(f"document.querySelector('.datei[data-pfad=\"{anker}\"] tr[data-b=\"5\"]').scrollIntoView({{block: 'start'}});"
+             "scrollBy(0, -document.getElementById('kopf').offsetHeight - 40)")
+        vorher = b.js(lage)
+    b.js("window.ohneNeuladen = 1")
+    seite_vorher = b.js("App.waggon.seite")
+    pfad = os.path.join(f.repo, datei)
+    open(pfad, "a").write("# neu dazu\n" if lokal else "// neu dazu\n")
+    os.makedirs(os.path.dirname(os.path.join(f.repo, neu)) or f.repo, exist_ok=True)
+    open(os.path.join(f.repo, neu), "w").write("".join(f"neu {i}\n" for i in range(1, 6)))
+    git(f.repo, "add", "-A"); git(f.repo, "commit", "-qm", "noch eine Datei")
+    if not lokal:
+        b.js("App.neuHolen('MR-Daten geholt')")
+    b.warten_bis(f"document.querySelector('main .datei[data-pfad=\"{neu}\"] tr.neu-rahmen')", timeout=15)
+    assert b.js("window.ohneNeuladen === 1"), "Seite wurde neu geladen"
+    assert b.js("App.waggon.seite") != seite_vorher, "MR.seite nicht auf dem neuen Stand"
+    assert b.js(f"{sel}.classList.contains('wartet') && !!{sel}.querySelector('.wartet-marke')"), "geänderte Datei ohne Marke"
+    assert b.js(f"{sel}.querySelector('textarea').value") == "bleibt stehen", "Text im offenen Feld verloren"
+    assert b.js(f"!!document.querySelector('#liste a[title=\"{neu}\"]') && App.dateien.length === document.querySelectorAll('main .datei').length"), \
+        "neue Datei fehlt in der Liste oder App.dateien"
+    if anker:
+        nachher = b.js(lage)
+        assert abs(nachher - vorher) < 3, f"Scroll-Lage verrutscht: {vorher} → {nachher}"
+    b.js(f"{sel}.querySelector('tr.kr').remove()")  # Feld zu
+    b.warten_bis(f"{sel} && !{sel}.classList.contains('wartet') && {sel}.textContent.includes('neu dazu')")
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
-         "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel}
+         "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch}
 
 
 def main():

@@ -55,7 +55,8 @@ def git(ordner, *a, check=True, env=None, ok=(0,)):
 
 
 def zerlegen(diff):
-    """Unified-Diff in Dateien → Hunks → Zeilen zerlegen."""
+    """Unified-Diff in Dateien → Hunks → Zeilen zerlegen. fassung: Blobs und Modus aus den Kopfzeilen („index a..b
+    100644“, „old/new mode“), mit --full-index ganz – gleich, solange die Datei vorher und nachher gleich ist."""
     dateien, d, h = [], None, None
     for z in diff.splitlines():
         if z.startswith("diff --git "):
@@ -69,6 +70,8 @@ def zerlegen(diff):
         elif h is None and z.startswith("deleted file"): d["status"] = "gelöscht"
         elif h is None and z.startswith("rename from"): d["status"] = "umbenannt"
         elif h is None and z.startswith("Binary files"): d["binaer"] = True
+        elif h is None and z.startswith(("index ", "old mode ", "new mode ")):
+            d["fassung"] = (d.get("fassung", "") + " " + z.split(" ", 1)[1]).strip()
         elif z.startswith("@@"):
             m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)", z)
             h = {"a": int(m.group(1)), "b": int(m.group(2)), "kopf": m.group(3).strip(), "z": []}

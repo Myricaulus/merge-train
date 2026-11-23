@@ -6,7 +6,7 @@ Noch nicht entschieden, nur geparkt.
 
 Zu `merge-train --beobachten`: zum Zuschauen und Entspannen, während ein Agent oder ein eigener Refactor läuft.
 
-- ~~**Rahmen um das Neue**~~ (erledigt, `web/beobachten.js`, `api/neu`): Nach dem Neuladen wegen einer Änderung bekommen
+- ~~**Rahmen um das Neue**~~ (erledigt, `web/beobachten.js`, `api/diff`): Nach dem Tausch wegen einer Änderung bekommen
   die Zeilen, die sich seit dem zuletzt angezeigten Stand geändert haben, einen Rahmen; die Seite scrollt sanft hin. Er
   bleibt bis zur nächsten Änderung. Offen: Stellen in eingeklapptem Kontext oder in nachzuladenden Dateien bekommen keinen
   Rahmen (die Zeilen sind nicht auf der Seite), und eine zurückgenommene Änderung (wieder auf HEAD-Stand) zeigt nichts.
@@ -29,8 +29,8 @@ Zu `merge-train --beobachten`: zum Zuschauen und Entspannen, während ein Agent 
     - **Rausfliegen nach einer Regel**: die ältesten (über der Höchstzahl) und veraltete (ihre Stelle hat sich seitdem
       wieder geändert oder ist nicht mehr im Diff).
     - **Während Spotlight** landen neue Boxen am Rand, damit man sieht, dass es im Hintergrund weitergeht.
-  - Weiche Bewegungen (Landen, Abkühlen, Rausfliegen, Spotlight auf/zu) mit CSS-Übergängen. Dafür nicht mehr neu laden:
-    Die Seite holt die neuen Chunks per fetch und baut nur die Boxen dazu.
+  - Weiche Bewegungen (Landen, Abkühlen, Rausfliegen, Spotlight auf/zu) mit CSS-Übergängen. Die Seite lädt dafür nicht
+    neu (Tausch je Datei, `api/diff`), sie baut nur die Boxen dazu.
   - Früher angedacht und verworfen (zu viel Tüftelei): Haufen, der alte Boxen aus dem Viewport drückt, Box unter der Maus
     bleibt stehen, Boxen einer Datei beieinander, dahinter liegende rutschen beim Spotlight hervor.
   - Bausteine: `neue_zeilen` (`beobachter.py`, `git diff -U0 alt neu`) liefert schon die Bereiche; für die Boxen bräuchte es

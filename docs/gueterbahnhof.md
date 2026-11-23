@@ -16,7 +16,7 @@ Commits `321af08` … `eba8275` auf `claude`:
   mit dem Schild „MERGE-TRAIN“, verglaster Leitstand und ein Tor fürs Gleis bei x=28…156. Daraus läuft das
   Förderband als Fachwerkbrücke bis zur Bandmitte `cx` (Bildschirmmitte, mindestens 330), mit Bandkopf, Schurre
   und Strahl über dem Wagen. Dazu kommen Gleis, Schotter und Schwellen. Die Knöpfe sind HTML (`#bahnhof`) im
-  Leitstand: GitLab „↻ MRs“ und „↻ MR-Daten“ (ohne glab ausgegraut), lokal „↻ Änderungen“ (lädt neu).
+  Leitstand: GitLab „↻ MRs“ und „↻ MR-Daten“ (ohne glab ausgegraut), lokal „↻ Änderungen“ (holt den neuen Stand, `App.neuHolen`).
 - **Band:** `.szene.laedt` bzw. `.laeuft` lässt es rütteln, das Schüttgut wandert und aus der Schurre rieselt
   es. `#laden` setzt `laedt` dauerhaft.
 - **Scrollen:** Der Himmel (`--himmel: 96px`) rutscht weg, Leitstand, Band und Zug bleiben stehen. `kopfHoehe()`
