@@ -13,8 +13,9 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
 from .gitlab import GitLabFehler, alle, glab, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
-from .seite import ansicht_struktur, mr_seite, projekt_zeiger
+from .seite import ansicht_struktur, mr_seite, struktur_der_seite
 from .zuhoerer import horcht, kontext
+from .beobachter import seite_veraltet
 from collections import Counter
 from dataclasses import dataclass
 
@@ -146,9 +147,13 @@ def sende_reihenfolge(mr, akte):
     return {i: n for n, i in enumerate(gitlab_reihenfolge(akte, kommentare_fuer_seite(akte, struktur), hinweise))}
 
 
-def review_daten(mr, ansicht=None):
+def review_daten(mr, ansicht=None, seite=None):
+    """Review der Seite mit Schlüssel seite (ohne: der zuletzt gebauten, sonst neu gebaut): Kommentare, Hinweise,
+    Diskussionen auf ihren Stand umgerechnet."""
     akte = akte_lesen(mr)
-    struktur = struktur_laden(akte)
+    struktur = seiten_struktur(mr, seite, akte=akte)
+    if struktur is None and seite:
+        return {"ok": False, "text": "Seite unbekannt – neu laden"}
     if struktur is None:
         _, struktur, mr = mr_seite(mr)
         akte = akte_lesen(mr)
@@ -173,18 +178,11 @@ def review_daten(mr, ansicht=None):
             "reihenfolge": reihenfolge}
 
 
-def seiten_struktur(sid, ansicht=None):
-    """Struktur der Seite: GitLab-MR („host/gruppe/projekt/42“), lokales Projekt („projekt:name“) oder Myrling-Lauf
-    („myrling:skript“), ganz oder Ansicht."""
-    waggon = Waggon.aus_id(sid)
-    if waggon.lokal:
-        try:
-            p = open(projekt_zeiger(waggon.lokal), encoding="utf-8").read().strip()
-        except OSError:
-            return None
-        struktur = struktur_laden({"struktur": p})
-    else:
-        struktur = struktur_laden(akte_lesen(waggon))
+def seiten_struktur(waggon, seite=None, ansicht=None, akte=None):
+    """Struktur, die eine Seite zeigt, ganz oder ihre Ansicht: seite = Schlüssel der Seite (MR.seite) – so rechnet der
+    Server gegen genau ihren Stand, auch wenn inzwischen ein neuerer gebaut ist. Ohne seite (CLI): die zuletzt gebaute
+    (akte.struktur). None: unbekannt."""
+    struktur = struktur_der_seite(waggon, seite) if seite else struktur_laden(akte or akte_lesen(waggon))
     if ansicht and struktur:
         struktur = ansicht_struktur(struktur, ansicht)
     return struktur
@@ -301,7 +299,9 @@ NUR_LESEN = "Diese Ansicht ist nur zum Lesen – Kommentare im ganzen MR oder in
 
 def kommentar_neu(waggon, akte, eingabe, ansicht):
     """Neuer Review-Kommentar (staged): aus einem übernommenen Hinweis (draft), an der geklickten Zeile oder allgemein."""
-    struktur = struktur_laden(akte)
+    struktur = seiten_struktur(waggon, eingabe.get("seite"), akte=akte)
+    if eingabe.get("seite") and (not struktur or seite_veraltet(waggon, eingabe["seite"], akte)):
+        return False, "Der MR hat inzwischen einen neuen Stand – bitte Seite neu laden."  # GitLab-Position braucht ihn
     text = str(eingabe.get("text") or "").strip()
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "refs": (struktur or {}).get("refs"),
          "erstellt": jetzt()}

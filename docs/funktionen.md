@@ -35,6 +35,9 @@ Diff aus dem lokalen Git, Dateiliste, Kontext nachladen, Datei abhaken und filte
 - Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/diff.js`, `web/navigation.js` (`dateienFiltern`, Sprung zu einer
   Datei `zuDatei`, nach dem Abhaken `naechsteOffene`); abhaken: `abhaken.py`, `App.wagenFuellen`; Boxen: `einfuegen` (`web/review.js`); Routen `api/zeilen`, `api/datei`,
   `api/abgehakt`.
+- Bausteine: Jede Seite nennt den Schlüssel ihrer Struktur (`MR.seite`, `seiten_schluessel`); der Server rechnet
+  gegen genau diese (`seiten_struktur`, `struktur_der_seite`), die CLI gegen die zuletzt gebaute (`akte.struktur`).
+  Ob eine Seite noch aktuell ist: `seite_veraltet` (`beobachter.py`).
 - Erweitern: Filtergruppen (etwa FE/BE) als weitere Zeilen im Filtermenü.
 
 ### 5. Ansichten eines Waggons
@@ -114,7 +117,8 @@ Seiten fragen GitLab nie selbst; Abgleich des Klons mit dem GitLab-Stand.
 - Ort: `server.py` (`@route`, `bearbeiten`), `prozess.py`.
 - Bausteine: `server_sicherstellen` startet den Server ohne Browser (Aufrufe, nach denen der Nutzer gleich auf die
   Seite sieht: `server_wecken` in `agent thread`/`feedback`/`horchen`).
-- Erweitern: neue Aktion der Seite = Route mit `waggon=`/`struktur=`; Akte nur über `akte_bearbeiten`/`aktion_ausfuehren`.
+- Erweitern: neue Aktion der Seite = Route mit `waggon=`/`struktur=` (Struktur der Seite aus `anfrage.seite`); Akte nur
+  über `akte_bearbeiten`/`aktion_ausfuehren`.
 
 ### 19. Kommandozeile
 - Ort: `cli.py`, `agent_cli.py`, MR-Verweise in `gitlab.py` (`mr_ref`); `agent vorfall`: `vorfall_todo`,

@@ -6,13 +6,13 @@ from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
 from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
     faden_geaendert, faden_stand,
-    faden_status, faeden_von, kommentar_finden, struktur_laden)
+    faden_status, faeden_von, kommentar_finden)
 from .hinweise import hinweise_aufloesen, see_also_aufloesen
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur
 from .quellen import quelle
 from .zuhoerer import horcht, kontext, todo_offen
-from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_klick
+from .review import NUR_LESEN, ansicht_zuordnen, review_daten, seiten_struktur, stand, zeile_aus_klick
 
 # Im lokalen Projekt-Diff wird aus einem Kommentar ein Gesprächsfaden: der Nutzer schreibt (Entwurf), „An Agent senden“
 # schickt alle Entwürfe ab, der Agent holt sie mit „merge-train agent feedback“ ab und antwortet mit „agent antworten“.
@@ -22,12 +22,13 @@ from .review import NUR_LESEN, ansicht_zuordnen, review_daten, stand, zeile_aus_
 # Agenten aus [agenten] bzw. feedback_befehl – oder legt einen todo-Eintrag an („Session starten“ öffnet ihn).
 
 
-def wagen_daten(waggon, ansicht=None):
-    """Alles, was die Seite über ihren Waggon braucht: Gespräch immer, Review (Kommentare, Hinweise) je nach Quelle."""
-    gespraech = gespraech_daten(waggon, ansicht)
+def wagen_daten(waggon, ansicht=None, seite=None):
+    """Alles, was die Seite (Schlüssel seite) über ihren Waggon braucht: Gespräch immer, Review (Kommentare, Hinweise)
+    je nach Quelle."""
+    gespraech = gespraech_daten(waggon, ansicht, seite)
     if not gespraech.get("ok"):
         return gespraech
-    review = review_daten(waggon, ansicht) if waggon.kann["review"] else \
+    review = review_daten(waggon, ansicht, seite) if waggon.kann["review"] else \
         {"ok": True, "kommentare": [], "hinweise": [], "quellen": [], "ausstehend": 0, "ausserhalb": 0, "web_url": ""}
     akte = akte_lesen(waggon)
     return dict(review, faeden=gespraech["kommentare"], faeden_fremd=gespraech["fremd"], branch=gespraech["branch"],
@@ -45,11 +46,13 @@ def gespraech_agenten(waggon):
     return namen + ([wer] if wer and wer not in namen else [])
 
 
-def gespraech_daten(waggon, ansicht=None):
-    """Wie review_daten, für ein Gespräch: Fäden des aktuellen Branches auf den Stand der Seite umgerechnet, dazu (fremd)
-    die Fäden anderer Branches – nur zum Lesen, ohne Ort im Diff."""
+def gespraech_daten(waggon, ansicht=None, seite=None):
+    """Wie review_daten, für ein Gespräch: Fäden des aktuellen Branches auf den Stand der Seite (Schlüssel seite)
+    umgerechnet, dazu (fremd) die Fäden anderer Branches – nur zum Lesen, ohne Ort im Diff."""
     akte = akte_lesen(waggon)
-    struktur = struktur_laden(akte)
+    struktur = seiten_struktur(waggon, seite, akte=akte)
+    if struktur is None and seite:
+        return {"ok": False, "text": "Seite unbekannt – neu laden"}
     if struktur is None:
         try:
             _, struktur = quelle(waggon).seite(waggon)
@@ -145,7 +148,9 @@ def faden_neu(waggon, akte, eingabe, text, ansicht):
         return False, NUR_LESEN
     if not text:
         return False, "leerer Kommentar"
-    struktur = struktur_laden(akte)
+    struktur = seiten_struktur(waggon, eingabe.get("seite"), akte=akte)
+    if struktur is None and eingabe.get("seite"):
+        return False, "Seite unbekannt – neu laden"
     k = {"id": hashlib.sha1(os.urandom(16)).hexdigest()[:10], "branch": quelle(waggon).branch(waggon),
          "refs": (struktur or {}).get("refs"), "erstellt": jetzt(), "path": None, "old_path": None, "a": None, "b": None,
          "nachrichten": [neue_nachricht("ich", text)], "erledigt": None}

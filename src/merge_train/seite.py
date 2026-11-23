@@ -8,7 +8,7 @@ from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, spaeter_grund, zeilenzahl
-from .akte import STRUKTUR, akte_bearbeiten, akte_lesen
+from .akte import STRUKTUR, akte_bearbeiten, akte_lesen, struktur_lesen
 from .gitlab import MetaFehlt, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
 
@@ -69,7 +69,7 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
         + commits_html(commits, commit_knoepfe(f"/mr/{slug}", commits, ans))
     leer = '<div class="leer">Keine Änderungen in diesem Merge-Request.</div>' if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
-    daten = seiten_daten(slug, head, len(dateien), ans, projekt=slug, web_url=web)
+    daten = seiten_daten(struktur, len(dateien), projekt=slug, web_url=web)
     klick = ("nur lesen" if lesen else "Klick auf Zeilennummer (rechts): Kommentar" if ans
              else "Klick auf Zeilennummer: Kommentar")
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
@@ -162,13 +162,15 @@ def praefix_json(praefix, ans=None):
 
 def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None, commits=None):
     """Seite für base..head (bzw. eine Commit-Ansicht) bauen, im Cache je Stand. html_fn(dateien, commits, texte, struktur).
-    commits: die Liste unter „Commits“, Standard base..head. Rückgabe (html-pfad, struktur)."""
+    commits: die Liste unter „Commits“, Standard base..head. Eine Ansicht nennt die Struktur der ganzen Seite
+    (MR.seite), die baut sie mit. Rückgabe (html-pfad, struktur)."""
+    if ansicht and not struktur_lesen(praefix_json(praefix)):
+        seite_bauen(sid, ordner, refs, praefix, html_fn, None, commits)
     ans = ansicht_aufloesen(ordner, refs, *ansicht) if ansicht else None
     stamm = praefix_json(praefix, ans)[:-5]
-    if os.path.exists(stamm + ".html") and os.path.exists(stamm + ".json"):
-        if stamm + ".json" not in STRUKTUR:
-            STRUKTUR[stamm + ".json"] = json.load(open(stamm + ".json", encoding="utf-8"))
-        return stamm + ".html", STRUKTUR[stamm + ".json"]
+    fertig = os.path.exists(stamm + ".html") and struktur_lesen(stamm + ".json")
+    if fertig:
+        return stamm + ".html", fertig
     von, bis = (ans["von"], ans["bis"]) if ans else (refs["base_sha"], refs["head_sha"])
     dateien = zerlegen(git(ordner, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff",
                            "-M", "-U3", von, bis))
@@ -201,11 +203,30 @@ def seite_bauen(sid, ordner, refs, praefix, html_fn, ansicht=None, commits=None)
     return stamm + ".html", struktur
 
 
-def seiten_daten(sid, head, n, ans, **mehr):
-    """const MR = … für die Seite (kann: was der Waggon kann, siehe Quellen)."""
+def seiten_schluessel(pfad):
+    """Schlüssel einer gebauten Seite (MR.seite): Pfad ihrer Struktur (der ganzen Seite, auch in einer Ansicht) im
+    Cache-Ordner. Damit adressiert die Seite ihre eigene Struktur (seiten_struktur), auch wenn inzwischen eine neuere
+    gebaut ist."""
+    return os.path.relpath(pfad, ORDNER) if pfad else None
+
+
+def struktur_der_seite(waggon, seite):
+    """Struktur der Seite mit Schlüssel seite (seiten_schluessel), None, wenn es sie nicht (mehr) gibt oder sie zu
+    einem anderen Waggon gehört."""
+    pfad = os.path.normpath(os.path.join(ORDNER, str(seite or "")))
+    if not pfad.endswith(".json") or os.path.dirname(pfad) not in SEITEN_ORDNER:
+        return None
+    struktur = struktur_lesen(pfad)
+    return struktur if struktur and struktur.get("id") == waggon.id else None
+
+
+def seiten_daten(struktur, n, **mehr):
+    """const MR = … für die Seite (kann: was der Waggon kann, siehe Quellen; seite: Schlüssel ihrer Struktur)."""
     from .quellen import extern_von  # quellen braucht seite
+    sid, head, ans = struktur["id"], struktur["refs"]["head_sha"], struktur.get("ansicht")
     waggon = Waggon.aus_id(sid)
     return json.dumps(dict(mehr, id=sid, sha=head, k=schluessel(), dateien=n, kann=waggon.kann, version=VERSION,
+                           seite=seiten_schluessel(praefix_json(struktur["praefix"])),
                            ich=KONF["ich_symbol"], extern=extern_von(waggon),
                            beobachten=bool(KONF["beobachten"]), ansicht=f'{ans["art"]}:{ans["sha"]}' if ans else "",
                            lesen=bool(ans and ans["art"] == "commit")), ensure_ascii=False)
@@ -233,10 +254,6 @@ def dateien_html(dateien, texte):
 
 # ---- lokales Projekt (von … bis des Projekts, z. B. reviewed … claude)
 
-def projekt_zeiger(projekt):
-    return os.path.join(LOKAL_ORDNER, dateiname(projekt) + ".zeiger")
-
-
 def projekt_seite(wurzel, ansicht=None):
     """Seite eines lokalen Projekts (bis gegen von ab dem gemeinsamen Vorgänger bzw. dem Teilstand <von>-wip: diff_basis).
     Rückgabe (html-pfad, struktur)."""
@@ -251,7 +268,6 @@ def projekt_seite(wurzel, ansicht=None):
     pfad, struktur = seite_bauen(waggon.id, wurzel, refs, praefix,
                                  lambda *a: projekt_html(projekt, von, bis, *a, wip=bool(wip_sha(wurzel, von))), ansicht)
     if not ansicht:
-        ersetzen(projekt_zeiger(projekt), praefix_json(praefix))
         with akte_bearbeiten(waggon) as akte:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
             akte["struktur"] = praefix_json(praefix)
     return pfad, struktur
@@ -277,7 +293,7 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur, wip=False
     leer = f'<div class="leer">Keine Unterschiede – {html.escape(von)} ist auf dem Stand von {html.escape(bis)}.</div>' \
         if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
-    daten = seiten_daten(Waggon(lokal=projekt).id, head, len(dateien), ans, projekt=projekt)
+    daten = seiten_daten(struktur, len(dateien), projekt=projekt)
     klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
     fertig_kbd = "<kbd>Enter</kbd> fertig · " if fertig_moeglich(projekt) else ""
     hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
@@ -325,18 +341,17 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
 def ansicht_struktur(haupt, ansicht):
     """Struktur der Ansichts-Seite zur Hauptseite (erzeugt sie bei Bedarf)."""
     from .quellen import quelle  # quellen braucht seite
-    p = praefix_json(haupt["praefix"], {"art": ansicht[0], "sha": ansicht[1]})
-    if p not in STRUKTUR:
-        if not os.path.exists(p):
-            waggon = Waggon.aus_id(haupt["id"])
-            return quelle(waggon).seite(waggon, ansicht=ansicht)[1]
-        STRUKTUR[p] = json.load(open(p, encoding="utf-8"))
-    return STRUKTUR[p]
+    struktur = struktur_lesen(praefix_json(haupt["praefix"], {"art": ansicht[0], "sha": ansicht[1]}))
+    if struktur is None:
+        waggon = Waggon.aus_id(haupt["id"])
+        return quelle(waggon).seite(waggon, ansicht=ansicht)[1]
+    return struktur
 
 
 # ---- Lauf des Myrlings (Skript und Begleitdateien, jede gegen ihre zuletzt angesehene Fassung)
 
 MYRLING_ORDNER = os.path.join(ORDNER, "myrling")
+SEITEN_ORDNER = {os.path.normpath(o) for o in (MR_ORDNER, LOKAL_ORDNER, MYRLING_ORDNER)}  # nur dort liegen Strukturen
 
 
 # Lauf-Stand aus --anstehend → Text im Kopf der Seite und Marke am Waggon
@@ -384,7 +399,7 @@ def myrling_html(waggon, lauf, fehlen, dateien, commits, texte, struktur):
                  + "</div>")
     leer = (f'<div class="leer">Keine Unterschiede zur zuletzt angesehenen Fassung – {e(stand_lang)}.</div>'
             if not dateien else "")
-    daten = seiten_daten(waggon.id, head, len(dateien), None, projekt=waggon.id, fp=lauf["fp"])
+    daten = seiten_daten(struktur, len(dateien), projekt=waggon.id, fp=lauf["fp"])
     hilfe = ('<div class="hilfe">Klick auf Zeilennummer: Frage an Claude<br><kbd>n</kbd> nächster Waggon<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     braucht = f' · braucht {e(lauf["braucht"])}' if lauf["braucht"] else ""

@@ -1,4 +1,4 @@
-"""merge-train --beobachten, Seite des Servers: merkt, wann sich im Repo etwas getan hat, und sagt der Seite „veraltet“.
+"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für --beobachten: merkt, wann sich im Repo etwas getan hat.
 
 Der Beobachter (inotify über ctypes, ohne Abhängigkeit; ohne inotify alle paar Sekunden „vielleicht“) meldet nur „seit
 Zähler n hat sich etwas bewegt“. Ob sich der Stand wirklich geändert hat, prüft erst git, und das nur nach einer Meldung.
@@ -8,7 +8,8 @@ import os, re, subprocess, sys, threading, time
 from .einstellungen import KONF, SPERRE
 from .waggon import Fehler, von_bis
 from .git import bis_sha, git, projekt_wurzel
-from .akte import akte_lesen, struktur_laden
+from .akte import akte_lesen
+from .seite import seiten_schluessel, struktur_der_seite
 
 class Beobachter:
     MASKE = 0x8 | 0x40 | 0x80 | 0x100 | 0x200 | 0x400 | 0x800  # CLOSE_WRITE MOVED_FROM/TO CREATE DELETE DELETE/MOVE_SELF
@@ -99,9 +100,22 @@ def beobachter(wurzel):
         return _BEOBACHTER[wurzel]
 
 
-def veraltet(waggon, sha):
-    """Ist die Seite mit Stand sha überholt (Arbeitsverzeichnis, HEAD oder von bewegt)? git nur nach einer Meldung des
+def seite_veraltet(waggon, seite, akte=None):
+    """Zeigt die Seite mit Schlüssel seite (MR.seite) nicht mehr den neuesten Stand des Waggons? Ja, wenn seither eine
+    andere Seite gebaut wurde (akte.struktur: CLI, MR-Daten, anderer Tab) oder – lokal mit --beobachten – sich im Repo
+    etwas bewegt hat (repo_bewegt). Unbekannte Seite: ja."""
+    struktur = struktur_der_seite(waggon, seite)
+    if struktur is None:
+        return True
+    if seiten_schluessel((akte or akte_lesen(waggon)).get("struktur")) != seite:
+        return True
+    return repo_bewegt(waggon, struktur["refs"])
+
+
+def repo_bewegt(waggon, refs):
+    """Steht das Repo nicht mehr auf refs (Arbeitsverzeichnis, HEAD oder von bewegt)? git nur nach einer Meldung des
     Beobachters, sonst die letzte Antwort. Nur bei --beobachten und lokalen Projekten."""
+    sha = refs.get("head_sha")
     if not (KONF["beobachten"] and waggon.lokal and sha):
         return False
     try:
@@ -117,9 +131,8 @@ def veraltet(waggon, sha):
         except subprocess.CalledProcessError:
             return False
         alt = _GEPRUEFT[wurzel] = (n, jetzt)
-    refs = (struktur_laden(akte_lesen(waggon)) or {}).get("refs") or {}
     start = refs.get("start_sha")
-    return alt[1][0] != sha or bool(start and refs.get("head_sha") == sha and alt[1][1] != start)
+    return alt[1][0] != sha or bool(start and alt[1][1] != start)
 
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)

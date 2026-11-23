@@ -6,12 +6,15 @@
 (() => {
   const {el, waggon, dateien} = App;
   // Commit-Ansicht (waggon.ansicht = 'commit:<sha>' nur lesen, 'seit:<sha>' rechts = MR-Stand): Server rechnet die
-  // Zeilen um
+  // Zeilen um. seite: Schlüssel der Struktur, die diese Seite zeigt – der Server rechnet gegen sie, nicht gegen die
+  // zuletzt gebaute
   const waggonAbfrage = mrStand =>
     'mr=' +
     encodeURIComponent(waggon.id) +
     '&k=' +
     waggon.k +
+    '&seite=' +
+    encodeURIComponent(waggon.seite || '') +
     (waggon.ansicht && !mrStand ? '&ansicht=' + waggon.ansicht : '');
   const mitReview = !!App.kann.review,
     nurLesen = !!waggon.lesen,
@@ -751,7 +754,7 @@
         fetch('/api/abgehakt', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({mr: waggon.id, k: waggon.k, pfad: d.dataset.pfad, an: c.checked})
+          body: JSON.stringify({mr: waggon.id, k: waggon.k, seite: waggon.seite, pfad: d.dataset.pfad, an: c.checked})
         })
           .then(r => r.json())
           .then(r => {

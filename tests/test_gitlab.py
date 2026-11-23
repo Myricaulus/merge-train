@@ -6,7 +6,7 @@ Aufruf:  python3 tests/test_gitlab.py [teil …] [--behalten]     (Teile: gitlab
 Legt alles in einem Temp-Ordner an (eigene XDG-Ordner, freie Ports, Ersatz für todo und notify-send), baut merge-train
 dorthin (oder nimmt MERGE_TRAIN_SKRIPT) und startet eigene Server. Welche Teile bei welcher Änderung laufen: ./testen.
 """
-import glob, json, os, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import glob, json, os, shutil, socket, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 # Teil → Teile, die er voraussetzt (gemischt braucht das Projekt aus lokal und den MR aus gitlab)
@@ -33,6 +33,11 @@ ENV = dict(ohne_agent(os.environ), CLAUDECODE="1", XDG_CONFIG_HOME=f"{T}/config"
            CLAUDE_CODE_SESSION_ID="sitzung-1",
            PATH=f"{T}/bin:" + os.environ["PATH"], TODO_DIR=f"{T}/todo", TODO_LOG=f"{T}/todo.log")  # todo, notify-send: Ersatz
 fehler = []
+
+def seiten_schluessel(html):
+    """MR.seite einer gebauten Seite: Schlüssel ihrer Struktur."""
+    return json.JSONDecoder().raw_decode(html.split("const MR=", 1)[1])[0]["seite"]
+
 
 def pruefe(bed, text):
     print(("ok   " if bed else "FEHL ") + text)
@@ -310,13 +315,21 @@ def gespraech_test(proj, env, k, hol, g):
     r = agent("antworten", fid, "Drei wäre zu viel.", "--erledigt")
     pruefe("nichts mehr offen" in r.stdout and "erledigt t1" in open(env["TODO_LOG"]).read(), "Gespräch: alles beantwortet → todo abgehakt")
     # neuer Commit: Zeile wandert mit
+    alte_seite = seiten_schluessel(hol("/proj.html"))
     alt = open(f"{proj}/a.py").read()
     open(f"{proj}/a.py", "w").write("# Kopf\n# noch einer\n" + alt)
     g("commit", "-qam", "Kopfzeilen")
-    hol("/proj.html")  # Seite zum neuen Stand; die Fäden werden auf den Stand der Seite umgerechnet
-    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}"))
+    neue_seite = seiten_schluessel(hol("/proj.html"))  # Seite zum neuen Stand; Fäden auf den Stand der Seite umgerechnet
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}&seite={urllib.parse.quote(neue_seite)}"))
     f1 = next(x for x in rv["faeden"] if x["id"] == fid)
     pruefe(f1["b"] == 22 and f1["im_diff"], "Gespräch: nach neuem Commit steht der Faden an Zeile 22")
+    rv = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}&seite={urllib.parse.quote(alte_seite)}"))
+    stand_alt, stand_neu = (json.loads(hol(f"/api/stand?mr=projekt:proj&k={k}&seite={urllib.parse.quote(s)}"))
+                            for s in (alte_seite, neue_seite))
+    pruefe(next(x for x in rv["faeden"] if x["id"] == fid)["b"] == 20 and stand_alt["veraltet"]
+           and not stand_neu["veraltet"] and not json.loads(hol(f"/api/review?mr=projekt:proj&k={k}&seite=../x.json"))["ok"],
+           "Seite mit Schlüssel: die alte rechnet gegen ihren eigenen Stand (Zeile 20) und ist veraltet, die neue nicht; "
+           "fremder Schlüssel abgelehnt")
     haken = f"{proj}/.git/hooks/pre-push"  # fertig = git push . claude:reviewed: ein scheiternder Hook ändert nichts
     open(haken, "w").write("#!/bin/sh\necho 'Test rot' >&2\nexit 1\n"); os.chmod(haken, 0o755)
     reviewed = g("rev-parse", "reviewed")

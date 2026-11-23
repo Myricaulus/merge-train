@@ -15,7 +15,8 @@ Aufbau der Datei (lokal/<name>.json, myrling/<skript>.json bzw. reviews/<name>.j
   hinweis_dateien  angemeldete Review-JSONs (agent zeigen)
   hinweis_agenten  {pfad: Name} der Agent, der die Review-JSON geprüft/angemeldet hat (agent pruefen|zeigen), falls
                    die JSON selbst kein „agent“ nennt
-  struktur         Pfad der Cache-JSON der zuletzt gebauten Seite (struktur_laden)
+  struktur         Pfad der Cache-JSON der zuletzt gebauten Seite (struktur_laden), für die CLI und als Maß, ob eine
+                   offene Seite veraltet ist (seite_veraltet); eine Seite selbst nennt ihre eigene (seiten_struktur)
   todo_id          todo-Eintrag aus „An Agent senden“, wenn niemand zuhörte
   abgeschlossen    Zeit des letzten vollständigen „Review abschließen“
 
@@ -172,7 +173,13 @@ STRUKTUR = {}
 
 
 def struktur_laden(akte):
-    p = akte.get("struktur")
+    """Struktur der zuletzt gebauten Seite des Waggons (akte.struktur), None ohne. Die Struktur einer bestimmten Seite:
+    seiten_struktur (review.py)."""
+    return struktur_lesen(akte.get("struktur"))
+
+
+def struktur_lesen(p):
+    """Cache-JSON einer gebauten Seite (seite_bauen), einmal je Prozess gelesen. None: fehlt oder kaputt."""
     if not p:
         return None
     if p not in STRUKTUR:

@@ -8,7 +8,7 @@ from .git import ANLASS, anlass, branch_aktualisieren, branch_pushen, finde_repo
 from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
 from .abhaken import abhaken
-from .beobachter import neue_zeilen, veraltet
+from .beobachter import neue_zeilen, seite_veraltet
 from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, startseite
@@ -103,6 +103,12 @@ class Anfrage(NamedTuple):
         """Ansicht, auf die sich eine API-Anfrage bezieht (Feld „ansicht“)."""
         return ansicht_lesen(self.daten.get("ansicht"))
 
+    @property
+    def seite(self):
+        """Schlüssel der Seite, von der die Anfrage kommt (Feld „seite“, MR.seite): der Server rechnet gegen ihre
+        Struktur. Leer: die zuletzt gebaute."""
+        return str(self.daten.get("seite") or "")
+
 
 ROUTEN = {}         # (methode, pfad) → (funktion, bedingungen)
 PRAEFIX_ROUTEN = []  # (regex, funktion, bedingungen), nur GET, in dieser Reihenfolge nach ROUTEN
@@ -155,7 +161,7 @@ def bearbeiten(anfrage):
             if bed["review"] and not mehr["waggon"].kann["review"]:
                 return abgelehnt(400, "Dieser Waggon hat kein Review")
         if bed["struktur"]:
-            mehr["struktur"] = seiten_struktur(anfrage.daten.get("mr", ""), anfrage.ansicht)
+            mehr["struktur"] = seiten_struktur(Waggon.aus_id(anfrage.daten.get("mr", "")), anfrage.seite, anfrage.ansicht)
             if mehr["struktur"] is None:
                 return json_antwort(200, {"ok": False, "text": "Seite unbekannt – neu laden"})
         r = f(anfrage, *gruppen, **mehr)
@@ -262,7 +268,7 @@ def zug(anfrage):
 @route("GET", "api/review", waggon=True)
 def api_review(anfrage, waggon):
     """Gespräch und (je nach Quelle) Review des Waggons."""
-    return wagen_daten(waggon, anfrage.ansicht)
+    return wagen_daten(waggon, anfrage.ansicht, anfrage.seite)
 
 
 MELDUNGEN = {}  # Waggon-id → Text für die Glocke, den die nächste Abfrage von api/stand abholt
@@ -282,14 +288,14 @@ def im_hintergrund(waggon, arbeit):
 
 @route("GET", "api/stand", waggon=True)
 def api_stand(anfrage, waggon):
-    """Alle 4 s von jeder offenen Seite. veraltet (nur --beobachten): im Repo hat sich etwas geändert → neu laden.
-    seite: die zuletzt gebaute Seite des MR – im Hintergrund neu gebaut (z. B. MR-Daten aus dem Zug) → neu laden.
-    meldung: Text aus im_hintergrund (z. B. „… ausgecheckt“) für die Glocke, einmal."""
+    """Alle 4 s von jeder offenen Seite. veraltet: die Seite zeigt nicht mehr den neuesten Stand (seite_veraltet: neu
+    gebaut, etwa von der CLI oder nach MR-Daten, bzw. mit --beobachten das Repo bewegt) → neu laden; Commit-Ansichten
+    nie. meldung: Text aus im_hintergrund (z. B. „… ausgecheckt“) für die Glocke, einmal."""
     seite_lebt(waggon)
     akte = akte_lesen(waggon)
-    return {"stand": stand(waggon, akte), "seite": None if waggon.lokal else akte.get("struktur"),
-            "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION, "server": server_stand(),
-            "veraltet": not anfrage.daten.get("ansicht") and veraltet(waggon, anfrage.daten.get("sha", ""))}
+    return {"stand": stand(waggon, akte), "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION,
+            "server": server_stand(),
+            "veraltet": bool(anfrage.seite) and not anfrage.ansicht and seite_veraltet(waggon, anfrage.seite, akte)}
 
 
 @route("GET", "api/hud", mit_schluessel=False)
@@ -359,9 +365,9 @@ def api_vergleich(anfrage, struktur):
     return vergleich_daten(struktur, d.get("a", ""), d.get("b", ""), bereich("a"), bereich("b"), stand_b)
 
 
-def haken_struktur(waggon):
-    """Struktur des ganzen Waggons (abgehakt wird immer im ganzen Diff, auch aus einer Commit-Ansicht)."""
-    struktur = seiten_struktur(waggon.id)
+def haken_struktur(waggon, seite):
+    """Struktur der ganzen Seite (abgehakt wird immer im ganzen Diff, auch aus einer Commit-Ansicht)."""
+    struktur = seiten_struktur(waggon, seite)
     if struktur is None:
         raise Fehler("Seite unbekannt – neu laden")
     return struktur
@@ -370,7 +376,7 @@ def haken_struktur(waggon):
 @route("GET", "api/abgehakt", waggon=True)
 def api_abgehakt(anfrage, waggon):
     """Abgehakte Dateien beim Laden der Seite, Füllung dabei neu gerechnet (neuer Stand nimmt Haken weg)."""
-    return abhaken(waggon, haken_struktur(waggon))
+    return abhaken(waggon, haken_struktur(waggon, anfrage.seite))
 
 
 # ---- POST: Aktionen der Seite (alle mit Schlüssel)
@@ -378,12 +384,12 @@ def api_abgehakt(anfrage, waggon):
 @route("POST", "api/abgehakt", waggon=True)
 def api_abhaken(anfrage, waggon):
     d = anfrage.daten
-    return abhaken(waggon, haken_struktur(waggon), str(d.get("pfad", "")), bool(d.get("an")))
+    return abhaken(waggon, haken_struktur(waggon, anfrage.seite), str(d.get("pfad", "")), bool(d.get("an")))
 
 
 def mit_review(waggon, anfrage, ok, text, **mehr):
     """Antwort einer Aktion: bei Erfolg gleich die neuen Daten der Seite mit."""
-    return dict(mehr, ok=ok, text=text, review=wagen_daten(waggon, anfrage.ansicht) if ok else None)
+    return dict(mehr, ok=ok, text=text, review=wagen_daten(waggon, anfrage.ansicht, anfrage.seite) if ok else None)
 
 
 @route("POST", "api/kommentar", waggon=True)
@@ -447,7 +453,7 @@ def api_abschliessen(anfrage, waggon):
         return {"ok": False, "text": NUR_LESEN}
     ok, text, web = abschliessen(waggon, direkt=bool(anfrage.daten.get("direkt")),
                                  urteil=anfrage.daten.get("urteil") or "kommentieren")
-    return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht)}
+    return {"web_url": web, "ok": ok, "text": text, "review": wagen_daten(waggon, ansicht, anfrage.seite)}
 
 
 @route("POST", "fertig")
@@ -457,7 +463,7 @@ def api_fertig(anfrage):
     if not waggon.kann["fertig"]:
         return NICHT_GEFUNDEN
     sha = str(d.get("sha", ""))  # teil: „abgeben“ – nur die abgehakten Dateien (Teilstand <von>-wip)
-    ok, text = abgeben(waggon.lokal, sha, haken_struktur(waggon)) if d.get("teil") else fertig(waggon.lokal, sha)
+    ok, text = abgeben(waggon.lokal, sha, haken_struktur(waggon, anfrage.seite)) if d.get("teil") else fertig(waggon.lokal, sha)
     return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
 
 

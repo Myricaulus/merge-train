@@ -460,7 +460,7 @@
         fetch('/fertig', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({mr: waggon.id, projekt: waggon.projekt, sha: waggon.sha, k: waggon.k, teil})
+          body: JSON.stringify({mr: waggon.id, projekt: waggon.projekt, sha: waggon.sha, seite: waggon.seite, k: waggon.k, teil})
         })
           .then(r => r.json())
           .then(d => {
