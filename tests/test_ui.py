@@ -370,6 +370,45 @@ def teil_dateifilter(b, f):
     b.warten_bis(f"!document.querySelector('.datei[data-pfad=\"{erste}\"]').classList.contains('abgehakt')")
 
 
+def teil_abhaken(b, f):
+    """Abhaken einer Datei, in der man liest (Anfang über dem Kopf): die nächste offene Datei steht danach oben, wie mit
+    j, abgehakte dazwischen übersprungen (Issue #4). Abhaken einer Datei, deren Anfang man sieht, springt nicht."""
+    seite(b, f)
+    b.js("Object.keys(localStorage).filter(k => k.startsWith('filter:dateien:')).forEach(k => localStorage.removeItem(k))")
+    b.laden(f.srv.url(f.pfad))
+    d = "document.querySelector('.datei[data-pfad=\"{}\"]')"
+    kopf = "document.getElementById('kopf').getBoundingClientRect().bottom"
+    pfade = b.js("[...document.querySelectorAll('.datei')].filter(d => !d.closest('#popup')).map(d => d.dataset.pfad)")
+    if len(pfade) < 3:
+        return  # MR-Fall: eine Datei
+    i = next((i for i, p in enumerate(pfade[:-2]) if b.js(f"{d.format(p)}.open && {d.format(p)}.offsetHeight > 400")), None)
+    assert i is not None, f"keine lange Datei mit zwei weiteren dahinter: {pfade[:8]}"
+    erste, zweite, dritte = pfade[i:i + 3]
+    b.js(d.format(zweite) + ".querySelector('summary .haken').click()")  # schon abgehakt: wird übersprungen
+    b.warten_bis(d.format(zweite) + ".classList.contains('abgehakt')")
+    for _ in range(3):  # der Kopf wird beim Scrollen kürzer (Himmel), also nachmessen
+        b.js(f"scrollBy(0, {d.format(erste)}.getBoundingClientRect().top - {kopf} + 200)")
+        time.sleep(0.1)
+    assert b.js(f"{d.format(erste)}.getBoundingClientRect().top < {kopf} - 5"), "nicht in die Datei gescrollt"
+    b.js(d.format(erste) + ".querySelector('summary .haken').click()")
+    b.warten_bis(d.format(erste) + ".classList.contains('abgehakt')")
+    b.warten_bis(f"Math.abs({d.format(dritte)}.getBoundingClientRect().top - {kopf} - 8) < 4")
+    assert b.js(d.format(dritte) + ".open"), "nächste offene Datei nicht aufgeklappt"
+    # Anfang im Blick: kein Sprung
+    for p in (erste, zweite):
+        b.js(d.format(p) + ".querySelector('summary .haken').click()")
+        b.warten_bis("!" + d.format(p) + ".classList.contains('abgehakt')")
+    b.js(f"{d.format(erste)}.open = true; {d.format(erste)}.scrollIntoView({{block: 'start'}})")
+    time.sleep(0.1)
+    y = b.js("scrollY")
+    b.js(d.format(erste) + ".querySelector('summary .haken').click()")
+    b.warten_bis(d.format(erste) + ".classList.contains('abgehakt')")
+    time.sleep(0.2)
+    assert b.js("scrollY") == y, "Abhaken einer Datei, deren Anfang man sieht, hat gesprungen"
+    b.js(d.format(erste) + ".querySelector('summary .haken').click()")
+    b.warten_bis("!" + d.format(erste) + ".classList.contains('abgehakt')")
+
+
 # ein null/undefined, das als Text in der Seite gelandet ist (append/replaceChildren machen daraus „null“); das Test-Repo
 # enthält die Wörter nicht
 NULL_TEXT = ("(() => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), r = [];"
@@ -430,7 +469,7 @@ def teil_siehe_ziel(b, f):
 
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
-         "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel}
+         "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel}
 
 
 def main():

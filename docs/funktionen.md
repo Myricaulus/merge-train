@@ -32,8 +32,8 @@ Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
 ### 4. Diff-Seite (gemeinsam für alle Quellen)
 Diff aus dem lokalen Git, Dateiliste, Kontext nachladen, Datei abhaken und filtern, Boxen unter ihrer Zeile.
 - Achsen: Dateiart (generiert/groß), Darstellung (nebeneinander/inline), Filter.
-- Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/diff.js`, `web/navigation.js` (`dateienFiltern`); abhaken:
-  `abhaken.py`, `App.wagenFuellen`; Boxen: `einfuegen` (`web/review.js`); Routen `api/zeilen`, `api/datei`,
+- Ort: `seite.py`, `diff_html.py`, `syntax.py`, `web/diff.js`, `web/navigation.js` (`dateienFiltern`, Sprung zu einer
+  Datei `zuDatei`, nach dem Abhaken `naechsteOffene`); abhaken: `abhaken.py`, `App.wagenFuellen`; Boxen: `einfuegen` (`web/review.js`); Routen `api/zeilen`, `api/datei`,
   `api/abgehakt`.
 - Erweitern: Filtergruppen (etwa FE/BE) als weitere Zeilen im Filtermenü.
 

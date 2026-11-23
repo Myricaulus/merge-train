@@ -1,6 +1,6 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
 // Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, inlineBauen,
-// dateiFesthalten, dateiLinks, wagenFuellen; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
+// dateiFesthalten, dateiLinks, wagenFuellen, dateiBegonnen, naechsteOffene; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
 // direkt, fadenErledigen, kommentarAktion. Stellt bereit: waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
@@ -746,6 +746,7 @@
       const c = el('input', {type: 'checkbox', class: 'haken', title: 'Datei abhaken (fertig angesehen): klappt sie zu und füllt den Waggon'});
       c.addEventListener('click', e => e.stopPropagation());
       c.addEventListener('change', () => {
+        const springen = c.checked && App.dateiBegonnen(d); // man las in ihr: danach steht die nächste oben
         setTimeout(() => (d.open = !c.checked));
         fetch('/api/abgehakt', {
           method: 'POST',
@@ -753,7 +754,10 @@
           body: JSON.stringify({mr: waggon.id, k: waggon.k, pfad: d.dataset.pfad, an: c.checked})
         })
           .then(r => r.json())
-          .then(hakenSetzen)
+          .then(r => {
+            hakenSetzen(r);
+            if (springen && r.ok) App.naechsteOffene(d); // nach dem Filtern: eine ausgeblendete d verschiebt nichts mehr
+          })
           .catch(() => App.melden('Haken nicht gespeichert – Server weg?'));
       });
       d.querySelector('summary').prepend(c);

@@ -1,7 +1,7 @@
 // Diff-Seiten: Dateien des Diffs und ihre Liste – markieren beim Scrollen, Tasten j/k (Datei), i (inline), z (alle
 // zu/auf), c (Commits), Inline-Tabellen aus den Tabellen nebeneinander bauen, Filter der Liste (abgehakt, Endungen).
 // Braucht von App: el, waggon, zeichnen (review.js, später geladen). Stellt bereit:
-// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten, dateienFiltern.
+// dateien, dateiLinks, kopfhoeheSetzen, inlineBauen, dateiFesthalten, dateienFiltern, dateiBegonnen, naechsteOffene.
 (() => {
   const dateien = [...document.querySelectorAll('.datei')], // die Dateien des Diffs (<details class="datei">)
     dateiLinks = [...document.querySelectorAll('#liste a')], // ihre Links in der Liste links
@@ -297,5 +297,15 @@
   App.dateiFesthalten = i => {
     festeDatei = i;
     listeMarkieren();
+  };
+  /** Liest man in Datei d (ihr Anfang liegt über dem Kopf)? Dann springt die Seite nach dem Abhaken (diff.js). */
+  App.dateiBegonnen = d => d.getBoundingClientRect().top < kopfHoehe() - 5;
+  /** Nach dem Abhaken von d: die nächste offene Datei (nicht ausgefiltert, nicht abgehakt) oben unter den Kopf wie
+   *  mit j, sonst der Kopf der zugeklappten d – sonst stünde man irgendwo weiter unten (Issue #4). */
+  App.naechsteOffene = d => {
+    let k = dateien.indexOf(d) + 1;
+    while (dateien[k] && /\b(ausgefiltert|abgehakt)\b/.test(dateien[k].className)) k++;
+    if (dateien[k]) zuDatei(k);
+    else if (!d.classList.contains('ausgefiltert')) d.scrollIntoView({block: 'start'});
   };
 })();
