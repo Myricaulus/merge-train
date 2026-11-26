@@ -1283,12 +1283,30 @@
     } catch (_) {}
     location.reload();
   }
+  // Quell-Branch des MR nicht ausgecheckt (api/stand, auscheck_hinweis): Hinweis „nur lesen“ unter den Commits, mit
+  // Knopf „auschecken“ (data-g, bahnhof.js); weg, sobald er ausgecheckt ist
+  function auscheckHinweis(h) {
+    let e = document.getElementById('auscheck');
+    if (!h) return e && e.remove();
+    if (!e) {
+      e = el('div', {id: 'auscheck', class: 'warn lokal'});
+      document.getElementById('nachcommits').after(e);
+    }
+    if (e.dataset.text === h.text) return;
+    e.dataset.text = h.text;
+    e.replaceChildren(
+      h.text + ' ',
+      el('button', {'data-g': 'auschecken', 'data-meldung': 'checkt ' + h.branch + ' aus …',
+        title: 'Nur bei sauberem Arbeitsverzeichnis; fehlt der Branch lokal, entsteht er aus origin'}, '⎇ ' + h.branch + ' auschecken')
+    );
+  }
   function pruefen() {
     fetch('/api/stand?' + waggonAbfrage())
       .then(r => r.json())
       .then(d => {
         if (d.server) App.serverStandSetzen(d.server);
         if (d.meldung) App.melden(d.meldung);
+        auscheckHinweis(d.auschecken);
         if (d.version && waggon.version && d.version !== waggon.version)
           return neuLaden('merge-train wurde aktualisiert – Seite neu geladen');
         if (d.veraltet) App.neuHolen();

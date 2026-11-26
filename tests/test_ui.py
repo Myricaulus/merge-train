@@ -571,6 +571,23 @@ def teil_anker(b, f):
         akte = json.load(open(ap)); akte["meta"]["author"]["id"] = None; json.dump(akte, open(ap, "w"))
 
 
+def teil_auschecken(b, f):
+    """MR, dessen Quell-Branch im Klon nicht (mehr) ausgecheckt ist: Hinweis „nur lesen“ unter den Commits, der Knopf
+    darin checkt ihn aus, danach ist der Hinweis weg. Nur MR."""
+    if not f.pfad.startswith("/mr/"):
+        return
+    seite(b, f)  # erster Besuch: steht schon auf feature (merkt sich „ausgecheckt“)
+    git(f.repo, "checkout", "-q", "main")
+    try:
+        b.warten_bis("document.querySelector('#auscheck button[data-g=\"auschecken\"]')")
+        assert "nur lesen" in b.js("document.getElementById('auscheck').textContent")
+        b.klicken('#auscheck button[data-g="auschecken"]')
+        b.warten_bis("!document.getElementById('auscheck')")
+        assert git(f.repo, "symbolic-ref", "--short", "HEAD").strip() == "feature"
+    finally:
+        git(f.repo, "checkout", "-q", "feature")
+
+
 def teil_mrerstellen(b, f):
     """„MR erstellen“ auf der Seite eines lokalen Waggons (nur Fall gemischt): Rückfrage im Dialog mit Ziel-Branch und
     Titel, „erstellen“ pusht, legt !2 an und springt zum MR; zum Branch von !1 wird der vorhandene übernommen."""
@@ -615,7 +632,8 @@ def teil_mrerstellen(b, f):
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
          "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch,
-         "aussen": teil_aussen, "anker": teil_anker, "mrerstellen": teil_mrerstellen}
+         "aussen": teil_aussen, "anker": teil_anker, "auschecken": teil_auschecken,
+         "mrerstellen": teil_mrerstellen}
 
 
 def main():

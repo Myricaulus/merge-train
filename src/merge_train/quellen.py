@@ -202,8 +202,8 @@ def faeden_text(gs, gs_neu):
 def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
-    ausgecheckte = [mr for (wurzel, branch), mr in eigene_mrs().items() if ausgecheckt(wurzel) == branch]  # ein Waggon
-    eigen = {mr.id for mr in ausgecheckte}
+    ausgecheckte = [mr for (wurzel, branch), mr in mrs_mit_klon().items() if ausgecheckt(wurzel) == branch]  # ein Waggon
+    eins = {mr.id for mr in ausgecheckte}
     def wagen_fuer(mr, titel, aenderungen, rollen=()):
         akte = akte_lesen(mr)
         n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
@@ -219,7 +219,8 @@ def mr_wagen(akt=None):
             "✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt") if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
             ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
-            "eigener MR, Quell-Branch ausgecheckt: lokaler Waggon und MR in einem" if mr.id in eigen else "",
+            ("eigener MR, " if eigener_mr(mr) else "") + "Quell-Branch ausgecheckt: lokaler Waggon und MR in einem"
+            if mr.id in eins else "",
             f"{ds['dran']} Diskussion(en): du bist dran" if ds["dran"] else "",
             f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
             f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
@@ -235,7 +236,7 @@ def mr_wagen(akt=None):
             continue
         gesehen.add(mr.id)
         wagen.append(wagen_fuer(mr, it.get("title", ""), it.get("changes_count"), it.get("rollen") or ()))
-    for mr in ausgecheckte:  # eigener MR, ausgecheckt: steht auch ohne „author“ in mr_liste im Zug
+    for mr in ausgecheckte:  # Quell-Branch ausgecheckt: steht auch ohne Eintrag in mr_liste im Zug (er ist der lokale)
         if mr.id not in gesehen:
             gesehen.add(mr.id)
             wagen.append(wagen_fuer(mr, akte_lesen(mr)["mr"].get("titel", ""), 0))
@@ -275,7 +276,8 @@ class Quelle:
         return Waggon.aus_id(p)
 
     def ein_waggon(self, waggon):
-        """Ist der Waggon zugleich der lokale (eigener MR mit ausgechecktem Quell-Branch, docs/ein-waggon.md)?"""
+        """Ist der Waggon zugleich der lokale (MR mit im Klon ausgechecktem Quell-Branch, docs/ein-waggon.md)? Den
+        Arbeitsstand zeigt er nur als eigener MR (eigener_arbeitsstand)."""
         return False
 
 
@@ -312,8 +314,8 @@ class Lokal(Quelle):
 
     def wagen(self, akt=None):
         from concurrent.futures import ThreadPoolExecutor
-        mrs = eigene_mrs() if GITLAB.an() else {}
-        repos = [r for r in finde_repos(alle=True) if not (mrs and zusammengelegt(r, mrs))]  # steckt im MR-Waggon
+        mrs = mrs_mit_klon() if GITLAB.an() else {}
+        repos = [r for r in finde_repos(alle=True) if not (mrs and im_mr_waggon(r, mrs))]
         with ThreadPoolExecutor(8) as ex:
             return lokal_wagen(list(ex.map(stand_oder_fehlt, repos)), {projektname(r): r for r in repos})
 
@@ -409,11 +411,12 @@ class Myrling(Quelle):
                 f"`merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 
-# ---- Eigener MR = ein Waggon (docs/ein-waggon.md, Schritt 1): ist der Quell-Branch eines eigenen, offenen MR im Klon
-# ausgecheckt, geht der lokale Waggon darin auf. Der MR zeigt dann den Arbeitsstand (gitlab.eigener_arbeitsstand).
+# ---- Ein Waggon je Branch (docs/ein-waggon.md, Schritte 1 und 3): ist der Quell-Branch eines offenen MR im Klon
+# ausgecheckt, geht der lokale Waggon darin auf. Ein eigener MR zeigt dann den Arbeitsstand
+# (gitlab.eigener_arbeitsstand), ein fremder den Commit-Stand, und der Agent antwortet dort nur.
 
-def eigene_mrs():
-    """Offene eigene MRs mit Akte und Klon: {(Klon real, Quell-Branch): MR-Waggon}."""
+def mrs_mit_klon():
+    """Offene MRs (eigene und fremde) mit Akte und Klon: {(Klon real, Quell-Branch): MR-Waggon}."""
     out = {}
     for p in glob.glob(os.path.join(DATEN, MR_ART.ordner, "*.json")):
         try:
@@ -424,17 +427,15 @@ def eigene_mrs():
         ordner = (struktur_laden(akte) or {}).get("ordner") or akte.get("klon")
         if not (m.get("iid") and m.get("source_branch") and ordner) or meta.get("state") not in (None, "opened"):
             continue
-        mr = Waggon.aus_dict(m)
-        if eigener_mr(mr):
-            out[(os.path.realpath(ordner), m["source_branch"])] = mr
+        out[(os.path.realpath(ordner), m["source_branch"])] = Waggon.aus_dict(m)
     return out
 
 
 def zusammengelegt(wurzel, mrs=None):
-    """Der eigene MR, dessen Quell-Branch im Klon wurzel ausgecheckt ist, sonst None. Zieht dabei die Fäden des lokalen
-    Waggons zu diesem Branch in den MR um (einmal; danach gibt es nur noch einen Ort). mrs: eigene_mrs(), schon geholt."""
+    """Der offene MR, dessen Quell-Branch im Klon wurzel ausgecheckt ist, sonst None. Zieht dabei die Fäden des lokalen
+    Waggons zu diesem Branch in den MR um (einmal; danach gibt es nur noch einen Ort). mrs: mrs_mit_klon(), schon geholt."""
     branch = ausgecheckt(wurzel)
-    mr = branch and (eigene_mrs() if mrs is None else mrs).get((os.path.realpath(wurzel), branch))
+    mr = branch and (mrs_mit_klon() if mrs is None else mrs).get((os.path.realpath(wurzel), branch))
     if mr:
         faeden_umziehen(Waggon(lokal=projektname(wurzel)), mr, branch)
     return mr or None
@@ -452,8 +453,15 @@ def faeden_umziehen(lokal, mr, branch):
     ids = {k["id"] for k in weg}
     with akte_bearbeiten(lokal) as akte:
         akte["kommentare"] = [k for k in akte.get("kommentare") or [] if k.get("id") not in ids]
-    melden(f"{mr.name}: {len(weg)} Faden/Fäden aus dem lokalen Waggon übernommen (eigener MR, ein Waggon)")
+    melden(f"{mr.name}: {len(weg)} Faden/Fäden aus dem lokalen Waggon übernommen (ein Waggon je Branch)")
     return len(weg)
+
+
+def im_mr_waggon(wurzel, mrs=None):
+    """Steckt der lokale Waggon des Klons im MR-Waggon? Ja, wenn er den ausgecheckten Quell-Branch eines offenen MR zeigt
+    (bis = Arbeitsstand oder dieser Branch); zeigt er einen anderen Branch, bleibt er für sich."""
+    mr = zusammengelegt(wurzel, mrs)
+    return bool(mr) and von_bis(projektname(wurzel))[1] in (ARBEITSSTAND, ausgecheckt(wurzel))
 
 
 # ---- Branch ohne MR (docs/ein-waggon.md, Schritt 2): der lokale Waggon, ohne Kommentare der Quelle, mit Knopf
@@ -569,7 +577,7 @@ class GitLab(Quelle):
     def ein_waggon(self, waggon):
         akte = akte_lesen(waggon)
         ordner, branch = (struktur_laden(akte) or {}).get("ordner") or akte.get("klon"), akte["mr"].get("source_branch")
-        return bool(ordner and branch and os.path.isdir(ordner) and ausgecheckt(ordner) == branch and eigener_mr(waggon))
+        return bool(ordner and branch and os.path.isdir(ordner) and ausgecheckt(ordner) == branch)
 
     def wagen(self, akt=None):
         return mr_wagen(akt)
@@ -578,7 +586,7 @@ class GitLab(Quelle):
         return f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
 
     def zeilen_stand(self, waggon, head):
-        if self.ein_waggon(waggon):
+        if self.ein_waggon(waggon) and eigener_mr(waggon):
             return (f"den Arbeitsstand von {self.branch(waggon)} (auch nicht Committetes) – dein eigener MR: Wünsche dort "
                     "umsetzen und committen (pushen nur auf Bitte).")
         if eigener_mr(waggon):

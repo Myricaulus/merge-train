@@ -201,14 +201,14 @@ def mrs_zum_branch(host, projekt, branch):
 
 def mr_anlegen(host, projekt, quelle, ziel, titel, beschreibung, ordner):
     """MR in GitLab anlegen (docs/ein-waggon.md, Schritt 2), seine MR-Daten holen und den Klon merken: so findet ihn
-    eigene_mrs, und der lokale Waggon geht im MR auf. Der Branch muss schon auf origin sein. Rückgabe: Waggon."""
+    mrs_mit_klon, und der lokale Waggon geht im MR auf. Der Branch muss schon auf origin sein. Rückgabe: Waggon."""
     roh = glab(host, f"projects/{enc(projekt)}/merge_requests", "POST",
                {"source_branch": quelle, "target_branch": ziel, "title": titel, "description": beschreibung})
     return mr_uebernehmen(mr_ref((roh or {}).get("web_url", "")), ordner)
 
 
 def mr_uebernehmen(mr, ordner):
-    """MR-Daten holen und ordner als seinen Klon merken (eigene_mrs findet ihn dann). Rückgabe: Waggon (kanonisch)."""
+    """MR-Daten holen und ordner als seinen Klon merken (mrs_mit_klon findet ihn dann). Rückgabe: Waggon (kanonisch)."""
     mr, _ = mr_meta_holen(mr)
     with akte_bearbeiten(mr) as akte:
         akte["klon"] = ordner

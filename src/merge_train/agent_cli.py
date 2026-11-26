@@ -44,7 +44,7 @@ def agent_name(als=None, sonst=None):
 def gespraech_ziele(name=None):
     """Welche Gespräche meint der Agent? MR-Kennung/URL bzw. „myrling:skript“ → dieses; Projekt → dessen lokales
     Gespräch; ohne Angabe: das aktuelle Repo (lokales Gespräch und alle MRs und Myrling-Läufe mit diesem Klon). Ist der
-    Quell-Branch eines eigenen MR ausgecheckt, steht dieser MR vorn statt des lokalen Gesprächs (zusammengelegt).
+    Quell-Branch eines offenen MR ausgecheckt, steht dieser MR vorn statt des lokalen Gesprächs (zusammengelegt).
     Rückgabe: Liste von Schlüsseln."""
     if name:
         mr = None
@@ -65,7 +65,7 @@ def gespraech_ziele(name=None):
     wurzel = repo_wurzel(ordner)
     if not wurzel:
         raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
-    eigen = zusammengelegt(wurzel) if KONF["gitlab"] else None  # eigener MR, ausgecheckt: er ist der lokale Waggon
+    eigen = zusammengelegt(wurzel) if KONF["gitlab"] else None  # MR mit ausgechecktem Quell-Branch: er ist der lokale Waggon
     ziele = [eigen] if eigen else [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
     echt = os.path.realpath(wurzel)
     for waggon in alle_gespraeche(leere=True):
@@ -917,7 +917,7 @@ def entwicklung_ziel(ziele):
     """Wo der Agent entwickelt: das lokale Gespräch oder der eigene MR, der mit ihm zusammengelegt ist (steht dann
     vorn, gespraech_ziele). None ohne beides."""
     w = ziele[0] if ziele else None
-    return w if w and (w.lokal or (w.ist_mr and quelle(w).ein_waggon(w))) else None
+    return w if w and (w.lokal or (w.ist_mr and quelle(w).ein_waggon(w) and eigener_mr(w))) else None
 
 
 def review_ziel(ziele):
@@ -927,8 +927,8 @@ def review_ziel(ziele):
     mrs = [w for w in ziele if not w.lokal]
     if entwicklung_ziel(ziele) and not lokal:  # eigener MR, zusammengelegt
         return None
-    if not lokal:
-        return mrs[0] if len(mrs) == 1 else None
+    if not lokal:  # nur ein MR, oder der fremde, in dem der lokale Waggon aufgeht (vorn, gespraech_ziele)
+        return mrs[0] if len(mrs) == 1 or (mrs and quelle(mrs[0]).ein_waggon(mrs[0])) else None
     branch = quelle(lokal).branch(lokal)
     return next((w for w in mrs if quelle(w).branch(w) == branch and not eigener_mr(w)), None)
 

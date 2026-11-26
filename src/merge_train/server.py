@@ -16,7 +16,7 @@ from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, seiten_teile
 from .myrling import anstehend_warten, im_hintergrund_holen
 from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, mr_erstellen, mr_planen, projekt_einstellen, projekt_einstellung, quelle, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
-from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
+from .review import (NUR_LESEN, abschliessen, auscheck_hinweis, auschecken_versuchen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
 from .gespraech import gespraech_aktion, wagen_daten
 from http.server import BaseHTTPRequestHandler
@@ -291,11 +291,12 @@ def im_hintergrund(waggon, arbeit):
 def api_stand(anfrage, waggon):
     """Alle 4 s von jeder offenen Seite. veraltet: die Seite zeigt nicht mehr den neuesten Stand (seite_veraltet: neu
     gebaut, etwa von der CLI oder nach MR-Daten, bzw. mit --beobachten das Repo bewegt) → neu laden; Commit-Ansichten
-    nie. meldung: Text aus im_hintergrund (z. B. „… ausgecheckt“) für die Glocke, einmal."""
+    nie. meldung: Text aus im_hintergrund (z. B. „… ausgecheckt“) für die Glocke, einmal. auschecken: Hinweis, dass der
+    Quell-Branch eines MR nicht ausgecheckt ist (auscheck_hinweis), mit Knopf."""
     seite_lebt(waggon)
     akte = akte_lesen(waggon)
     return {"stand": stand(waggon, akte), "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION,
-            "server": server_stand(),
+            "server": server_stand(), "auschecken": auscheck_hinweis(waggon, akte) if waggon.ist_mr else None,
             "veraltet": bool(anfrage.seite) and not anfrage.ansicht and seite_veraltet(waggon, anfrage.seite, akte)}
 
 
@@ -574,8 +575,20 @@ def mr_erstellen_aktion(anfrage):
                         str(d.get("beschreibung") or ""), bool(d.get("entwurf")))
 
 
+def auschecken_aktion(anfrage):
+    """Hinweis „nicht ausgecheckt“: Quell-Branch im Klon auschecken (nur bei sauberem Stand, auschecken_versuchen); ein
+    eigener MR zeigt danach den Arbeitsstand."""
+    mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
+    akte = akte_lesen(mr)
+    if not akte.get("meta"):
+        raise Fehler("Noch keine MR-Daten – erst „↻ MR-Daten“")
+    erledigt, text = auschecken_versuchen(mr, akte)
+    return {"ok": erledigt, "text": text or f"{akte['meta'].get('source_branch')} ist ausgecheckt", "neu_laden": erledigt}
+
+
 GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion,
-                   "pushen": pushen_aktion, "mrplanen": mr_planen_aktion, "mrerstellen": mr_erstellen_aktion}
+                   "pushen": pushen_aktion, "mrplanen": mr_planen_aktion, "mrerstellen": mr_erstellen_aktion,
+                   "auschecken": auschecken_aktion}
 
 
 @route("POST", "api/gitlab", quelle=GITLAB)

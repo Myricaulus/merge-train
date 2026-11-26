@@ -2,7 +2,7 @@
 import hashlib, os, re, tempfile, threading
 from .waggon import Fehler, Ungueltig, Waggon
 from .einstellungen import KONF, jetzt
-from .git import ANLASS, anlass, branch_auschecken, git, inhalt, zerlegen
+from .git import ANLASS, anlass, branch_auschecken, git, inhalt, worktree_mit, zerlegen
 from .syntax import darstellen, zeilen_tokens
 from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_ungefaehr, zeile_vorwaerts, zurueck_diffs
 from .diff_html import datei_tabelle
@@ -10,7 +10,7 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
     diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import GitLabFehler, alle, glab, ich, mr_lokal, mr_meta_holen, mr_pfad
+from .gitlab import GitLabFehler, alle, ausgecheckt, glab, ich, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, struktur_der_seite
@@ -712,9 +712,10 @@ _AUSCHECKEN = threading.Lock()
 
 def mr_auschecken(mr):
     """Erster Besuch der MR-Seite (mr_auschecken = true): den Quell-Branch im lokalen Klon auschecken, wenn der Stand
-    sauber ist (branch_auschecken). Einmal je MR (akte „ausgecheckt“) – wechselst du danach selbst zurück, bleibt es
-    so. Ging es nicht (offene Änderungen …), beim nächsten Besuch wieder. Die Seite hängt nicht davon ab (sie liest die
-    Branch-Refs, nicht HEAD), muss also nicht neu laden. Rückgabe: Text für die Glocke oder ""."""
+    sauber ist (auschecken_versuchen). Einmal je MR (akte „ausgecheckt“) – wechselst du danach selbst zurück, bleibt es
+    so, und die Seite bietet „auschecken“ an (auscheck_hinweis). Ging es nicht (offene Änderungen …), beim nächsten
+    Besuch wieder. Die Seite hängt nicht davon ab (sie liest die Branch-Refs, nicht HEAD), muss also nicht neu laden.
+    Rückgabe: Text für die Glocke oder ""."""
     if not KONF["mr_auschecken"] or akte_lesen(mr).get("ausgecheckt"):
         return ""
     with _AUSCHECKEN:
@@ -722,14 +723,35 @@ def mr_auschecken(mr):
         if akte.get("ausgecheckt") or not akte.get("meta"):
             return ""
         try:
-            ordner, _ = mr_lokal(mr, akte["meta"])
+            return auschecken_versuchen(mr, akte)[1]
         except Fehler:
             return ""
-        erledigt, text = branch_auschecken(ordner, akte["meta"].get("source_branch") or "")
+
+
+def auschecken_versuchen(mr, akte):
+    """Quell-Branch im Klon auschecken (branch_auschecken) und das Ergebnis in der Akte merken: „ausgecheckt“ bzw. der
+    Grund, warum nicht (für auscheck_hinweis). Fehler, wenn es keinen Klon gibt. Rückgabe (erledigt, text)."""
+    ordner, _ = mr_lokal(mr, akte["meta"])
+    erledigt, text = branch_auschecken(ordner, akte["meta"].get("source_branch") or "")
+    with akte_bearbeiten(mr) as a:
         if erledigt:
-            with akte_bearbeiten(mr) as a:
-                a["ausgecheckt"] = jetzt()
-        return text
+            a["ausgecheckt"] = jetzt()
+            a.pop("auscheck_grund", None)
+        else:
+            a["auscheck_grund"] = text
+    return erledigt, text
+
+
+def auscheck_hinweis(mr, akte):
+    """Für api/stand: Steht der Quell-Branch im Klon nicht ausgecheckt (auch nicht in einem anderen Worktree), liest die
+    Seite nur aus den Refs: {branch, text} für den Hinweis mit Knopf „auschecken“. Sonst None."""
+    branch = (akte.get("mr") or {}).get("source_branch")
+    ordner = (struktur_laden(akte) or {}).get("ordner")
+    if not branch or not ordner or not os.path.isdir(ordner) or ausgecheckt(ordner) == branch or worktree_mit(ordner, branch):
+        return None
+    grund = akte.get("auscheck_grund") or f"{branch} ist im Klon nicht ausgecheckt"
+    return {"branch": branch, "text": f"{grund}. Die Seite zeigt den Stand aus den Refs (nur lesen); was du im Klon "
+                                      "änderst, erscheint hier erst nach dem Auschecken."}
 
 
 def mr_daten_holen(mr):

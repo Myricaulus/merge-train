@@ -217,8 +217,10 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   Entwürfe in GitLab, neue Antworten, eigene Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
-- **Eigener MR = ein Waggon**: Bist du Autor eines offenen MR und ist sein Quell-Branch im Klon ausgecheckt, gibt es
-  für diesen Branch nur den MR-Waggon (Zielbild und nächste Schritte: [`docs/ein-waggon.md`](docs/ein-waggon.md)):
+- **Ein Waggon je Branch**: Ist der Quell-Branch eines offenen MR im Klon ausgecheckt, gibt es für diesen Branch nur
+  den MR-Waggon, sofern der lokale Waggon diesen Branch zeigt. Beim fremden MR zeigt er den Commit-Stand, und der
+  Agent antwortet nur. Bist du Autor (eigener MR), kommt dazu (Zielbild:
+  [`docs/ein-waggon.md`](docs/ein-waggon.md)):
   - Die Seite zeigt den **Arbeitsstand**, auch nicht Committetes („eigener MR · Arbeitsstand“ im Kopf), und tauscht
     beim Speichern im Editor die geänderten Dateien aus.
   - Fäden des Agenten im Klon (`agent thread`, `feedback`, `status`) gehen an den MR, und der Agent darf dort umsetzen
@@ -309,7 +311,9 @@ dadurch die Seite, lädt ein offener Tab von selbst neu (nicht, solange ein Eing
 Beim ersten Öffnen eines MR checkt merge-train dessen Quell-Branch im lokalen Klon aus (fehlt er, mit Tracking aus
 origin; noch nicht geholt, holt merge-train origin einmal selbst), damit IDE und Agent gleich auf dem richtigen Stand sind – nur wenn dort nichts Uncommittetes liegt und HEAD
 auf einem Branch steht (kein Rebase), samt Submodulen. Die Seite lädt dafür nicht neu, die Glocke meldet den Wechsel.
-Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `mr_auschecken = false`.
+Einmal je MR: wechselst du danach selbst zurück, bleibt es so. Abschalten mit `mr_auschecken = false`. Steht der
+Quell-Branch nicht im Klon (Auschecken ging nicht oder du hast gewechselt), sagt ein Hinweis unter den Commits, dass die
+Seite nur aus den Refs liest, samt Grund. Sein Knopf **„auschecken“** holt den Branch, wenn der Stand sauber ist.
 
 ## Wo liegt was
 

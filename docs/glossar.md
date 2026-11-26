@@ -81,7 +81,8 @@
 | **MR** | GitLab-Merge-Request, ein Waggon der Quelle GitLab. | | R |
 | **eigener MR** | MR, dessen Autor der Nutzer ist (MR-Liste oder Autor der MR-Daten). Ist sein Quell-Branch im Klon ausgecheckt, geht der lokale Waggon darin auf: ein Waggon mit Arbeitsstand, der Agent darf umsetzen. `eigener_mr` | | `docs/ein-waggon.md` |
 | **MR erstellen** | Knopf auf der Seite eines lokalen Waggons mit GitLab-Origin: pusht den Branch und legt nach einer Rückfrage den MR an (gibt es schon einen, wird er übernommen). Danach ist es ein eigener MR. `mr_planen`, `mr_erstellen` | MR erstellen | `docs/ein-waggon.md` |
-| **fremder MR** | MR eines anderen, den der Nutzer reviewt. Der Agent antwortet nur. | | `docs/ein-waggon.md` |
+| **fremder MR** | MR eines anderen, den der Nutzer reviewt. Der Agent antwortet nur. Ist sein Quell-Branch ausgecheckt, geht der lokale Waggon auch hier im MR auf (Commit-Stand). | | `docs/ein-waggon.md` |
+| **nicht ausgecheckt** | Der Quell-Branch eines MR steht nicht im Klon: Die Seite liest nur aus den Refs, ein Hinweis nennt den Grund und bietet „auschecken“ an (nur bei sauberem Stand). `auscheck_hinweis` | auschecken | `docs/ein-waggon.md` |
 | **Review-JSON** | Datei eines Review-Agenten (`tasks/<KEY>-review-markers.json`) mit Findings als Markern. | | H |
 | **Marker** | Ein Eintrag der Review-JSON: Ort (needle, `line`), Text, Siehe-auch. | | H |
 | **Agent-Hinweis** | Ein Marker an seiner Zeile, lila, noch nicht übernommen. = Stufe **draft**. | lila Hinweis | R, A |

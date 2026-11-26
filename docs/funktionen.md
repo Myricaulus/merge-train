@@ -19,9 +19,11 @@ Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
   Vorgänger, `lauf_ort` (Basis je Datei eines Laufs), Waggon-Karte `projekt_einstellung`/`projekt_einstellen`.
 - Erweitern: neue Quelle = Unterklasse von `Quelle` plus eine von `Art` (mit `logo`), keine eigene Seite, keine
   `if lokal`-Ketten.
-- Eigener MR = ein Waggon (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
-  `eigene_mrs`, `zusammengelegt`, `faeden_umziehen`, `Quelle.ein_waggon` (`quellen.py`), `entwicklung_ziel`
-  (`agent_cli.py`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
+- Ein Waggon je Branch (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
+  `mrs_mit_klon`, `zusammengelegt`, `im_mr_waggon`, `faeden_umziehen`, `Quelle.ein_waggon` (`quellen.py`),
+  `entwicklung_ziel`, `review_ziel` (`agent_cli.py`). Auschecken: `mr_auschecken` (erster Besuch),
+  `auschecken_versuchen`, `auscheck_hinweis` (`review.py`, über `api/stand`), Aktion `auschecken`, `auscheckHinweis`
+  (`web/review.js`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
 - Branch ohne MR, „MR erstellen“: `mr_quellbranch`, `mr_vorschlag`, `mr_planen`, `mr_erstellen` (`quellen.py`),
   `gitlab_klon`, `mrs_zum_branch`, `mr_anlegen`, `mr_uebernehmen` (`gitlab.py`), `branch_pushen(neu=True)`, Aktionen
   `mrplanen`/`mrerstellen` an `api/gitlab`, Dialog in `web/bahnhof.js`. Weitere Knöpfe einer Quelle im Kopf:

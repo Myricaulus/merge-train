@@ -462,6 +462,7 @@ def gemischt_test(mr):
                and "Erwartet:" not in r.stdout, "status im Klon auf dem Quell-Branch eines fremden MR: Review statt Entwicklung")
     finally:
         srv.terminate(); srv.wait()
+    fremd_test(mr, env2, hol)
     eigen_test(mr, env2, hol)
     mr_erstellen_test(env2, hol)
 
@@ -538,6 +539,43 @@ import sys
 m = alles_laden(sys.argv[1])
 print(m["faden_anlegen"]([m["Waggon"](lokal="repo")], "Alt lokal", "App.cs:3")[0])
 """
+
+
+def fremd_test(mr, env2, hol):
+    """Fremder MR, Quell-Branch ausgecheckt (docs/ein-waggon.md, Schritt 3): ein Waggon (kein lokaler „repo“), Seite auf
+    dem Commit-Stand; nicht ausgecheckt sagt api/stand „nur lesen“ samt Grund, „auschecken“ holt ihn (nur sauber)."""
+    srv = gemischt_server(env2)
+    k = open(f"{T}/cache/merge-train/schluessel").read().strip()
+    g = lambda *a: sh("git", "-C", REPO, *a)
+    hinweis = lambda: json.loads(hol(f"/api/stand?mr={urllib.parse.quote(mr)}&k={k}")).get("auschecken")
+    def auschecken():
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT_GEMISCHT}/api/gitlab",
+                                     json.dumps({"aktion": "auschecken", "mr": mr, "k": k}).encode(),
+                                     {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT_GEMISCHT}"})
+        return json.loads(urllib.request.urlopen(req, timeout=60).read())
+    try:
+        z = json.loads(hol("/zug.js?akt=" + urllib.parse.quote(mr))[len("window.MR_ZUG="):-1])
+        w = next((w for w in z["wagen"] if w["p"] == mr), {})
+        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "Quell-Branch ausgecheckt" in w.get("titel", "")
+               and "eigener MR" not in w.get("titel", ""), "fremder MR: ausgecheckt ein Waggon, kein lokaler „repo“")
+        seite = hol("/mr/" + mr)
+        pruefe("Arbeitsstand (nicht Committetes dabei)" not in seite and hinweis() is None,
+               "fremder MR: Seite auf dem Commit-Stand, kein Hinweis, solange ausgecheckt")
+        g("checkout", "-q", "main")
+        h = hinweis() or {}
+        pruefe(h.get("branch") == "feature" and "nur lesen" in h.get("text", ""), "nicht ausgecheckt: Hinweis „nur lesen“ mit Branch")
+        open(f"{REPO}/seite.html", "a").write("<p>offen</p>\n")
+        r = auschecken()
+        h = hinweis() or {}
+        pruefe(not r["ok"] and g("symbolic-ref", "--short", "HEAD").stdout.strip() == "main" and h.get("text", "").startswith(r["text"]),
+               "auschecken: bei offenen Änderungen nicht, der Grund steht im Hinweis")
+        g("checkout", "-q", "--", "seite.html")
+        r = auschecken()
+        pruefe(r["ok"] and r.get("neu_laden") and g("symbolic-ref", "--short", "HEAD").stdout.strip() == "feature" and hinweis() is None,
+               "auschecken: sauber → ausgecheckt, Hinweis weg")
+    finally:
+        g("checkout", "-q", "--", "seite.html"); g("checkout", "-q", "feature")
+        srv.terminate(); srv.wait()
 
 
 def eigen_test(mr, env2, hol):

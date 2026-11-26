@@ -1,6 +1,6 @@
 # Ein Waggon je Branch (Zielbild)
 
-*Mit dem Nutzer abgestimmt am 26.11.2026. Schritte 1 und 2 sind gebaut, 3 und 4 stehen als todo-Einträge im Projekt.*
+*Mit dem Nutzer abgestimmt am 26.11.2026. Schritte 1–3 sind gebaut, 4 steht als todo-Eintrag im Projekt.*
 
 ## Worum es geht
 
@@ -14,8 +14,10 @@ Läufe des Myrlings sind Skripte, keine Branches. Sie bleiben eine eigene Art.
 ## Regeln
 
 - **Arbeitsstand nur für den ausgecheckten Branch.** Ist der Branch im Klon ausgecheckt, zeigt der Waggon den
-  Arbeitsstand (auch nicht Committetes). Jeder andere Branch zeigt seinen letzten Commit. merge-train checkt nie von
-  selbst aus; „auschecken“ ist ein Knopf und geht nur bei sauberem Arbeitsverzeichnis.
+  Arbeitsstand (auch nicht Committetes). Jeder andere Branch zeigt seinen letzten Commit.
+- **Auschecken nur sauber.** Beim ersten Öffnen eines MR checkt merge-train seinen Quell-Branch aus, wenn das
+  Arbeitsverzeichnis sauber ist (das geht schnell, und so ist es überall gleich). Ging das nicht oder hast du danach
+  selbst gewechselt, sagt ein Hinweis, dass die Seite nur aus den Refs liest, und bietet „auschecken“ an.
 - **von:** mit MR der Ziel-Branch (gemeinsamer Vorgänger), ohne MR `von` des Projekts (Standard `reviewed`). „fertig“
   gibt es, wo `von` ein lokaler Branch ist und kein Arbeitsstand gezeigt wird.
 - **Der Agent darf umsetzen** auf dem eigenen Branch (eigener MR oder Branch ohne MR), beim fremden MR nur antworten.
@@ -42,6 +44,9 @@ Läufe des Myrlings sind Skripte, keine Branches. Sie bleiben eine eigene Art.
    nach einem offenen MR zum Branch und übernimmt ihn, wenn es einen gibt. Sonst kommt eine Rückfrage (Ziel-Branch, Titel,
    Beschreibung, Entwurf; was gepusht wird). Dann pusht er den Branch und legt den MR über die API an (`glab api`, wie
    alle Aufrufe). Danach greift Schritt 1.
-3. **Fremder MR:** derselbe Waggon auf dem Commit-Stand, Agent nur antworten, Knopf „auschecken“ (nur sauber).
+3. **Fremder MR:** Ist sein Quell-Branch ausgecheckt, geht der lokale Waggon ebenso im MR auf, aber auf dem
+   Commit-Stand; der Agent antwortet nur. Steht der Branch eines MR nicht im Klon, Hinweis „nur lesen“ mit Knopf
+   „auschecken“ (nur sauber). Ausgeblendet wird der lokale Waggon nur, wenn er diesen Branch zeigt (bis = Arbeitsstand
+   oder der Branch selbst).
 4. **Aufräumen:** eine Akte je Branch, die Arten Lokal und MR werden eins. Danach: Agent-Hinweise über die CLI statt
    über die Review-JSON (jira-review), mit fester id je Hinweis.

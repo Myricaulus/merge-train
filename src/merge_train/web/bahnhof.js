@@ -51,7 +51,10 @@
       .then(d => {
         b.disabled = false;
         bh.classList.remove('laedt');
-        if (d.ok && (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden))) return App.neuHolen(d.text);
+        if (d.ok && (d.neu_laden || (b.dataset.g === 'mrdaten' && !App.reviewLaden))) {
+          zugHolen(); // z. B. nach „auschecken“: der lokale Waggon geht im MR auf
+          return App.neuHolen(d.text);
+        }
         App.melden(d.text || '');
         if (!d.ok) return;
         if (b.dataset.g === 'mrdaten') App.reviewLaden(); // Seite unverändert: nur Kommentare/Entwürfe auffrischen
