@@ -48,5 +48,7 @@ Läufe des Myrlings sind Skripte, keine Branches. Sie bleiben eine eigene Art.
    Commit-Stand; der Agent antwortet nur. Steht der Branch eines MR nicht im Klon, Hinweis „nur lesen“ mit Knopf
    „auschecken“ (nur sauber). Ausgeblendet wird der lokale Waggon nur, wenn er diesen Branch zeigt (bis = Arbeitsstand
    oder der Branch selbst).
-4. **Aufräumen:** eine Akte je Branch, die Arten Lokal und MR werden eins. Danach: Agent-Hinweise über die CLI statt
-   über die Review-JSON (jira-review), mit fester id je Hinweis.
+4. **Eine Akte je Branch** (4a, Befund und Bauplan: [`branch-akte.md`](branch-akte.md)): lokaler und MR-Waggon eines
+   Branches teilen eine Akte (die des MR, die Branch-Datei verweist darauf), Fäden gelöschter oder gemergter Branches
+   wandern ins Archiv. Danach (4b, weniger wichtig): Agent-Hinweise über die CLI statt über die Review-JSON
+   (jira-review), mit fester id je Hinweis.
