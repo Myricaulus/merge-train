@@ -1,4 +1,4 @@
-"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für lokale Seiten: merkt, wann sich im Repo etwas getan hat.
+"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für lokale Seiten und eigene MRs im Arbeitsstand: merkt, wann sich im Repo etwas getan hat.
 
 Der Beobachter (inotify über ctypes, ohne Abhängigkeit; ohne inotify alle paar Sekunden „vielleicht“) meldet nur „seit
 Zähler n hat sich etwas bewegt“. Ob sich der Stand wirklich geändert hat, prüft erst git, und das nur nach einer Meldung.
@@ -7,7 +7,7 @@ Dazu: welche Zeilen zwischen zwei Ständen neu sind (Rahmen um das Neue nach dem
 import os, re, subprocess, sys, threading, time
 from .einstellungen import SPERRE
 from .waggon import Fehler, von_bis
-from .git import bis_sha, git, projekt_wurzel
+from .git import arbeitsstand, bis_sha, git, projekt_wurzel
 from .akte import akte_lesen
 from .seite import seiten_schluessel, struktur_der_seite
 
@@ -90,7 +90,7 @@ class Beobachter:
             time.sleep(0.2)  # Schwall beim Speichern/Bauen zusammenfassen
 
 
-_BEOBACHTER, _GEPRUEFT = {}, {}  # wurzel → Beobachter; wurzel → (Zähler, (bis-sha, von-sha)) der letzten git-Prüfung
+_BEOBACHTER, _GEPRUEFT = {}, {}  # wurzel → Beobachter; (wurzel, lokal?) → (Zähler, (bis-sha, von-sha)) der letzten git-Prüfung
 
 
 def beobachter(wurzel):
@@ -102,36 +102,39 @@ def beobachter(wurzel):
 
 def seite_veraltet(waggon, seite, akte=None):
     """Zeigt die Seite mit Schlüssel seite (MR.seite) nicht mehr den neuesten Stand des Waggons? Ja, wenn seither eine
-    andere Seite gebaut wurde (akte.struktur: CLI, MR-Daten, anderer Tab) oder – lokal – sich im Repo etwas bewegt hat
-    (repo_bewegt). Unbekannte Seite: ja."""
+    andere Seite gebaut wurde (akte.struktur: CLI, MR-Daten, anderer Tab) oder – lokal bzw. im Arbeitsstand eines
+    eigenen MR – sich im Repo etwas bewegt hat (repo_bewegt). Unbekannte Seite: ja."""
     struktur = struktur_der_seite(waggon, seite)
     if struktur is None:
         return True
     if seiten_schluessel((akte or akte_lesen(waggon)).get("struktur")) != seite:
         return True
-    return repo_bewegt(waggon, struktur["refs"])
+    return repo_bewegt(waggon, struktur["refs"], struktur.get("ordner"))
 
 
-def repo_bewegt(waggon, refs):
+def repo_bewegt(waggon, refs, ordner=None):
     """Steht das Repo nicht mehr auf refs (Arbeitsverzeichnis, HEAD oder von bewegt)? git nur nach einer Meldung des
-    Beobachters, sonst die letzte Antwort. Nur lokale Projekte (MRs und Läufe ändern sich nur auf Knopfdruck)."""
+    Beobachters, sonst die letzte Antwort. Lokale Projekte und eigene MRs im Arbeitsstand (refs.arbeitsstand, Klon
+    ordner); andere MRs und Läufe ändern sich nur auf Knopfdruck."""
     sha = refs.get("head_sha")
-    if not (waggon.lokal and sha):
+    if not sha or not (waggon.lokal or (refs.get("arbeitsstand") and ordner)):
         return False
     try:
-        wurzel = projekt_wurzel(waggon.lokal)
+        wurzel = projekt_wurzel(waggon.lokal) if waggon.lokal else ordner
     except Fehler:
         return False
     b = beobachter(wurzel)
-    alt = _GEPRUEFT.get(wurzel)
+    k = (wurzel, bool(waggon.lokal))
+    alt = _GEPRUEFT.get(k)
     if not alt or alt[0] != b.zaehler:
         n = b.zaehler
         try:
-            jetzt = (bis_sha(wurzel), git(wurzel, "rev-parse", von_bis(waggon.lokal)[0]).strip())
+            jetzt = ((bis_sha(wurzel), git(wurzel, "rev-parse", von_bis(waggon.lokal)[0]).strip()) if waggon.lokal
+                     else (arbeitsstand(wurzel), None))  # anderer Branch ausgecheckt: anderer Arbeitsstand
         except subprocess.CalledProcessError:
             return False
-        alt = _GEPRUEFT[wurzel] = (n, jetzt)
-    start = refs.get("start_sha")
+        alt = _GEPRUEFT[k] = (n, jetzt)
+    start = refs.get("start_sha") if waggon.lokal else None
     return alt[1][0] != sha or bool(start and alt[1][1] != start)
 
 

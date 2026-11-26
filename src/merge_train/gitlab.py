@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime
 from .einstellungen import KONF, ORDNER, ersetzen
 from .waggon import Fehler, Waggon
-from .git import aussen_log, git, git_oder_fehler, kurzpfad, ref_sha
+from .git import arbeitsstand, aussen_log, git, git_oder_fehler, kurzpfad, ref_sha
 from .akte import akte_bearbeiten, akte_lesen
 
 class GitLabFehler(Fehler):
@@ -154,7 +154,7 @@ def klon_suchen(projekt):
 # MR-Daten (Titel, Beschreibung, Branches …) kommen aus dem Cache im Review-Stand. GitLab wird nur auf
 # Anforderung gefragt: CLI (merge-train <MR>, agent pruefen/zeigen – also vom jira-review), Güterbahnhof, Abschließen.
 META_FELDER = ("title", "description", "web_url", "source_branch", "target_branch", "draft", "work_in_progress",
-               "diff_refs", "sha", "iid")
+               "diff_refs", "sha", "iid", "state")
 
 
 class MetaFehlt(GitLabFehler):
@@ -222,6 +222,35 @@ def ich(host):
     if host not in _ICH:
         _ICH[host] = (glab(host, "user") or {}).get("id")
     return _ICH[host]
+
+
+def eigener_mr(w):
+    """Bin ich Autor und nicht Reviewer dieses MR? Dann ist sein Quell-Branch meine Entwicklung: der Agent setzt Wünsche
+    um und committet (docs/ein-waggon.md). Laut gemerkter MR-Liste (Rollen), sonst Autor der MR-Daten gegen meinen
+    GitLab-Benutzer."""
+    ende = f"/{w.projekt}/-/merge_requests/{w.iid}".lower()
+    rollen = [r for it in mr_liste()[0] if it.get("web_url", "").lower().endswith(ende) for r in it.get("rollen") or []]
+    if rollen:
+        return "author" in rollen and "reviewer" not in rollen
+    autor = ((akte_lesen(w).get("meta") or {}).get("author") or {}).get("id")
+    try:
+        return bool(autor) and autor == ich(w.host)
+    except GitLabFehler:
+        return False
+
+
+def ausgecheckt(ordner):
+    """Der im Klon ausgecheckte Branch (None bei losgelöstem HEAD)."""
+    return (git(ordner, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or None
+
+
+def eigener_arbeitsstand(mr, ordner, meta, refs):
+    """Eigener MR, dessen Quell-Branch im Klon ausgecheckt ist: Kopf ist der Arbeitsstand (auch nicht Committetes,
+    docs/ein-waggon.md); refs.commit_sha = letzter Commit des Branches, refs.arbeitsstand = True. Sonst refs."""
+    quelle = meta.get("source_branch")
+    if not quelle or ausgecheckt(ordner) != quelle or not eigener_mr(mr):
+        return refs
+    return dict(refs, head_sha=arbeitsstand(ordner), commit_sha=refs["head_sha"], arbeitsstand=True)
 
 
 def mr_liste():

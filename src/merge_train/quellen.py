@@ -1,14 +1,14 @@
 """Die Quellen der Waggons – Lokal (Branches im Klon), Myrling (Läufe, die auf eine Prüfung warten) und GitLab
 (Merge-Requests) – und was sie können."""
-import json, re, subprocess
+import glob, json, os, re, subprocess
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
+from .einstellungen import ARBEITSSTAND, DATEN, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import LOKAL_ART, MR_ART, MYRLING_ART, Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
 from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, ohne_basis, kurzpfad, projekt_wurzel, statistik, wip_name,
                   wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
-from .gitlab import GitLabFehler, ich, mr_liste, mr_ref
+from .gitlab import ausgecheckt, eigener_mr, mr_liste, mr_ref
 from .abhaken import abhaken, haken_weg, teil_abgeben
 from .seite import LAUF_STAND, mr_seite, myrling_seite, projekt_seite
 from . import myrling
@@ -202,6 +202,8 @@ def faeden_text(gs, gs_neu):
 def mr_wagen(akt=None):
     items, _ = mr_liste()
     wagen, gesehen = [], set()
+    ausgecheckte = [mr for (wurzel, branch), mr in eigene_mrs().items() if ausgecheckt(wurzel) == branch]  # ein Waggon
+    eigen = {mr.id for mr in ausgecheckte}
     def wagen_fuer(mr, titel, aenderungen, rollen=()):
         akte = akte_lesen(mr)
         n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
@@ -217,6 +219,7 @@ def mr_wagen(akt=None):
             "✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt") if fertig else f"● {n} Komm." if n else "● offen")
         stand = " · ".join(t for t in (
             ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
+            "eigener MR, Quell-Branch ausgecheckt: lokaler Waggon und MR in einem" if mr.id in eigen else "",
             f"{ds['dran']} Diskussion(en): du bist dran" if ds["dran"] else "",
             f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
             f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
@@ -232,6 +235,10 @@ def mr_wagen(akt=None):
             continue
         gesehen.add(mr.id)
         wagen.append(wagen_fuer(mr, it.get("title", ""), it.get("changes_count"), it.get("rollen") or ()))
+    for mr in ausgecheckte:  # eigener MR, ausgecheckt: steht auch ohne „author“ in mr_liste im Zug
+        if mr.id not in gesehen:
+            gesehen.add(mr.id)
+            wagen.append(wagen_fuer(mr, akte_lesen(mr)["mr"].get("titel", ""), 0))
     if akt and akt not in gesehen:
         try:
             mr = Waggon.aus_id(akt)
@@ -267,6 +274,10 @@ class Quelle:
         """Waggon zum Feld „p“ eines Wagens im Zug (wagen)."""
         return Waggon.aus_id(p)
 
+    def ein_waggon(self, waggon):
+        """Ist der Waggon zugleich der lokale (eigener MR mit ausgechecktem Quell-Branch, docs/ein-waggon.md)?"""
+        return False
+
 
 class Lokal(Quelle):
     name, titel, art = "lokal", "lokal", LOKAL_ART
@@ -301,7 +312,8 @@ class Lokal(Quelle):
 
     def wagen(self, akt=None):
         from concurrent.futures import ThreadPoolExecutor
-        repos = finde_repos(alle=True)
+        mrs = eigene_mrs() if GITLAB.an() else {}
+        repos = [r for r in finde_repos(alle=True) if not (mrs and zusammengelegt(r, mrs))]  # steckt im MR-Waggon
         with ThreadPoolExecutor(8) as ex:
             return lokal_wagen(list(ex.map(stand_oder_fehlt, repos)), {projektname(r): r for r in repos})
 
@@ -397,18 +409,51 @@ class Myrling(Quelle):
                 f"`merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 
-def eigener_mr(w):
-    """Bin ich Autor und nicht Reviewer dieses MR? Dann ist sein Quell-Branch meine Entwicklung: der Agent setzt Wünsche
-    um und committet. Laut gemerkter MR-Liste (Rollen), sonst Autor der MR-Daten gegen meinen GitLab-Benutzer."""
-    ende = f"/{w.projekt}/-/merge_requests/{w.iid}".lower()
-    rollen = [r for it in mr_liste()[0] if it.get("web_url", "").lower().endswith(ende) for r in it.get("rollen") or []]
-    if rollen:
-        return "author" in rollen and "reviewer" not in rollen
-    autor = ((akte_lesen(w).get("meta") or {}).get("author") or {}).get("id")
-    try:
-        return bool(autor) and autor == ich(w.host)
-    except GitLabFehler:
-        return False
+# ---- Eigener MR = ein Waggon (docs/ein-waggon.md, Schritt 1): ist der Quell-Branch eines eigenen, offenen MR im Klon
+# ausgecheckt, geht der lokale Waggon darin auf. Der MR zeigt dann den Arbeitsstand (gitlab.eigener_arbeitsstand).
+
+def eigene_mrs():
+    """Offene eigene MRs mit Akte und Klon: {(Klon real, Quell-Branch): MR-Waggon}."""
+    out = {}
+    for p in glob.glob(os.path.join(DATEN, MR_ART.ordner, "*.json")):
+        try:
+            akte = json.load(open(p, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        m, meta = akte.get("mr") or {}, akte.get("meta") or {}
+        ordner = (struktur_laden(akte) or {}).get("ordner") or akte.get("klon")
+        if not (m.get("iid") and m.get("source_branch") and ordner) or meta.get("state") not in (None, "opened"):
+            continue
+        mr = Waggon.aus_dict(m)
+        if eigener_mr(mr):
+            out[(os.path.realpath(ordner), m["source_branch"])] = mr
+    return out
+
+
+def zusammengelegt(wurzel, mrs=None):
+    """Der eigene MR, dessen Quell-Branch im Klon wurzel ausgecheckt ist, sonst None. Zieht dabei die Fäden des lokalen
+    Waggons zu diesem Branch in den MR um (einmal; danach gibt es nur noch einen Ort). mrs: eigene_mrs(), schon geholt."""
+    branch = ausgecheckt(wurzel)
+    mr = branch and (eigene_mrs() if mrs is None else mrs).get((os.path.realpath(wurzel), branch))
+    if mr:
+        faeden_umziehen(Waggon(lokal=projektname(wurzel)), mr, branch)
+    return mr or None
+
+
+def faeden_umziehen(lokal, mr, branch):
+    """Fäden des lokalen Waggons zu branch in die Akte des MR (ids bleiben; erst dort eintragen, dann hier löschen).
+    Rückgabe: Anzahl."""
+    weg = [k for k in akte_lesen(lokal).get("kommentare") or [] if k.get("nachrichten") is not None and k.get("branch") == branch]
+    if not weg:
+        return 0
+    with akte_bearbeiten(mr) as akte:
+        da = {k.get("id") for k in akte.setdefault("kommentare", [])}
+        akte["kommentare"] += [k for k in weg if k.get("id") not in da]
+    ids = {k["id"] for k in weg}
+    with akte_bearbeiten(lokal) as akte:
+        akte["kommentare"] = [k for k in akte.get("kommentare") or [] if k.get("id") not in ids]
+    melden(f"{mr.name}: {len(weg)} Faden/Fäden aus dem lokalen Waggon übernommen (eigener MR, ein Waggon)")
+    return len(weg)
 
 
 class GitLab(Quelle):
@@ -428,6 +473,11 @@ class GitLab(Quelle):
         """Branch der Fäden: der Quell-Branch des MR."""
         return akte_lesen(waggon)["mr"].get("source_branch") or None
 
+    def ein_waggon(self, waggon):
+        akte = akte_lesen(waggon)
+        ordner, branch = (struktur_laden(akte) or {}).get("ordner") or akte.get("klon"), akte["mr"].get("source_branch")
+        return bool(ordner and branch and os.path.isdir(ordner) and ausgecheckt(ordner) == branch and eigener_mr(waggon))
+
     def wagen(self, akt=None):
         return mr_wagen(akt)
 
@@ -435,6 +485,9 @@ class GitLab(Quelle):
         return f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
 
     def zeilen_stand(self, waggon, head):
+        if self.ein_waggon(waggon):
+            return (f"den Arbeitsstand von {self.branch(waggon)} (auch nicht Committetes) – dein eigener MR: Wünsche dort "
+                    "umsetzen und committen (pushen nur auf Bitte).")
         if eigener_mr(waggon):
             return (f"den Stand {head[:8]} im Klon – dein eigener MR: Wünsche auf {self.branch(waggon)} umsetzen und "
                     "committen (pushen nur auf Bitte).")

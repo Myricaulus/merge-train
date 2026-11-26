@@ -467,6 +467,100 @@ def gemischt_test(mr):
                and "Erwartet:" not in r.stdout, "status im Klon auf dem Quell-Branch eines fremden MR: Review statt Entwicklung")
     finally:
         srv.terminate(); srv.wait()
+    eigen_test(mr, env2, hol)
+
+
+LOKALER_FADEN = ALLES_LADEN + r"""
+import sys
+m = alles_laden(sys.argv[1])
+print(m["faden_anlegen"]([m["Waggon"](lokal="repo")], "Alt lokal", "App.cs:3")[0])
+"""
+
+
+def eigen_test(mr, env2, hol):
+    """Eigener MR, Quell-Branch ausgecheckt = ein Waggon (docs/ein-waggon.md, Schritt 1): Zug ohne lokalen Waggon, Seite
+    im Arbeitsstand, Fäden ziehen um und gehen an den MR, Diskussion an lokal geänderter Zeile bleibt markiert stehen,
+    „passt hier“, GitLab-Kommentar nur an Zeilen wie in GitLab."""
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env2)  # REPO ist auch lokales Projekt (Arbeitsstand)
+    for _ in range(50):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/ping", timeout=1); break
+        except OSError:
+            time.sleep(0.1)
+    liste_pfad = f"{T}/cache/merge-train/mrliste.json"
+    liste_alt = open(liste_pfad).read()
+    k = open(f"{T}/cache/merge-train/schluessel").read().strip()
+    ap = f"{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json"
+    def post_g(pfad, d):
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT_GEMISCHT}{pfad}", json.dumps(dict(d, mr=mr, k=k)).encode(),
+                                     {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT_GEMISCHT}"})
+        return json.loads(urllib.request.urlopen(req, timeout=60).read())
+    def review():
+        return json.loads(hol(f"/api/review?mr={urllib.parse.quote(mr)}&k={k}"))
+    d950 = lambda rv: next(d for d in rv["diskussionen"] if d["diskussion"] == "d950")
+    try:
+        r = subprocess.run([sys.executable, "-c", LOKALER_FADEN, SKRIPT], cwd=REPO, env=env2, capture_output=True, text=True)
+        alt_id = r.stdout.strip()
+        pruefe(r.returncode == 0 and alt_id, "eigener MR: lokaler Faden vorher angelegt" + ("" if alt_id else f" – {r.stderr[-300:]}"))
+        liste = json.loads(liste_alt)
+        for it in liste["items"]:
+            it["rollen"] = ["author"]
+        json.dump(liste, open(liste_pfad, "w"))
+        zeilen = open(f"{REPO}/App.cs").read().split("\n")
+        damals = zeilen[10].strip()  # Zeile 11: dort hängt d950 (GitLab-Stand)
+        zeilen[10] += " // lokal"
+        open(f"{REPO}/App.cs", "w").write("\n".join(zeilen))
+        z = json.loads(hol("/zug.js?akt=" + urllib.parse.quote(mr))[len("window.MR_ZUG="):-1])
+        w = next((w for w in z["wagen"] if w["p"] == mr), {})
+        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "eigener MR" in w.get("titel", ""),
+               "eigener MR: im Zug nur der MR-Waggon, kein lokaler „repo“")
+        seite = hol("/mr/" + mr)
+        refs = json.load(open(json.load(open(ap))["struktur"]))["refs"]
+        pruefe("Arbeitsstand (nicht Committetes dabei)" in seite and refs.get("arbeitsstand") and refs["head_sha"] != refs["commit_sha"]
+               and "// lokal" in sh("git", "-C", REPO, "show", refs["head_sha"] + ":App.cs").stdout,
+               "eigener MR: Seite zeigt den Arbeitsstand")
+        akte = json.load(open(ap))
+        pruefe(any(x.get("id") == alt_id for x in akte["kommentare"]), "eigener MR: Faden des lokalen Waggons ist umgezogen")
+        rv = review()
+        g = d950(rv)["geaendert"] or {}
+        pruefe(d950(rv)["b"] == 11 and g.get("text") == "lokal geändert" and g.get("damals") == damals,
+               "eigener MR: Diskussion an lokal geänderter Zeile bleibt dort, markiert, mit damaligem Code")
+        mrj = lambda html: json.JSONDecoder().raw_decode(html.split("const MR=", 1)[1])[0]
+        r = post_g("/api/kommentar", {"aktion": "anker", "diskussion": "d950", "seite": mrj(seite)["seite"]})
+        rv = review()
+        pruefe(r["ok"] and not d950(rv)["geaendert"] and d950(rv)["anker"] and d950(rv)["b"] == 11, "passt hier: Marke weg, neuer Anker")
+        app = open(f"{REPO}/App.cs").read()
+        open(f"{REPO}/App.cs", "w").write("// oben\n" + app)
+        seite = hol("/mr/" + mr)
+        rv = review()
+        pruefe(d950(rv)["b"] == 12 and not d950(rv)["geaendert"], "passt hier: wandert vom Anker aus weiter mit")
+        struktur = json.load(open(json.load(open(ap))["struktur"]))
+        i_app = next(i for i, f in enumerate(struktur["dateien"]) if f["neu"] == "App.cs")
+        paar = {b: a for a, b in struktur["dateien"][i_app]["paare"] if b}
+        klick = lambda b, text: post_g("/api/kommentar", {"aktion": "neu", "datei": i_app, "a": paar.get(b), "b": b, "text": text,
+                                                          "seite": mrj(seite)["seite"], "sha": mrj(seite)["sha"]})
+        r = klick(12, "An geänderter Zeile")
+        pruefe(not r["ok"] and "erst nach dem Push" in r["text"], "eigener MR: kein GitLab-Kommentar an lokal geänderter Zeile")
+        r = klick(13, "An gleicher Zeile")
+        km = next((x for x in (r.get("review") or {}).get("kommentare", []) if x["text"] == "An gleicher Zeile"), None)
+        roh = next((x for x in json.load(open(ap))["kommentare"] if x.get("text") == "An gleicher Zeile"), {})
+        pruefe(r["ok"] and km and km["b"] == 13 and roh.get("b") == 12 and (roh.get("refs") or {}).get("head_sha") ==
+               json.load(open(ap))["meta"]["diff_refs"]["head_sha"],
+               "eigener MR: GitLab-Kommentar an unveränderter Zeile, Position im GitLab-Stand")
+        if km:
+            post_g("/api/kommentar", {"aktion": "loeschen", "id": km["id"]})
+        r = subprocess.run([sys.executable, SKRIPT, "agent", "thread", "--ort", "App.cs:4", "Neu im Klon"], cwd=REPO, env=env2,
+                           capture_output=True, text=True)
+        pruefe(r.returncode == 0 and any(x.get("nachrichten") and x["nachrichten"][0]["text"] == "Neu im Klon"
+                                         for x in json.load(open(ap))["kommentare"]),
+               "eigener MR: agent thread im Klon landet im MR")
+        r = subprocess.run([sys.executable, SKRIPT, "status"], cwd=REPO, env=env2, capture_output=True, text=True)
+        pruefe(r.returncode == 0 and "Branch feature" in r.stdout and "Erwartet:" in r.stdout and "Review MR" not in r.stdout
+               and alt_id in r.stdout, "eigener MR: status zeigt Entwicklung samt umgezogenem Faden")
+    finally:
+        sh("git", "-C", REPO, "checkout", "-q", "--", "App.cs")
+        open(liste_pfad, "w").write(liste_alt)
+        srv.terminate(); srv.wait()
 
 def mr_gespraech_test(mr, k, basis, struktur):
     """Fragen an einen Agenten zum MR: eigene Datei, nie im Review, agent feedback/antworten/horchen mit MR-Kennung."""
@@ -509,7 +603,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     autor(1)  # ich (fake-glab user id 1) bin Autor: eigener MR
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
     autor(None)
-    pruefe(r.returncode == 0 and "dein eigener MR: Wünsche auf feature umsetzen und committen" in r.stdout
+    pruefe(r.returncode == 0 and "dein eigener MR: Wünsche" in r.stdout and "committen" in r.stdout
            and "nur antworten" not in r.stdout, "eigener MR: feedback erlaubt Umsetzen und Committen")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, "--horchen", "--als", "Copilot", "--timeout", "10", env=genv, check=False)
     pruefe(r.returncode == 0 and "Was macht Zeile 11?" in r.stdout, "feedback --horchen: was schon wartet, kommt sofort")

@@ -60,7 +60,10 @@ each one with `merge-train agent antworten <id> "…"` – **in the thread, neve
 `--erledigt` only when a request is really done; the user closes the rest.
 The header says where the lines point: the branch (local – implement requests there, following the repo's
 AGENTS.md/CLAUDE.md) or `MR … · Stand <sha> · Klon <ordner>` (a MR – **answer only**, change nothing; read the code
-at `<sha>` with `git show` if the tree is elsewhere). Several conversations in one clone: pass the MR as argument.
+at `<sha>` with `git show` if the tree is elsewhere). Exception: the user's **own MR** (the last line of `feedback`
+says "dein eigener MR") – implement and commit there, push only on request. With its source branch checked out, the
+local conversation and the MR are one: threads you create in the clone go to the MR. Several conversations in one
+clone: pass the MR as argument.
 
 **"hör zu", "hör auf merge-train":** start `merge-train agent feedback --horchen` **in the background** (Claude Code:
 Bash `run_in_background`; Copilot: `mode: "async"`) and end your turn. Don't poll it. When it exits with messages,

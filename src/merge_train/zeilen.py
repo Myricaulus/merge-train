@@ -116,3 +116,21 @@ def zeile_vorwaerts(ordner, von, bis, pfad, b):
         if a0 + al <= b:
             delta += bl - al
     return b + delta
+
+
+def zeile_ungefaehr(ordner, von, bis, pfad, b):
+    """Zeile b (Stand von) → Stand bis, auch wenn sie selbst geändert ist. Rückgabe (zeile, geaendert): unverändert →
+    (neue Nummer, False); geändert oder gelöscht → die Zeile, die im geänderten Block an ihrer Stelle steht (sonst die
+    letzte noch vorhandene davor), True; Datei weg → (None, True)."""
+    n = zeile_vorwaerts(ordner, von, bis, pfad, b)
+    if n is not None:
+        return n, False
+    f = _VORWAERTS.get((ordner, von, bis, pfad))
+    if not f or f[0] == "gelöscht":
+        return None, True
+    paare = f[1]
+    i = next((i for i, (a, _) in enumerate(paare) if a == b), None)
+    if i is None:
+        return None, True
+    nach = next((p[1] for p in paare[i:] if p[1] is not None), None)
+    return nach or next((p[1] for p in reversed(paare[:i]) if p[1] is not None), None), True

@@ -217,6 +217,16 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
   Entwürfe in GitLab, neue Antworten, eigene Kommentare und Fäden.
 - Kommentare zu Zeilen außerhalb des Diffs versucht das Tool zuerst als Zeilen-Kommentar. Lehnt GitLab das ab, wird daraus
   ein allgemeiner Kommentar mit Link auf `datei:zeile`.
+- **Eigener MR = ein Waggon**: Bist du Autor eines offenen MR und ist sein Quell-Branch im Klon ausgecheckt, gibt es
+  für diesen Branch nur den MR-Waggon (Zielbild und nächste Schritte: [`docs/ein-waggon.md`](docs/ein-waggon.md)):
+  - Die Seite zeigt den **Arbeitsstand**, auch nicht Committetes („eigener MR · Arbeitsstand“ im Kopf), und tauscht
+    beim Speichern im Editor die geänderten Dateien aus.
+  - Fäden des Agenten im Klon (`agent thread`, `feedback`, `status`) gehen an den MR, und der Agent darf dort umsetzen
+    und committen. Fäden, die vorher im lokalen Waggon zu diesem Branch lagen, ziehen einmal von selbst um.
+  - Eine Diskussion an einer **lokal geänderten Zeile** bleibt etwa an ihrer Stelle, markiert „⚠ lokal geändert“ mit dem
+    damaligen Code. **„passt hier“** bestätigt den Ort: Die Marke verschwindet, und die Diskussion wandert von dort weiter mit.
+  - Eigene GitLab-Kommentare an einer Zeile gehen nur, wo der Code dem Stand in GitLab entspricht (sie bekommen dessen
+    Position). An lokal geänderten Zeilen erst nach dem Push; Fragen an den Agenten gehen überall.
 
 Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cache in `~/.cache/merge-train/`.
 

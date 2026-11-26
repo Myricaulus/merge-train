@@ -49,6 +49,9 @@
 | **Siehe-auch** | Verweis in einem Hinweis oder Thread auf eine weitere Stelle. Gehört nie zum GitLab-Kommentar. `see_also`, `--siehe` | Siehe auch | R, H |
 | **Vergleich** (⇄) | Zwei Stellen nebeneinander, auch aus verschiedenen Ständen (`@ref`). `--vergleich A B` | ⇄ | F 7 |
 | **Mitwandern** | Fäden und Hinweise folgen ihrer Zeile über neue Commits. Wurde die Zeile selbst geändert, stehen sie unter dem Dateinamen. `zeilen.py` | | R, F 6 |
+| **Anker** | Woran ein Kommentar aus einer Quelle hängt: Stand der Quelle, Zeile und Code der Zeile. Von dort wird er auf den gezeigten Stand umgerechnet. | | `docs/ein-waggon.md` |
+| **lokal geändert** | Marke an einem Kommentar aus einer Quelle, dessen Zeile im Arbeitsstand geändert oder weg ist. Er steht dann etwa an seiner Stelle, mit dem damaligen Code. | lokal geändert | `docs/ein-waggon.md` |
+| **passt hier** | Der Nutzer bestätigt eine unsichere Zuordnung: der Ort wird der neue Anker, die Marke verschwindet. | passt hier | `docs/ein-waggon.md` |
 | **Beobachten** | Eigene Instanz für einen Ordner, die den Arbeitsstand live zeigt und bei Änderung zum Neuen scrollt. `--beobachten` | | R, F 16 |
 | **Tausch** (je Datei) | Neuer Stand auf der offenen Seite ohne Neuladen: nur Dateien mit neuem Datei-Schlüssel kommen neu, die übrigen bleiben. `App.neuHolen`, `api/diff` | geändert (wartet) | R, F 4 |
 | **Datei-Schlüssel** | Kennung, die gleich bleibt, solange eine Datei des Diffs gleich aussieht (Pfade, Status, Blobs). `datei_schluessel`, `data-schluessel` | | F 4 |
@@ -76,6 +79,8 @@
 | Begriff | Bedeutung | Seite | Quelle |
 |---|---|---|---|
 | **MR** | GitLab-Merge-Request, ein Waggon der Quelle GitLab. | | R |
+| **eigener MR** | MR, dessen Autor der Nutzer ist (MR-Liste oder Autor der MR-Daten). Ist sein Quell-Branch im Klon ausgecheckt, geht der lokale Waggon darin auf: ein Waggon mit Arbeitsstand, der Agent darf umsetzen. `eigener_mr` | | `docs/ein-waggon.md` |
+| **fremder MR** | MR eines anderen, den der Nutzer reviewt. Der Agent antwortet nur. | | `docs/ein-waggon.md` |
 | **Review-JSON** | Datei eines Review-Agenten (`tasks/<KEY>-review-markers.json`) mit Findings als Markern. | | H |
 | **Marker** | Ein Eintrag der Review-JSON: Ort (needle, `line`), Text, Siehe-auch. | | H |
 | **Agent-Hinweis** | Ein Marker an seiner Zeile, lila, noch nicht übernommen. = Stufe **draft**. | lila Hinweis | R, A |

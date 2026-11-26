@@ -4,7 +4,7 @@ from .waggon import Fehler, Ungueltig, Waggon
 from .einstellungen import KONF, jetzt
 from .git import ANLASS, anlass, branch_auschecken, git, inhalt, zerlegen
 from .syntax import darstellen, zeilen_tokens
-from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_vorwaerts, zurueck_diffs
+from .zeilen import alt_zeile, diff_enden, im_diff, kontext_zeile, zeile_ungefaehr, zeile_vorwaerts, zurueck_diffs
 from .diff_html import datei_tabelle
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, ausstehend, datei_index, diskussion_abgehakt,
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
@@ -55,8 +55,13 @@ def kommentare_fuer_seite(akte, struktur):
             continue  # veröffentlicht: steht als Thread in diskussionen_fuer_seite
         i = datei_index(struktur, k.get("path"))
         f = struktur["dateien"][i] if i is not None else None
-        out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": k.get("a"), "b": k.get("b"),
-                    "datei": i, "im_diff": bool(f and (k.get("a") or k.get("b")) and im_diff(f, k.get("a"), k.get("b"))),
+        a, b = k.get("a"), k.get("b")
+        von = (k.get("refs") or {}).get("head_sha")
+        if k.get("path") and b and von and von != struktur["refs"]["head_sha"]:  # z. B. GitLab-Stand im Arbeitsstand
+            b = zeile_ungefaehr(struktur["ordner"], von, struktur["refs"]["head_sha"], k["path"], b)[0]
+            a = alt_zeile(f, b) if f and b else None
+        out.append({"id": k["id"], "text": k["text"], "path": k.get("path"), "a": a, "b": b,
+                    "datei": i, "im_diff": bool(f and (a or b) and im_diff(f, a, b)),
                     "finding": k.get("finding"), "agent": k.get("agent"), "hinweis": k.get("hinweis"), "status": kommentar_status(k),
                     "antwort_auf": k.get("antwort_auf"), **dict(zip(("stand", "wer"), kommentar_stand(k)))})
     return out
@@ -71,15 +76,24 @@ def diskussionen_fuer_seite(akte, struktur):
     head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], akte["mr"].get("web_url") or ""
     ich_id = akte.get("ich_id")
     out = []
+    lokal = bool(struktur["refs"].get("arbeitsstand"))
+    gl_head = ((akte.get("meta") or {}).get("diff_refs") or {}).get("head_sha")  # ohne Stand in der Position: GitLabs
     for d in akte.get("diskussionen") or []:
         k = eigene.get(d["id"])
         ort = k if k else d
-        von = ((k.get("refs") or {}).get("head_sha") if k else d.get("head_sha")) or head
-        b, unter = ort.get("b"), None
+        von = ((k.get("refs") or {}).get("head_sha") if k else d.get("head_sha")) or gl_head or head
+        b, unter, geaendert = ort.get("b"), None, None
+        anker = (akte.get("anker") or {}).get(str(d["id"]))  # „passt hier“: vom Nutzer bestätigter Ort
+        if anker and ort.get("path"):
+            von, b = anker["head_sha"], anker["b"]
         if ort.get("path") and b:
-            b = zeile_vorwaerts(ordner, von, head, ort["path"], b)
-            if b is None:
-                unter = f'Zeile {ort["b"]} hat sich seit dem Kommentar geändert'
+            neu, anders = zeile_ungefaehr(ordner, von, head, ort["path"], b)
+            if neu is None:
+                unter = f'Zeile {b} gibt es nicht mehr' + (" im Arbeitsstand" if lokal else "")
+            elif anders:  # Zeile selbst geändert: bleibt etwa an ihrer Stelle, markiert (docs/ein-waggon.md)
+                geaendert = {"text": "lokal geändert" if lokal else "seit dem Kommentar geändert", "zeile": b,
+                             "damals": zeile_text(ordner, von, ort["path"], b)}
+            b = neu
         i = datei_index(struktur, ort.get("path"))
         f = struktur["dateien"][i] if i is not None else None
         a = ort.get("a") if not ort.get("b") else (alt_zeile(f, b) if f and b else None)
@@ -99,6 +113,7 @@ def diskussionen_fuer_seite(akte, struktur):
         out.append({"id": "gl:" + str(d["id"]), "ziel": "gitlab", "diskussion": d["id"], "kommentar": k["id"] if k else None,
                     "finding": k.get("finding") if k else None, "agent": k.get("agent") if k else None, "text": nachrichten[0]["text"], "path": ort.get("path"),
                     "a": a, "b": b, "datei": i, "im_diff": drin, "unter": unter if i is not None else None, "problem": unter,
+                    "geaendert": geaendert, "anker": bool(anker),
                     "stand": stand_, "wer": wer, "loesbar": d.get("loesbar"), "nachrichten": nachrichten + entwuerfe, "links": [],
                     "erledigt": dict(erledigt, von=von(erledigt.get("wer_id"))) if erledigt else None, "abgehakt": abgehakt,
                     "url": f'{web}#note_{d["note_id"]}' if web and d.get("note_id") else web})
@@ -117,6 +132,27 @@ def diskussion_abhaken(akte, eingabe):
     else:
         ab.pop(str(did), None)
     return True, ""
+
+
+def diskussion_anker(waggon, akte, eingabe):
+    """„passt hier“: der Ort, an dem die Seite (eingabe.seite) die Diskussion gerade zeigt, wird ihr Anker (Stand der
+    Seite + Zeile); die Marke „lokal geändert“ verschwindet, von dort wandert sie weiter mit. Den Ort rechnet der Server
+    selbst (diskussionen_fuer_seite), nicht die Seite."""
+    did = eingabe.get("diskussion")
+    struktur = seiten_struktur(waggon, eingabe.get("seite"), akte=akte)
+    if not diskussion_finden(akte, did) or not struktur:
+        return False, "Diskussion oder Stand der Seite nicht gefunden – Seite neu laden"
+    x = next((x for x in diskussionen_fuer_seite(akte, struktur) if x["diskussion"] == did), None)
+    if not x or not x.get("path") or not x.get("b"):
+        return False, "Die Diskussion steht an keiner Zeile"
+    akte.setdefault("anker", {})[str(did)] = {"head_sha": struktur["refs"]["head_sha"], "b": x["b"], "zeit": jetzt()}
+    return True, ""
+
+
+def zeile_text(ordner, sha, pfad, n):
+    """Code der Zeile n von pfad im Stand sha ("" wenn nicht lesbar)."""
+    zeilen = (inhalt(ordner, sha, pfad) or "").split("\n")
+    return zeilen[n - 1].strip() if 0 < n <= len(zeilen) else ""
 
 
 def diskussion_aufloesen(mr, eingabe):
@@ -329,11 +365,30 @@ def kommentar_neu(waggon, akte, eingabe, ansicht):
         k.update(text=text, path=None, a=None, b=None)
     if not k["text"]:
         return False, "leerer Kommentar"
+    if struktur and struktur["refs"].get("arbeitsstand") and k.get("path") and k.get("b") and not k.get("antwort_auf"):
+        fehler = auf_gitlab_stand(akte, struktur, k)
+        if fehler:
+            return False, fehler
     if k.get("hinweis"):
         akte["hinweise"][k["hinweis"]] = "uebernommen"
         akte["reihenfolge"] = [k["id"] if x == k["hinweis"] else x for x in akte.get("reihenfolge") or []]  # Platz behalten
     kommentar_anhaengen(akte, k)
     return True, ""
+
+
+def auf_gitlab_stand(akte, struktur, k):
+    """Kommentar an einer Zeile im Arbeitsstand eines eigenen MR: GitLab kennt nur seinen Stand. Entspricht die Zeile
+    dort dem Code hier, bekommt k Zeile und refs im GitLab-Stand; sonst Fehlertext (erst pushen). docs/ein-waggon.md"""
+    gl = (akte.get("meta") or {}).get("diff_refs") or {}
+    if not gl.get("head_sha"):
+        return "GitLab-Stand unbekannt – „↻ MR-Daten“"
+    head, ordner = struktur["refs"]["head_sha"], struktur["ordner"]
+    b = zeile_vorwaerts(ordner, head, gl["head_sha"], k["path"], k["b"])
+    if b is None or zeile_text(ordner, head, k["path"], k["b"]) != zeile_text(ordner, gl["head_sha"], k["path"], b):
+        return (f'Zeile {k["b"]} ist lokal geändert – ein GitLab-Kommentar geht hier erst nach dem Push. Fragen an den '
+                "Agenten gehen als KI-Thread.")
+    k.update(b=b, refs={"base_sha": gl.get("base_sha"), "start_sha": gl.get("start_sha"), "head_sha": gl["head_sha"]})
+    return None
 
 
 def kommentare_sortieren(mr, akte, eingabe, ansicht):
@@ -431,6 +486,8 @@ def kommentar_aktion(mr, eingabe):
         return diskussion_aufloesen(mr, eingabe)
     if aktion in ("abhaken", "aufhaken"):
         return aktion_ausfuehren(mr, lambda akte: diskussion_abhaken(akte, eingabe))
+    if aktion == "anker":
+        return aktion_ausfuehren(mr, lambda akte: diskussion_anker(mr, akte, eingabe))
     if aktion in KOMMENTAR_AKTIONEN:
         return aktion_ausfuehren(mr, lambda akte: KOMMENTAR_AKTIONEN[aktion](mr, akte, eingabe, ansicht))
     if aktion not in AM_KOMMENTAR:
@@ -865,7 +922,9 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
     proj_url = web.split("/-/merge_requests/")[0]
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
-    if head and gl_head and gl_head != head:
+    if (struktur_laden(akte) or {}).get("refs", {}).get("arbeitsstand"):  # eigener MR im Arbeitsstand: Kommentare an
+        head = gl_head or head  # Zeilen tragen schon den GitLab-Stand (auf_gitlab_stand), Links zeigen auf ihn
+    elif head and gl_head and gl_head != head:
         return (False, f"GitLab steht auf {gl_head[:8]}, die Seite auf {head[:8]} – erst den lokalen Stand aktualisieren "
                        "(jira-review: Branch und Kommentare), dann die Seite neu laden.", meta.get("web_url") or web)
     if isinstance(vorhanden, Fehler):

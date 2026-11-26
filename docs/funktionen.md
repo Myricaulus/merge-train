@@ -19,6 +19,9 @@ Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
   Vorgänger, `lauf_ort` (Basis je Datei eines Laufs), Waggon-Karte `projekt_einstellung`/`projekt_einstellen`.
 - Erweitern: neue Quelle = Unterklasse von `Quelle` plus eine von `Art` (mit `logo`), keine eigene Seite, keine
   `if lokal`-Ketten.
+- Eigener MR = ein Waggon (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
+  `eigene_mrs`, `zusammengelegt`, `faeden_umziehen`, `Quelle.ein_waggon` (`quellen.py`), `entwicklung_ziel`
+  (`agent_cli.py`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
 
 ### 2. Fähigkeiten je Waggon (`kann`)
 `review`, `fertig`, `committen`.
@@ -51,7 +54,8 @@ Diff aus dem lokalen Git, Dateiliste, Kontext nachladen, Datei abhaken und filte
 
 ### 6. Zeilen umrechnen (alt ↔ neu, Stand ↔ Stand)
 Grundlage für mitwandernde Fäden, Commit-Ansichten, fremde Diskussionen.
-- Ort: `zeilen.py`.
+- Ort: `zeilen.py`; `zeile_ungefaehr`, wenn die Zeile selbst geändert ist (Kommentare der Quellen bleiben etwa an ihrer
+  Stelle, Marke `geaendert`, Anker per „passt hier“: `diskussion_anker`, `akte.anker`).
 - Erweitern: jede „gehört diese Zeile noch hierher?“-Frage geht über diese Funktionen.
 
 ### 7. Code-Verweise und Popup
@@ -82,7 +86,8 @@ Fäden an Zeile, Bereich, GitLab-Kommentar oder allgemein; Agent holt ab, antwor
 ### 10. GitLab-Review
 Kommentare schreiben, „Review abschließen“, Urteil.
 - Achsen: Senden (direkt veröffentlichen, nur Entwürfe), Urteil.
-- Ort: `review.py` (`abschluss_planen`, `schritt_ausfuehren`, `URTEILE`, `urteil_senden`), Routen `api/kommentar`,
+- Ort: `review.py` (`abschluss_planen`, `schritt_ausfuehren`, `URTEILE`, `urteil_senden`; im Arbeitsstand eines
+  eigenen MR `auf_gitlab_stand`), Routen `api/kommentar`,
   `api/abschliessen`; `glab`/`ich` (`gitlab.py`).
 - Erweitern: neue Art der Übertragung als weiterer `Schritt`.
 

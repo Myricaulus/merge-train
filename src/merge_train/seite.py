@@ -9,7 +9,7 @@ from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, datei_schluessel, spaeter_grund, zeilenzahl
 from .akte import STRUKTUR, akte_bearbeiten, akte_lesen, struktur_lesen
-from .gitlab import MetaFehlt, mr_lokal
+from .gitlab import MetaFehlt, eigener_arbeitsstand, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
 
 def commits_html(commits, knoepfe=None):
@@ -42,16 +42,18 @@ def mr_seite(mr, ansicht=None):
         raise MetaFehlt(f'Für {mr.projekt}!{mr.iid} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
                         "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
     ordner, refs = mr_lokal(mr, meta)
+    refs = eigener_arbeitsstand(mr, ordner, meta, refs)
     # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
     # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen; dazu der Stand der Meldung
     # (ein Push aus dem Terminal ändert ihn, ohne dass sich Kopf oder MR-Daten ändern)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
-    stand = stand_zu_gitlab(ordner, meta.get("source_branch") or "", refs["head_sha"], gl_head)
+    commit = refs.get("commit_sha") or refs["head_sha"]  # Arbeitsstand: GitLab kennt nur den letzten Commit
+    stand = stand_zu_gitlab(ordner, meta.get("source_branch") or "", commit, gl_head)
     mh = hashlib.sha1(json.dumps({**{k: v for k, v in meta.items() if k != "_zeit" or stand}, "_stand": stand},
                                  sort_keys=True).encode()).hexdigest()[:6]
     praefix = os.path.join(MR_ORDNER, f'{mr.dateiname}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
-    pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix,
-                                 lambda *a: mr_html(mr, meta, *a), ansicht)
+    pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix, lambda *a: mr_html(mr, meta, *a), ansicht,
+                                 git_commits(ordner, refs["base_sha"], commit) if refs.get("arbeitsstand") else None)
     if not ansicht:
         with akte_bearbeiten(mr) as s:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
             s["struktur"] = praefix_json(praefix)
@@ -75,7 +77,7 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
-    abw = stand_html(struktur["ordner"], meta, head)
+    abw = stand_html(struktur["ordner"], meta, struktur["refs"].get("commit_sha") or head)
     titel = f'{mr.projekt}!{mr.iid}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return diff_seite(titel=f'!{mr.iid} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,
@@ -83,8 +85,18 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
                       commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
                       nach_h1=f'\n<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>',
                       sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
-                      nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>',
+                      nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>'
+                               + arbeitsstand_html(struktur["refs"]),
                       hilfe=hilfe, leer=leer)
+
+
+def arbeitsstand_html(refs):
+    """Eigener MR mit ausgechecktem Quell-Branch: die Seite zeigt den Arbeitsstand (docs/ein-waggon.md)."""
+    if not refs.get("arbeitsstand"):
+        return ""
+    sauber = refs["head_sha"] == refs.get("commit_sha")
+    return (' <span class="sub" title="Eigener MR, Quell-Branch ausgecheckt: lokaler Waggon und MR sind ein Waggon">· '
+            + ("eigener MR, ausgecheckt" if sauber else "eigener MR · Arbeitsstand (nicht Committetes dabei)") + "</span>")
 
 
 # Knopf in der Meldung je Stand (stand_zu_gitlab): data-g = Aktion in api/gitlab, data-frage = erst bestätigen

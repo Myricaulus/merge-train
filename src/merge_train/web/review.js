@@ -342,6 +342,7 @@
     box.append(el('div', {class: 'kk'}, badge, branch, agent, zu, er, ort, gitlab, kn));
     if (k.damals && k.problem)
       box.append(el('div', {class: 'alt', title: 'Ort und Code, als der Faden angelegt wurde'}, 'damals ' + k.damals));
+    if (k.geaendert) box.append(geaendertZeile(k, offen));
     k.nachrichten.forEach(m => verlauf.append(nachrichtBox(k, m, wer, offen, senden)));
     box.append(verlauf);
     const sa = sieheAuch(k.see_also);
@@ -349,6 +350,28 @@
     if (offen && k.nachrichten.length > 1) box.append(el('div', {class: 'unten'}, antw())); // auch unten (lange Fäden)
     if (k.ziel === 'gitlab' && k.kommentar) angehaengt(box, ['k:' + k.kommentar], kn); // eigener, veröffentlicht
     return box;
+  }
+  /** Diskussion, deren Zeile sich seitdem geändert hat (lokal im Arbeitsstand): steht etwa an ihrer Stelle, mit dem
+   *  damaligen Code; „passt hier“ macht den Ort zum neuen Anker (docs/ein-waggon.md). */
+  function geaendertZeile(k, offen) {
+    const g = k.geaendert;
+    return el(
+      'div',
+      {class: 'alt geaendert', title: 'Die Zeile, an der der Kommentar hängt, ist geändert – er steht etwa an ihrer Stelle'},
+      el('span', {class: 'warn'}, '⚠ ' + g.text),
+      ' · damals Zeile ' + g.zeile + (g.damals ? ': ' + g.damals : ''),
+      offen
+        ? el(
+            'button',
+            {
+              class: 'passt',
+              title: 'Der Kommentar gehört an diese Zeile: sie wird sein Anker, von hier wandert er weiter mit',
+              onclick: () => kommentarAktion({aktion: 'anker', diskussion: k.diskussion})
+            },
+            'passt hier'
+          )
+        : null
+    );
   }
   const ZU_TITEL =
     'Wunsch an den Agenten zu diesem GitLab-Kommentar: er ändert den Kommentartext (als neuen Agent-Hinweis zum ' +
@@ -636,7 +659,7 @@
         ex.status ? el('span', {class: 'badge'}, 'Status: ' + ex.status) : null,
         kn
       ),
-      antwortAuf(ex.reply_to),
+      ...[antwortAuf(ex.reply_to)].filter(Boolean), // append schreibt null sonst als Text
       el('div', {class: 'kt'}, h.text)
     );
     const sa = sieheAuch(h.see_also);

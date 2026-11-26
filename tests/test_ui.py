@@ -531,10 +531,38 @@ def teil_aussen(b, f):
         b.warten_bis(an_zeile)
 
 
+def teil_anker(b, f):
+    """Eigener MR, Quell-Branch ausgecheckt (Arbeitsstand): eine GitLab-Diskussion an einer lokal geänderten Zeile steht
+    markiert „lokal geändert“ an ihrer Stelle; „passt hier“ macht den Ort zum Anker, die Marke verschwindet. Nur MR."""
+    if f.mr.startswith("projekt:"):
+        return
+    zustand = f.srv.umgebung["FAKE_GLAB_STATE"]
+    ap = os.path.join(f.srv.ordner, "data", "merge-train", "reviews", "gitlab.example.com_gruppe_demo_1.json")
+    json.dump([{"id": 960, "body": "Warum hier?", "author": {"id": 2, "name": "Reviewerin"}, "system": False, "resolvable": True,
+                "resolved": False, "position": {"new_path": "App.cs", "new_line": 10}}], open(os.path.join(zustand, "notes.json"), "w"))
+    r = f.srv.post("/api/gitlab", {"mr": f.mr, "aktion": "mrdaten"})
+    assert r.get("ok"), r
+    akte = json.load(open(ap)); akte["meta"]["author"]["id"] = 1; json.dump(akte, open(ap, "w"))  # fake-glab: ich = 1
+    app = os.path.join(f.repo, "App.cs")
+    alt = open(app).read()
+    open(app, "w").write(alt.replace("// Zeile 10 neu", "// Zeile 10 neu, lokal"))
+    try:
+        seite(b, f)
+        sel = "[...document.querySelectorAll('.kbox.gl')].find(x => x.textContent.includes('Warum hier?'))"
+        b.warten_bis(f"{sel} && {sel}.querySelector('.geaendert button.passt')")
+        assert "lokal geändert" in b.js(f"{sel}.querySelector('.geaendert').textContent")
+        b.js(f"{sel}.querySelector('.geaendert button.passt').id = 'ui-passt'")
+        b.klicken("#ui-passt")
+        b.warten_bis(f"{sel} && !{sel}.querySelector('.geaendert')")
+    finally:
+        open(app, "w").write(alt)
+        akte = json.load(open(ap)); akte["meta"]["author"]["id"] = None; json.dump(akte, open(ap, "w"))
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
          "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch,
-         "aussen": teil_aussen}
+         "aussen": teil_aussen, "anker": teil_anker}
 
 
 def main():
