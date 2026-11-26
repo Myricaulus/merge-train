@@ -12,7 +12,7 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, fa
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
 from .seite import mr_seite
-from .quellen import quelle
+from .quellen import eigener_mr, quelle
 from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, prompt_merken, seite_datei, todo_offen
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
@@ -329,15 +329,34 @@ def kommentar_umformulieren(ziel, text, ziele=None, als=None):
         art, x = z
     if art == "h" and x["status"] == "offen":
         meldung, datei, nr = hinweis_text_aendern(x, text)
+        meldung += faeden_umhaengen(waggon, x["key"], datei, nr, ohne=faden and faden["id"])
     else:
         meldung, datei, nr = draft_daneben(waggon, art, x, text, agent)
     return meldung + (faden_nach_kommentar(waggon, faden["id"], datei, nr, agent) if faden else "")
 
 
+def hinweis_key(waggon, datei, nr):
+    """key des Markers nr in datei (ändert sich mit seinem Text)."""
+    return next((h["key"] for h in review_daten(waggon)["hinweise"] if h["json"] == datei and h["nr"] == nr), None)
+
+
+def faeden_umhaengen(waggon, alt, datei, nr, ohne=None):
+    """Der Text eines drafts hat sich geändert, damit sein key: Fäden, die am alten key hängen, hängen am neuen
+    (sonst verlören sie den Hinweis). ohne: diesen Faden lässt faden_nach_kommentar umhängen. Rückgabe: Meldung."""
+    neu = hinweis_key(waggon, datei, nr)
+    if not neu or neu == alt:
+        return ""
+    with akte_bearbeiten(waggon) as akte:
+        faeden = [k for k in faeden_von(akte) if k.get("zu") == "h:" + alt and k["id"] != ohne]
+        for k in faeden:
+            k["zu"] = "h:" + neu
+    return f' · Faden {", ".join(k["id"] for k in faeden)} hängt weiter daran' if faeden else ""
+
+
 def faden_nach_kommentar(waggon, fid, datei, nr, agent):
     """Nach „agent kommentar <Faden-id>“: der Faden hängt jetzt am draft (Marker nr in datei; ein geänderter Text gibt
     dem Hinweis einen neuen key) und ist erledigt – es sei denn, der Nutzer hat inzwischen nachgelegt."""
-    key = next((h["key"] for h in review_daten(waggon)["hinweise"] if h["json"] == datei and h["nr"] == nr), None)
+    key = hinweis_key(waggon, datei, nr)
     with akte_bearbeiten(waggon) as akte:
         k = faden_finden(akte, fid)
         if not k:
@@ -871,14 +890,6 @@ def faden_zeile(k):
     text = re.sub(r"[*`]", "", (letzte.get("text") or "").strip().split("\n")[0])
     st = {"wartet": "WARTET AUF DICH", "antwort": "offen", "erledigt": "erledigt"}.get(faden_status(k), faden_status(k))
     return f'  [{k["id"]}] {ort_kurz(k)} · {st} · {wer}: {text[:90]}{"…" if len(text) > 90 else ""}'
-
-
-def eigener_mr(w):
-    """Bin ich Autor und nicht Reviewer dieses MR (laut gemerkter MR-Liste)? Dann ist sein Branch meine Entwicklung."""
-    from .gitlab import mr_liste
-    ende = f"/{w.projekt}/-/merge_requests/{w.iid}".lower()
-    rollen = [r for it in mr_liste()[0] if it.get("web_url", "").lower().endswith(ende) for r in it.get("rollen") or []]
-    return "author" in rollen and "reviewer" not in rollen
 
 
 def review_ziel(ziele):

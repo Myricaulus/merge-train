@@ -10,7 +10,7 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
     diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import GitLabFehler, alle, glab, mr_lokal, mr_meta_holen, mr_pfad
+from .gitlab import GitLabFehler, alle, glab, ich, mr_lokal, mr_meta_holen, mr_pfad
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
 from .seite import ansicht_struktur, mr_seite, struktur_der_seite
@@ -486,7 +486,6 @@ def entwurf_anlegen(mr, k, head, proj_url):
     return glab(host, f"{mr_api}/draft_notes", "POST", {"note": text}), "allgemein" if k.get("path") else "mr"
 
 
-_ICH = {}  # GitLab-Benutzer-id je Host
 
 
 def fehlende_entwuerfe(akte, vorhanden):
@@ -495,18 +494,11 @@ def fehlende_entwuerfe(akte, vorhanden):
     return [k for k in review_kommentare(akte) if k.get("gitlab_id") and not k.get("geloescht") and k["gitlab_id"] not in vorhanden]
 
 
-def ich(host):
-    """Meine GitLab-Benutzer-id (ändert sich nicht, kostet aber eine eigene Anfrage)."""
-    if host not in _ICH:
-        _ICH[host] = (glab(host, "user") or {}).get("id")
-    return _ICH[host]
-
-
 def eigene_kommentartexte(mr):
     """Texte meiner (nicht System-)Kommentare im MR – um veröffentlichte Entwürfe zu erkennen. GitLab-Anfragen."""
     host, mr_api = mr.host, mr_pfad(mr)
-    ich(host)
-    return [n.get("body") or "" for n in alle(host, f"{mr_api}/notes") if (n.get("author") or {}).get("id") == _ICH[host] and not n.get("system")]
+    ich_id = ich(host)
+    return [n.get("body") or "" for n in alle(host, f"{mr_api}/notes") if (n.get("author") or {}).get("id") == ich_id and not n.get("system")]
 
 
 def abgleich_vorbereiten(mr, vorhanden):
@@ -781,9 +773,10 @@ def schritt_eintragen(akte, s, gitlab_id, gitlab_art):
     return True
 
 
-def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False, urteil="kommentieren"):
+def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False, urteil="kommentieren", urteil_fehlt=False):
     """Text nach „Review abschließen“. gezaehlt: Counter über die ausgeführten Arten, dazu „allgemein“, bei direkt
-    „publiziert“ (1 = alle Entwürfe in GitLab veröffentlicht) und „urteil“ (1 = Urteil in GitLab gesetzt)."""
+    „publiziert“ (1 = alle Entwürfe in GitLab veröffentlicht) und „urteil“ (1 = Urteil in GitLab gesetzt).
+    urteil_fehlt: der einzige Fehler ist das Urteil (alles andere ist in GitLab)."""
     teile = []
     if gezaehlt["anlegen"]:
         teile.append(f'{gezaehlt["anlegen"]} neu' +
@@ -802,6 +795,9 @@ def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False
         text += f" {verworfen} davon waren in GitLab verworfen und wurden neu angelegt."
     if veroeffentlicht:
         text += f" {veroeffentlicht} Entwurf/Entwürfe sind in GitLab schon veröffentlicht."
+    if fehler and urteil_fehlt:  # nur das Urteil fehlt: das Übrige hat geklappt, nicht alles „Fehler“ nennen
+        return ((text + " ✓ · " if text else "") + " | ".join(fehler) +
+                f" – noch einmal „{urteil_knopf(urteil)} → GitLab“ (es ist nichts mehr zu übertragen)")
     if fehler:
         text = "Fehler: " + " | ".join(fehler) + (" – Rest: " + text if teile else "")
     return text
@@ -810,11 +806,20 @@ def abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt=False
 URTEILE = {"kommentieren": "", "genehmigen": "In GitLab genehmigt", "aendern": "In GitLab Änderungen angefordert"}
 
 
+def urteil_knopf(urteil):
+    """Name des Urteils wie auf der Seite (URTEILE in review.js)."""
+    return {"genehmigen": "Genehmigen", "aendern": "Ändern lassen"}.get(urteil, urteil)
+
+
 def urteil_senden(mr, urteil):
     """Urteil des Reviews in GitLab setzen: genehmigen (REST approve) oder Änderungen anfordern (GraphQL
     mergeRequestRequestChanges – REST kennt das nicht). kommentieren setzt nichts."""
     if urteil == "genehmigen":
-        glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
+        try:
+            glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
+        except GitLabFehler:  # z. B. EOF (Verbindung ohne Antwort zu): hat es doch geklappt? Sonst einmal neu
+            if not (glab(mr.host, f"{mr_pfad(mr)}/approvals") or {}).get("user_has_approved"):
+                glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
     elif urteil == "aendern":
         r = glab(mr.host, "graphql", "POST", {
             "query": "mutation($p: ID!, $i: String!) { mergeRequestRequestChanges(input: {projectPath: $p, iid: $i}) "
@@ -864,7 +869,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
             mr, vorhanden, lambda akte: abschluss_planen(akte, vorhanden, sende_reihenfolge(mr, akte)))
     except Fehler as e:
         return False, f"Kommentare des MR nicht abrufbar: {e}", web
-    gezaehlt, fehler = Counter(), []
+    gezaehlt, fehler, urteil_fehlt = Counter(), [], False
     for s in schritte:
         try:
             gitlab_id, gitlab_art = schritt_ausfuehren(mr, s, head, proj_url)
@@ -894,11 +899,12 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
             urteil_senden(mr, urteil)
             gezaehlt["urteil"] = 1
         except Fehler as e:
-            fehler.append(f"{URTEILE[urteil]}: nicht geklappt – {e}")
+            fehler.append(f"{urteil_knopf(urteil)} fehlgeschlagen ({e})")
+            urteil_fehlt = True
     if not fehler:
         with akte_bearbeiten(mr) as akte:
             akte["abgeschlossen"] = jetzt()
-    text = abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt, urteil)
+    text = abschluss_meldung(gezaehlt, veroeffentlicht, verworfen, fehler, direkt, urteil, urteil_fehlt)
     return not fehler, " · ".join([text] + [t for t in teile if "veröffentlicht" not in t]), web
 
 

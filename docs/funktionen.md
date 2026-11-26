@@ -64,9 +64,11 @@ Grundlage für mitwandernde Fäden, Commit-Ansichten, fremde Diskussionen.
 
 ### 8. Gespräch mit Agenten (Fäden)
 Fäden an Zeile, Bereich, GitLab-Kommentar oder allgemein; Agent holt ab, antwortet, legt eigene Threads an.
-- Achsen: Quelle (`kann.committen`, `Quelle.prompt`), Agent, Faden-Aktion, Ort.
+- Achsen: Quelle (`kann.committen`, `Quelle.prompt`; beim eigenen MR laut `eigener_mr` darf der Agent umsetzen), Agent,
+  Faden-Aktion, Ort.
 - Ort: `gespraech.py`, `agent_cli.py` (`status_ausgeben`, `feedback`, `antworten`, `thread`, `agent_name`), Route
-  `api/gespraech`, `web/review.js`; Faden an Kommentar: `faden_zu`/`faden_ziel`.
+  `api/gespraech`, `web/review.js`; Faden an Kommentar: `faden_zu`/`faden_ziel`, nach neuem Text eines drafts
+  `faeden_umhaengen` (der key hängt am Text).
 - Erweitern: neue Einrichtungs-Prüfung für `status` = Zeile in `einrichtung_teile`; neuer Harness in
   `AGENT_UMGEBUNG`; Befehlsübersicht in `completions/merge-train.fish` mitpflegen.
 
@@ -79,7 +81,8 @@ Fäden an Zeile, Bereich, GitLab-Kommentar oder allgemein; Agent holt ab, antwor
 ### 10. GitLab-Review
 Kommentare schreiben, „Review abschließen“, Urteil.
 - Achsen: Senden (direkt veröffentlichen, nur Entwürfe), Urteil.
-- Ort: `review.py` (`abschluss_planen`, `schritt_ausfuehren`, `URTEILE`), Routen `api/kommentar`, `api/abschliessen`.
+- Ort: `review.py` (`abschluss_planen`, `schritt_ausfuehren`, `URTEILE`, `urteil_senden`), Routen `api/kommentar`,
+  `api/abschliessen`; `glab`/`ich` (`gitlab.py`).
 - Erweitern: neue Art der Übertragung als weiterer `Schritt`.
 
 ### 11. Agent-Hinweise (drafts)

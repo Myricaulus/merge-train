@@ -503,6 +503,14 @@ def mr_gespraech_test(mr, k, basis, struktur):
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
     pruefe(r.returncode == 0 and f'[{f["id"]}] App.cs:11' in r.stdout and "an Copilot" in r.stdout and "Was macht Zeile 11?" in r.stdout,
            "MR-Gespräch: agent feedback mit MR-Kennung")
+    ap = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+    def autor(aid):
+        a = json.load(open(ap)); a["meta"]["author"]["id"] = aid; json.dump(a, open(ap, "w"))
+    autor(1)  # ich (fake-glab user id 1) bin Autor: eigener MR
+    r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
+    autor(None)
+    pruefe(r.returncode == 0 and "dein eigener MR: Wünsche auf feature umsetzen und committen" in r.stdout
+           and "nur antworten" not in r.stdout, "eigener MR: feedback erlaubt Umsetzen und Committen")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, "--horchen", "--als", "Copilot", "--timeout", "10", env=genv, check=False)
     pruefe(r.returncode == 0 and "Was macht Zeile 11?" in r.stdout, "feedback --horchen: was schon wartet, kommt sofort")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", cwd=REPO, env=genv, check=False)
@@ -577,11 +585,16 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r.returncode == 0 and len(rv["kommentare"]) == n and any(x["id"] == km["id"] and x["text"] == km["text"] for x in rv["kommentare"])
            and any(h["text"] == "Even shorter." and h["extra"].get("ersetzt") == f"Kommentar {km['id']}" for h in rv["hinweise"]),
            "Kommentar umformulieren: staged/sent bleibt unverändert, neuer draft daneben")
+    r = post("/api/kommentar", dict(basis, gespraech=1, aktion="neu", an="Copilot", zu="h:" + neu[0]["key"], text="Kürzer?"))
+    fh = next(x for x in r["review"]["faeden"] if x["nachrichten"][-1]["text"] == "Kürzer?")
     r = sh(sys.executable, SKRIPT, "agent", "kommentar", "h:" + neu[0]["key"], "Shortest.", env=genv, check=False)
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     pruefe(r.returncode == 0 and len(rv["hinweise"]) == nh + 2 and any(h["text"] == "Shortest." for h in rv["hinweise"]),
            "Kommentar umformulieren: eigenen draft nochmal ändern")
     h = next(h for h in rv["hinweise"] if h["text"] == "Shortest.")
+    zu = next(x for x in json.load(open(ap))["kommentare"] if x["id"] == fh["id"]).get("zu")
+    pruefe(zu == "h:" + h["key"] and fh["id"] in r.stdout, f"Kommentar umformulieren: h:<key> hängt den Faden an den neuen Text um – {zu}")
+    post("/api/kommentar", dict(basis, gespraech=1, aktion="loeschen", id=fh["id"]))
     r = post("/api/kommentar", dict(basis, aktion="neu", hinweis=h["key"]))
     rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
     pruefe(r["ok"] and len(rv["kommentare"]) == n + 1, "Kommentar umformulieren: staged erst durch „übernehmen“")
@@ -1009,7 +1022,15 @@ def gitlab_test():
                and not any("bulk_publish" in z for z in open(f"{T}/glab/aufrufe.log").readlines()[-3:]),
                "Genehmigen ohne Kommentare: approve, kein bulk_publish")
         r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="genehmigen"))
-        pruefe(not r["ok"] and "nicht geklappt" in r["text"], "zweites Genehmigen: Fehler von GitLab gemeldet")
+        pruefe(r["ok"] and r["text"].startswith("In GitLab genehmigt"), "zweites Genehmigen: GitLab lehnt ab, ist aber schon genehmigt")
+        eof = lambda n: json.dump(n, open(f"{T}/glab/approve_eof.json", "w"))
+        json.dump([], open(f"{T}/glab/urteile.json", "w")); eof(1)
+        r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="genehmigen"))
+        pruefe(r["ok"] and urteile() == ["genehmigt"], "Genehmigen bricht mit EOF ab: einmal neu versucht")
+        json.dump([], open(f"{T}/glab/urteile.json", "w")); eof(2)
+        r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="genehmigen"))
+        pruefe(not r["ok"] and not r["text"].startswith("Fehler") and "Genehmigen fehlgeschlagen" in r["text"]
+               and "noch einmal" in r["text"] and urteile() == [], "Genehmigen scheitert zweimal: nur das Urteil als Fehler gemeldet")
         r = post("/api/abschliessen", dict(basis2, direkt=1, urteil="aendern"))
         pruefe(r["ok"] and r["text"].startswith("In GitLab Änderungen angefordert") and urteile()[-1] == "aendern",
                "Ändern lassen: GraphQL mergeRequestRequestChanges")

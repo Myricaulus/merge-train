@@ -29,7 +29,7 @@ def glab(host, pfad, methode="GET", daten=None, roh=False):
     argv.append(pfad)
     t0 = time.time()
     try:
-        r = subprocess.run(argv, input=eingabe, capture_output=True, text=True, encoding="utf-8",
+        r = subprocess.run(argv, input=eingabe or "", capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=90)
     except FileNotFoundError:
         raise GitLabFehler(f"glab nicht gefunden ({KONF['glab']}) – installieren und „glab auth login“ ausführen")
@@ -166,7 +166,8 @@ def mr_meta_holen(mr):
     roh = glab(mr.host, mr_pfad(mr))
     mr = mr_normalisieren(roh, mr)
     meta = {k: roh.get(k) for k in META_FELDER}
-    meta["author"] = {"name": (roh.get("author") or {}).get("name", "")}
+    autor = roh.get("author") or {}
+    meta["author"] = {"name": autor.get("name", ""), "id": autor.get("id")}  # id: eigener MR? (quellen.eigener_mr)
     meta["_zeit"] = datetime.now().strftime("%d.%m. %H:%M")
     with akte_bearbeiten(mr) as akte:
         akte["meta"] = meta
@@ -211,6 +212,16 @@ def mr_lokal(mr, meta):
 # Die Liste kommt aus dem Cache. GitLab wird nur im Güterbahnhof („↻ MRs“) gefragt.
 
 MR_LISTE = os.path.join(ORDNER, "mrliste.json")
+
+
+_ICH = {}  # GitLab-Benutzer-id je Host
+
+
+def ich(host):
+    """Meine GitLab-Benutzer-id (ändert sich nicht, kostet aber eine eigene Anfrage)."""
+    if host not in _ICH:
+        _ICH[host] = (glab(host, "user") or {}).get("id")
+    return _ICH[host]
 
 
 def mr_liste():

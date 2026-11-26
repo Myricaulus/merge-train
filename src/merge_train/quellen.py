@@ -8,7 +8,7 @@ from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, g
                   wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
-from .gitlab import mr_liste, mr_ref
+from .gitlab import GitLabFehler, ich, mr_liste, mr_ref
 from .abhaken import abhaken, haken_weg, teil_abgeben
 from .seite import LAUF_STAND, mr_seite, myrling_seite, projekt_seite
 from . import myrling
@@ -397,6 +397,20 @@ class Myrling(Quelle):
                 f"`merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 
+def eigener_mr(w):
+    """Bin ich Autor und nicht Reviewer dieses MR? Dann ist sein Quell-Branch meine Entwicklung: der Agent setzt Wünsche
+    um und committet. Laut gemerkter MR-Liste (Rollen), sonst Autor der MR-Daten gegen meinen GitLab-Benutzer."""
+    ende = f"/{w.projekt}/-/merge_requests/{w.iid}".lower()
+    rollen = [r for it in mr_liste()[0] if it.get("web_url", "").lower().endswith(ende) for r in it.get("rollen") or []]
+    if rollen:
+        return "author" in rollen and "reviewer" not in rollen
+    autor = ((akte_lesen(w).get("meta") or {}).get("author") or {}).get("id")
+    try:
+        return bool(autor) and autor == ich(w.host)
+    except GitLabFehler:
+        return False
+
+
 class GitLab(Quelle):
     name, titel, art = "gitlab", "GitLab", MR_ART
     logo = "gitlab.svg"
@@ -421,13 +435,19 @@ class GitLab(Quelle):
         return f"MR {waggon.id} · Stand {head[:8]} · Klon {wurzel}"
 
     def zeilen_stand(self, waggon, head):
+        if eigener_mr(waggon):
+            return (f"den Stand {head[:8]} im Klon – dein eigener MR: Wünsche auf {self.branch(waggon)} umsetzen und "
+                    "committen (pushen nur auf Bitte).")
         return f"den Stand {head[:8]} im Klon (nichts ändern, nur antworten)."
 
     def prompt(self, waggon, wurzel):
         z = waggon.id
+        tun = (f"Fragen beantworten, Änderungswünsche auf {self.branch(waggon)} umsetzen und committen (es ist der eigene "
+               f"MR des Nutzers; pushen nur auf Bitte)" if eigener_mr(waggon) else
+               "Beantworte sie anhand des Codes im Klon; den MR nicht ändern, nichts committen oder pushen")
         return (f"In merge-train liegen Fragen des Nutzers zum Merge-Request {waggon.name} (lokaler Klon: {wurzel}). "
-                f"Hol sie mit `merge-train agent feedback {z}` ab. Beantworte sie anhand des Codes im Klon; den MR nicht "
-                f"ändern, nichts committen oder pushen. Zu jedem Faden mit `merge-train agent antworten <id> \"…\"` antworten. "
+                f"Hol sie mit `merge-train agent feedback {z}` ab. {tun}. Zu jedem Faden mit "
+                f"`merge-train agent antworten <id> \"…\"` antworten (umgesetzt: --erledigt). "
                 f"Danach mit `merge-train agent horchen {z}` (im Hintergrund, nach jeder Ausgabe neu) auf weitere Fragen warten.")
 
 

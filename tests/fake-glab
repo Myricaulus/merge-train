@@ -8,7 +8,8 @@ jeder Aufruf wird in $FAKE_GLAB_STATE/aufrufe.log protokolliert.
 
 Umgebung: FAKE_GLAB_REPO (Pfad), FAKE_GLAB_STATE (Ordner), FAKE_GLAB_PROJEKT (Standard: gruppe/demo),
 FAKE_GLAB_FEHLER_POSITION=1 → Draft-Notes mit Position werden abgelehnt (wie bei ungültiger Zeile).
-Urteile (approve, GraphQL mergeRequestRequestChanges) landen in $FAKE_GLAB_STATE/urteile.json.
+Urteile (approve, GraphQL mergeRequestRequestChanges) landen in $FAKE_GLAB_STATE/urteile.json; approve_eof.json = n:
+die nächsten n approve brechen mit EOF ab.
 FAKE_GLAB_ZU_GROSS=a.cs,b.cs → für diese Dateien kein Diff („collapsed“, wie GitLab bei großen MRs).
 """
 import json, os, re, subprocess, sys, urllib.parse
@@ -151,7 +152,13 @@ def main():
         antworten.setdefault(m.group(1), []).append(neu)
         json.dump(antworten, open(os.path.join(STATE, "discussions.json"), "w"))
         return raus(neu)
+    if rest == "/approvals":
+        return raus({"user_has_approved": "genehmigt" in zustand("urteile.json", []), "user_can_approve": True})
     if rest in ("/approve",) and methode == "POST":  # genehmigen (zweimal: wie GitLab abgelehnt)
+        eof = zustand("approve_eof.json", 0)  # so oft bricht approve ohne Antwort ab (EOF)
+        if eof:
+            json.dump(eof - 1, open(os.path.join(STATE, "approve_eof.json"), "w"))
+            raise SystemExit('Post "https://gitlab.example/api/v4/approve": EOF')
         urteile = zustand("urteile.json", [])
         if "genehmigt" in urteile:
             raise SystemExit('glab: 401 Unauthorized {"message":"401 Unauthorized"}')
