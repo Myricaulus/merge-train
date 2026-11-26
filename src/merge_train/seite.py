@@ -9,7 +9,7 @@ from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, datei_schluessel, spaeter_grund, zeilenzahl
 from .akte import STRUKTUR, akte_bearbeiten, akte_lesen, struktur_lesen
-from .gitlab import MetaFehlt, eigener_arbeitsstand, mr_lokal
+from .gitlab import MetaFehlt, eigener_arbeitsstand, gitlab_klon, mr_lokal
 from .ansichten import ansicht_aufloesen, ansicht_html
 
 def commits_html(commits, knoepfe=None):
@@ -311,7 +311,10 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur, wip=False
     hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
-    return diff_seite(titel=f"MR {html.escape(projekt)}", sid=Waggon(lokal=projekt).id, lesen=lesen, daten=daten, head=head,
+    mr_knopf = ('<button id="mrerstellen" title="Merge-Request in GitLab für diesen Branch anlegen – fragt vorher nach '
+                'Ziel-Branch und Titel; gibt es schon einen, wird er übernommen">MR erstellen</button>'
+                if KONF["gitlab"] and not lesen and gitlab_klon(struktur["ordner"]) else "")
+    return diff_seite(titel=f"MR {html.escape(projekt)}", knoepfe_mehr=mr_knopf, sid=Waggon(lokal=projekt).id, lesen=lesen, daten=daten, head=head,
                       dateien=dateien, texte=texte, commits=commits,
                       h1=f"{html.escape(projekt)}: {html.escape(stand_name(struktur['ordner'], bis, head))} → {html.escape(wip_name(von) if wip else von)}",
                       fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
@@ -319,9 +322,10 @@ def projekt_html(projekt, von, bis, dateien, commits, texte, struktur, wip=False
 
 
 def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, commits_titel, commits_liste, fertig_titel="",
-               nach_h1="", sub_vor="", nach_sub="", unter_commits="", nach_commits="", hilfe="", leer=""):
+               nach_h1="", sub_vor="", nach_sub="", unter_commits="", nach_commits="", hilfe="", leer="", knoepfe_mehr=""):
     """Die eine Diff-Seite für alle Quellen: Güterbahnhof im Kopf, Titelzeile, Commits, Seitenleiste mit Kommentaren und
-    Dateiliste, Diff. Die Knöpfe richten sich danach, was der Waggon kann (Quelle), die Titelzeile liefert die Quelle."""
+    Dateiliste, Diff. Die Knöpfe richten sich danach, was der Waggon kann (Quelle), weitere bringt die Quelle mit
+    (knoepfe_mehr, etwa „MR erstellen“), die Titelzeile liefert die Quelle."""
     kann = Waggon.aus_id(sid).kann
     plus = sum(d["plus"] for d in dateien); minus = sum(d["minus"] for d in dateien)
     knoepfe = ('<button id="feedback" hidden disabled title="Entwürfe (Fragen/Wünsche) an den Agenten schicken – bleiben privat">'
@@ -331,6 +335,7 @@ def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, c
                '<button id="starten" hidden title="Konsole mit dem Agenten im Klon öffnen (todo los)">▶ Session starten</button>\n'
                '<button id="abmelden" hidden title="Zuhören beenden: die Session bekommt davon nichts mit (kein Request). '
                'Wieder zuhören: der Session „hör zu“ sagen">🎧 ✕</button>')
+    knoepfe += "\n" + knoepfe_mehr if knoepfe_mehr else ""
     if kann["fertig"]:
         knoepfe += f'\n<button id="fertig"{" hidden" if lesen else ""} title="{fertig_titel}">fertig ✓</button>'
     if kann["review"]:

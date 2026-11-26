@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """UI-Tests im echten Browser: Knöpfe der Diff-Seite klicken und prüfen, was beim Server ankommt.
 
-  python3 tests/test_ui.py [fall[:teil] …]      Fälle: lokal, ohne, mr, mr-ohne (Standard: alle mit allen Teilen)
+  python3 tests/test_ui.py [fall[:teil] …]      Fälle: lokal, ohne, mr, mr-ohne, gemischt (Standard: alle mit allen
+                                                Teilen, gemischt nur mit seinen, NUR_TEILE)
 
 Fälle: lokal (Test-Repo aus werkzeug/seiten_vergleich.py, „senden“ startet einen Befehl), ohne (dasselbe, aber kein
-Agent eingerichtet), mr (MR !1 über tests/fake-glab, Agent Claude aus [agenten]), mr-ohne (MR ohne Agent). Baut den Arbeitsstand aus src/ in
+Agent eingerichtet), mr (MR !1 über tests/fake-glab, Agent Claude aus [agenten]), mr-ohne (MR ohne Agent), gemischt (der Klon von
+!1 als lokales Projekt, für „MR erstellen“). Baut den Arbeitsstand aus src/ in
 einen Temp-Ordner, startet je Fall einen eigenen Server (eigener Port und Daten, nie der des Nutzers) und ein frisches
 headless Chromium (DevTools über --remote-debugging-pipe, ohne Node). Ohne Chromium: übersprungen (Exit 0).
 JS-Fehler auf der Seite (Runtime.exceptionThrown) lassen jeden Teil scheitern.
@@ -133,7 +135,8 @@ def fall_lokal(t, port, agent=True):
                 ("reviewed", "README.md", 3, "Nur zum Vergleichen."), repo)
 
 
-def fall_mr(t, port, agent=True):
+def fall_mr(t, port, agent=True, lokal=False):
+    """MR !1 über fake-glab. lokal: der Klon ist zugleich lokales Projekt mr-repo (Arbeitsstand gegen main)."""
     ordner = bauen(t, None)
     repo = os.path.join(t, "mr-repo")
     os.makedirs(os.path.join(repo, "tasks"))
@@ -147,8 +150,10 @@ def fall_mr(t, port, agent=True):
     json.dump({"key": "DEMO-1", "branch": "feature", "agent": "Claude",
                "markers": [{"path": "App.cs", "needle": "Zeile 10 neu", "text": "Hinweis"}]}, open(hw, "w"))
     os.makedirs(os.path.join(t, "glab"))
-    konfig = (f'lokal = false\nglab = "{sys.executable} {HIER}/tests/fake-glab"\nport = {port}\nleerlauf = 300\n'
-              f'browser = "true"\nhinweise = ["{repo}/tasks/*-review-markers.json"]\n' + ('[agenten]\nClaude = "true"\n' if agent else ""))
+    konfig = ((f'lokal = true\nprojekte = ["{repo}"]\n' if lokal else 'lokal = false\n') +
+              f'glab = "{sys.executable} {HIER}/tests/fake-glab"\nport = {port}\nleerlauf = 300\n'
+              f'browser = "true"\nhinweise = ["{repo}/tasks/*-review-markers.json"]\n' + ('[agenten]\nClaude = "true"\n' if agent else "")
+              + ('[zweige."mr-repo"]\nvon = "main"\nbis = "arbeitsstand"\n' if lokal else ""))
     srv = Server(ordner, repo, port, konfig, {"FAKE_GLAB_REPO": repo, "FAKE_GLAB_STATE": os.path.join(t, "glab")})
     subprocess.run([sys.executable, os.path.join(ordner, "merge-train"), "agent", "zeigen", hw, "--nicht-oeffnen"],
                    env=dict(srv.umgebung, MERGE_TRAIN_AGENT="Claude"), capture_output=True, check=True, cwd=repo)
@@ -156,8 +161,15 @@ def fall_mr(t, port, agent=True):
                 ("main", "App.cs", 10, "// Zeile 10"), repo)
 
 
+def fall_gemischt(t, port):
+    """Beide Quellen: die Seite des lokalen Waggons mr-repo (Klon von MR !1 mit GitLab-Origin), für „MR erstellen“."""
+    f = fall_mr(t, port, lokal=True)
+    return Fall(f.srv, "projekt:mr-repo", "/mr-repo.html", f.startet, f.ziel, f.repo)
+
+
 FAELLE = {"lokal": fall_lokal, "ohne": lambda t, port: fall_lokal(t, port, agent=False), "mr": fall_mr,
-          "mr-ohne": lambda t, port: fall_mr(t, port, agent=False)}
+          "mr-ohne": lambda t, port: fall_mr(t, port, agent=False), "gemischt": fall_gemischt}
+NUR_TEILE = {"gemischt": ["mrerstellen"]}  # ohne Angabe laufen nur diese (die übrigen decken lokal und mr ab)
 
 
 def seite(b, f, vorher=False, sofort=False):
@@ -559,16 +571,57 @@ def teil_anker(b, f):
         akte = json.load(open(ap)); akte["meta"]["author"]["id"] = None; json.dump(akte, open(ap, "w"))
 
 
+def teil_mrerstellen(b, f):
+    """„MR erstellen“ auf der Seite eines lokalen Waggons (nur Fall gemischt): Rückfrage im Dialog mit Ziel-Branch und
+    Titel, „erstellen“ pusht, legt !2 an und springt zum MR; zum Branch von !1 wird der vorhandene übernommen."""
+    if f.mr != "projekt:mr-repo":
+        return
+    origin = os.path.join(os.path.dirname(f.repo), "origin.git")
+    zustand = f.srv.umgebung["FAKE_GLAB_STATE"]
+    subprocess.run(["git", "init", "-q", "--bare", origin], check=True)
+    git(f.repo, "config", "remote.origin.pushurl", origin); git(f.repo, "push", "-q", "origin", "main")
+    git(f.repo, "checkout", "-qb", "zweiter")
+    open(os.path.join(f.repo, "Zwei.cs"), "w").write("class Zwei {}\n")
+    git(f.repo, "add", "Zwei.cs"); git(f.repo, "commit", "-qm", "Zweiter Schritt")
+    try:
+        seite(b, f)
+        b.klicken("#mrerstellen")
+        b.warten_bis("document.querySelector('dialog.mr-dialog[open]')")
+        werte = b.js("['.md-ziel', '.md-titel'].map(s => document.querySelector('.mr-dialog ' + s).value)")
+        assert werte == ["main", "Zweiter"], werte  # zwei Commits gegen main: Titel aus dem Branch
+        assert "neu nach origin" in b.js("document.querySelector('.mr-dialog .md-hinweise').textContent")
+        b.js("document.querySelector('.mr-dialog .md-titel').value = 'Aus dem Browser'")
+        b.klicken(".mr-dialog .md-erstellen")
+        b.warten_bis("location.pathname === '/mr/gitlab.example.com/gruppe/demo/2' && document.readyState === 'complete' "
+                     "&& document.getElementById('abschliessen')", timeout=15)  # die MR-Seite, nicht die Startseite mit Fehler
+        erstellt = json.load(open(os.path.join(zustand, "erstellt.json")))
+        assert erstellt[0]["title"] == "Aus dem Browser" and erstellt[0]["source_branch"] == "zweiter", erstellt
+        git(f.repo, "checkout", "-q", "feature")
+        seite(b, f)
+        b.klicken("#mrerstellen")
+        b.warten_bis("location.pathname === '/mr/gitlab.example.com/gruppe/demo/1' && document.readyState === 'complete' "
+                     "&& document.getElementById('abschliessen')", timeout=15)
+    finally:
+        git(f.repo, "checkout", "-q", "feature"); git(f.repo, "branch", "-qD", "zweiter")
+        git(f.repo, "config", "--unset", "remote.origin.pushurl")
+        for ref in ("refs/remotes/origin/main", "refs/remotes/origin/zweiter"):
+            subprocess.run(["git", "-C", f.repo, "update-ref", "-d", ref])
+        for p in (os.path.join(zustand, "erstellt.json"),
+                  os.path.join(f.srv.ordner, "data", "merge-train", "reviews", "gitlab.example.com_gruppe_demo_2.json")):
+            if os.path.exists(p):
+                os.remove(p)
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
          "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch,
-         "aussen": teil_aussen, "anker": teil_anker}
+         "aussen": teil_aussen, "anker": teil_anker, "mrerstellen": teil_mrerstellen}
 
 
 def main():
     plan = {}
     for fall, _, teil in [a.partition(":") for a in sys.argv[1:]] or [(fall, "", "") for fall in FAELLE]:
-        plan.setdefault(fall, []).extend([teil] if teil else list(TEILE))
+        plan.setdefault(fall, []).extend([teil] if teil else NUR_TEILE.get(fall, list(TEILE)))
     plan = list(plan.items())
     falsch = [f"{fall}:{t}" for fall, ts in plan for t in ts if fall not in FAELLE or t not in TEILE]
     if falsch:

@@ -80,6 +80,7 @@
 |---|---|---|---|
 | **MR** | GitLab-Merge-Request, ein Waggon der Quelle GitLab. | | R |
 | **eigener MR** | MR, dessen Autor der Nutzer ist (MR-Liste oder Autor der MR-Daten). Ist sein Quell-Branch im Klon ausgecheckt, geht der lokale Waggon darin auf: ein Waggon mit Arbeitsstand, der Agent darf umsetzen. `eigener_mr` | | `docs/ein-waggon.md` |
+| **MR erstellen** | Knopf auf der Seite eines lokalen Waggons mit GitLab-Origin: pusht den Branch und legt nach einer Rückfrage den MR an (gibt es schon einen, wird er übernommen). Danach ist es ein eigener MR. `mr_planen`, `mr_erstellen` | MR erstellen | `docs/ein-waggon.md` |
 | **fremder MR** | MR eines anderen, den der Nutzer reviewt. Der Agent antwortet nur. | | `docs/ein-waggon.md` |
 | **Review-JSON** | Datei eines Review-Agenten (`tasks/<KEY>-review-markers.json`) mit Findings als Markern. | | H |
 | **Marker** | Ein Eintrag der Review-JSON: Ort (needle, `line`), Text, Siehe-auch. | | H |

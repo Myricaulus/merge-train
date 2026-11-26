@@ -433,13 +433,8 @@ def gemischt_test(mr):
     open(env["MERGE_TRAIN_CONFIG"], "w").write(
         f'lokal = true\ngitlab = true\nglab = "{sys.executable} {HIER}/fake-glab"\nprojekte = "{T}/Projects"\n'
         f'port = {PORT_GEMISCHT}\nbrowser = "true"\n')
-    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
+    srv = gemischt_server(env)
     try:
-        for _ in range(50):
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/ping", timeout=1); break
-            except OSError:
-                time.sleep(0.1)
         hol = lambda p: urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}{p}", timeout=60).read().decode()
         # neuer lokaler Stand, damit der lokale Waggon wieder offen ist
         proj = f"{T}/Projects/proj"
@@ -468,6 +463,74 @@ def gemischt_test(mr):
     finally:
         srv.terminate(); srv.wait()
     eigen_test(mr, env2, hol)
+    mr_erstellen_test(env2, hol)
+
+
+def gemischt_server(env):
+    """Eigener Server auf PORT_GEMISCHT (die Einstellung liest er nur beim Start), wartet, bis er antwortet."""
+    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env)
+    for _ in range(50):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/ping", timeout=1); break
+        except OSError:
+            time.sleep(0.1)
+    return srv
+
+
+def mr_erstellen_test(env2, hol):
+    """Branch ohne MR (docs/ein-waggon.md, Schritt 2): Knopf „MR erstellen“ auf der lokalen Seite, Vorschlag für die
+    Rückfrage, pushen und anlegen, danach ein Waggon mit dem MR; ein zweites Mal wird der vorhandene übernommen."""
+    srv = gemischt_server(env2)
+    k = open(f"{T}/cache/merge-train/schluessel").read().strip()
+    origin = f"{T}/origin.git"
+    g = lambda *a: sh("git", "-C", REPO, *a)
+    def post_l(d):
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT_GEMISCHT}/api/gitlab", json.dumps(dict(d, k=k)).encode(),
+                                     {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT_GEMISCHT}"})
+        try:
+            return json.loads(urllib.request.urlopen(req, timeout=60).read())
+        except urllib.error.HTTPError as e:
+            return dict(json.loads(e.read()), status=e.code)
+    try:
+        sh("git", "init", "-q", "--bare", origin)
+        g("config", "remote.origin.pushurl", origin)
+        g("push", "-q", "origin", "main")  # setzt origin/main im Klon
+        g("checkout", "-qb", "zweiter", "feature")
+        open(f"{REPO}/Zwei.cs", "w").write("class Zwei {}\n")
+        g("add", "Zwei.cs"); g("commit", "-qm", "Zweiter Schritt")
+        seite = hol("/repo.html")
+        pruefe('id="mrerstellen"' in seite, "MR erstellen: Knopf auf der Seite des lokalen Waggons")
+        r = post_l({"aktion": "mrplanen", "mr": "projekt:repo"})
+        v = r.get("vorschlag") or {}
+        pruefe(r.get("ok") and v.get("quelle") == "zweiter" and v.get("ziel") == "main" and v.get("push") == "neu"
+               and not v.get("hindernisse") and v.get("commits", 0) >= 2, "MR erstellen: Vorschlag für die Rückfrage" + ("" if v else f" – {r}"))
+        r = post_l({"aktion": "mrplanen", "mr": "gitlab.example.com/gruppe/demo/1"})
+        pruefe(r.get("status") == 400, "MR erstellen: nur auf der Seite eines lokalen Waggons")
+        r = post_l({"aktion": "mrerstellen", "mr": "projekt:repo", "ziel": "main", "titel": "  Zweiter   MR ",
+                    "beschreibung": "Text", "entwurf": True})
+        erstellt = json.load(open(f"{T}/glab/erstellt.json")) if os.path.exists(f"{T}/glab/erstellt.json") else []
+        pruefe(r.get("ok") and r.get("url") == "/mr/gitlab.example.com/gruppe/demo/2" and erstellt
+               and erstellt[0]["title"] == "Draft: Zweiter MR" and erstellt[0]["source_branch"] == "zweiter"
+               and erstellt[0]["target_branch"] == "main", "MR erstellen: angelegt (Entwurf, Titel bereinigt)" + ("" if r.get("ok") else f" – {r}"))
+        pruefe(sh("git", "-C", origin, "rev-parse", "zweiter").stdout == g("rev-parse", "zweiter").stdout
+               and g("rev-parse", "--abbrev-ref", "zweiter@{upstream}").stdout.strip() == "origin/zweiter",
+               "MR erstellen: Branch neu gepusht, mit Upstream")
+        z = json.loads(hol("/zug.js?akt=projekt:repo")[len("window.MR_ZUG="):-1])
+        w = next((w for w in z["wagen"] if w["p"] == "gitlab.example.com/gruppe/demo/2"), {})
+        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "eigener MR" in w.get("titel", ""),
+               "MR erstellen: danach ein Waggon (eigener MR, ausgecheckt)")
+        r = post_l({"aktion": "mrplanen", "mr": "projekt:repo"})
+        pruefe(r.get("ok") and "gibt es schon" in r.get("text", "") and r.get("url", "").endswith("/2"),
+               "MR erstellen: vorhandener MR wird übernommen statt doppelt angelegt")
+    finally:
+        srv.terminate(); srv.wait()
+        g("checkout", "-q", "feature"); g("branch", "-qD", "zweiter")
+        g("config", "--unset", "remote.origin.pushurl")
+        for ref in ("refs/remotes/origin/main", "refs/remotes/origin/zweiter"):
+            sh("git", "-C", REPO, "update-ref", "-d", ref, check=False)
+        for p in (f"{T}/glab/erstellt.json", f"{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_2.json"):
+            if os.path.exists(p):
+                os.remove(p)
 
 
 LOKALER_FADEN = ALLES_LADEN + r"""
@@ -481,12 +544,7 @@ def eigen_test(mr, env2, hol):
     """Eigener MR, Quell-Branch ausgecheckt = ein Waggon (docs/ein-waggon.md, Schritt 1): Zug ohne lokalen Waggon, Seite
     im Arbeitsstand, Fäden ziehen um und gehen an den MR, Diskussion an lokal geänderter Zeile bleibt markiert stehen,
     „passt hier“, GitLab-Kommentar nur an Zeilen wie in GitLab."""
-    srv = subprocess.Popen([sys.executable, SKRIPT, "--server"], env=env2)  # REPO ist auch lokales Projekt (Arbeitsstand)
-    for _ in range(50):
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/ping", timeout=1); break
-        except OSError:
-            time.sleep(0.1)
+    srv = gemischt_server(env2)  # REPO ist auch lokales Projekt (Arbeitsstand)
     liste_pfad = f"{T}/cache/merge-train/mrliste.json"
     liste_alt = open(liste_pfad).read()
     k = open(f"{T}/cache/merge-train/schluessel").read().strip()

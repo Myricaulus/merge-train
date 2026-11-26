@@ -22,6 +22,10 @@ Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
 - Eigener MR = ein Waggon (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
   `eigene_mrs`, `zusammengelegt`, `faeden_umziehen`, `Quelle.ein_waggon` (`quellen.py`), `entwicklung_ziel`
   (`agent_cli.py`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
+- Branch ohne MR, „MR erstellen“: `mr_quellbranch`, `mr_vorschlag`, `mr_planen`, `mr_erstellen` (`quellen.py`),
+  `gitlab_klon`, `mrs_zum_branch`, `mr_anlegen`, `mr_uebernehmen` (`gitlab.py`), `branch_pushen(neu=True)`, Aktionen
+  `mrplanen`/`mrerstellen` an `api/gitlab`, Dialog in `web/bahnhof.js`. Weitere Knöpfe einer Quelle im Kopf:
+  `knoepfe_mehr` an `diff_seite`.
 
 ### 2. Fähigkeiten je Waggon (`kann`)
 `review`, `fertig`, `committen`.
@@ -108,7 +112,7 @@ Seiten fragen GitLab nie selbst; Abgleich des Klons mit dem GitLab-Stand.
 - Achsen: Stand zu GitLab (`STAND_TEXT`), Klon.
 - Ort: `gitlab.py` (`klon_suchen`, `mr_lokal`), `git.py` (`stand_zu_gitlab`, `branch_aktualisieren`, `branch_pushen`,
   `branch_auschecken`), `review.py` (`mr_gitlab_holen`, `mr_daten_holen`), `im_hintergrund` (`server.py`),
-  Route `api/gitlab`, `web/bahnhof.js`.
+  Route `api/gitlab` (`GITLAB_AKTIONEN`, auch „MR erstellen“), `web/bahnhof.js` (`gitlabPost`).
 - Erweitern: neue GitLab-Daten an einen bestehenden Holen-Knopf hängen, keinen Abruf beim Laden der Seite.
 
 ### 14. Zug und Güterbahnhof

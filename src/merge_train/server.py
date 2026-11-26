@@ -14,7 +14,7 @@ from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr
 from .ansichten import ansicht_lesen
 from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, seiten_teile, startseite
 from .myrling import anstehend_warten, im_hintergrund_holen
-from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, projekt_einstellen, projekt_einstellung, quelle, schluessel_von
+from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, mr_erstellen, mr_planen, projekt_einstellen, projekt_einstellung, quelle, schluessel_von
 from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
 from .review import (NUR_LESEN, abschliessen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -554,8 +554,28 @@ def pushen_aktion(anfrage):
         ordner, meta.get("source_branch") or "", (meta.get("diff_refs") or {}).get("head_sha") or ""))
 
 
+def lokales_projekt(anfrage):
+    """Projektname des lokalen Waggons, von dessen Seite die Anfrage kommt (sonst Fehler)."""
+    waggon = schluessel_von(anfrage.daten.get("mr", ""))
+    if waggon.art is not LOKAL.art:
+        raise Ungueltig("„MR erstellen“ gibt es nur auf der Seite eines lokalen Waggons")
+    return waggon.lokal
+
+
+def mr_planen_aktion(anfrage):
+    """„MR erstellen“, erster Klick: vorhandenen MR übernehmen oder den Vorschlag für die Rückfrage liefern."""
+    return mr_planen(lokales_projekt(anfrage))
+
+
+def mr_erstellen_aktion(anfrage):
+    """„MR erstellen“ nach der Rückfrage (Ziel-Branch, Titel, Beschreibung, Entwurf aus dem Dialog)."""
+    d = anfrage.daten
+    return mr_erstellen(lokales_projekt(anfrage), str(d.get("ziel") or ""), str(d.get("titel") or ""),
+                        str(d.get("beschreibung") or ""), bool(d.get("entwurf")))
+
+
 GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion,
-                   "pushen": pushen_aktion}
+                   "pushen": pushen_aktion, "mrplanen": mr_planen_aktion, "mrerstellen": mr_erstellen_aktion}
 
 
 @route("POST", "api/gitlab", quelle=GITLAB)

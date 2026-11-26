@@ -11,6 +11,7 @@ FAKE_GLAB_FEHLER_POSITION=1 → Draft-Notes mit Position werden abgelehnt (wie b
 Urteile (approve, GraphQL mergeRequestRequestChanges) landen in $FAKE_GLAB_STATE/urteile.json; approve_eof.json = n:
 die nächsten n approve brechen mit EOF ab.
 FAKE_GLAB_ZU_GROSS=a.cs,b.cs → für diese Dateien kein Diff („collapsed“, wie GitLab bei großen MRs).
+POST merge_requests legt !2, !3 … an ($FAKE_GLAB_STATE/erstellt.json; der Branch muss als origin/<branch> gepusht sein).
 """
 import json, os, re, subprocess, sys, urllib.parse
 
@@ -74,8 +75,24 @@ def main():
         return raus([{"iid": 1, "title": "Demo-Änderung <b>fett</b>", "web_url": WEB, "references": {"full": PROJEKT + "!1"},
                       "author": {"name": "Agentin"}, "changes_count": "3"}] if seite == 1 else [])
     m = re.fullmatch(r"projects/([^/]+)/merge_requests", weg)
+    if m and methode == "POST":  # MR anlegen („MR erstellen“): !2, !3 … in erstellt.json
+        body, da = json.loads(eingabe), zustand("erstellt.json", [])
+        if body["source_branch"] == BRANCH or any(x["source_branch"] == body["source_branch"] for x in da):
+            raise SystemExit('glab: 409 Conflict {"message":["Another open merge request already exists for this source branch"]}')
+        git("rev-parse", f'refs/remotes/origin/{body["source_branch"]}')  # wie GitLab: der Branch muss gepusht sein
+        neu = dict(body, iid=len(da) + 2, web_url=WEB[:-1] + str(len(da) + 2))
+        json.dump(da + [neu], open(os.path.join(STATE, "erstellt.json"), "w"))
+        return raus(neu)
     if m:
-        return raus([{"iid": 1, "web_url": WEB}] if q.get("source_branch") == BRANCH else [])
+        return raus(([{"iid": 1, "web_url": WEB}] if q.get("source_branch") == BRANCH else []) +
+                    [x for x in zustand("erstellt.json", []) if x["source_branch"] == q.get("source_branch")])
+    m = re.fullmatch(r"projects/([^/]+)/merge_requests/(\d+)", weg)
+    x = m and next((x for x in zustand("erstellt.json", []) if x["iid"] == int(m.group(2))), None)
+    if x:  # angelegter MR: nur seine MR-Daten
+        h = git("rev-parse", x["source_branch"]).strip()
+        return raus(dict(x, author={"id": 1, "name": "Test Er"}, state="opened", sha=h, diff_refs={
+            "base_sha": git("merge-base", x["target_branch"], x["source_branch"]).strip(),
+            "start_sha": git("rev-parse", x["target_branch"]).strip(), "head_sha": h}))
     m = re.fullmatch(r"projects/([^/]+)/repository/files/([^/]+)/raw", weg)
     if m:
         sys.stdout.write(git("show", f'{q["ref"]}:{urllib.parse.unquote(m.group(2))}')); return

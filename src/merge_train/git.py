@@ -322,10 +322,14 @@ def stand_zu_gitlab(ordner, branch, lokal, gl):
     return "umgeschrieben" if gl in reflog else "abweichend"
 
 
-def branch_pushen(ordner, branch, gl):
+def branch_pushen(ordner, branch, gl, neu=False):
     """Quell-Branch nach origin pushen: vorspulen bzw. – umgeschrieben – Force-Push mit Lease auf gl (den Stand, den
-    GitLab zuletzt hatte; ist origin inzwischen woanders, lehnt git ab). Andere Stände: Fehler. Rückgabe: Text."""
+    GitLab zuletzt hatte; ist origin inzwischen woanders, lehnt git ab). Andere Stände: Fehler. neu: der Branch ist
+    noch nicht auf origin (vor „MR erstellen“) – pushen und als Upstream setzen. Rückgabe: Text."""
     lokal = (git(ordner, "rev-parse", "--verify", "-q", f"refs/heads/{branch}^{{commit}}", check=False) or "").strip()
+    if neu and lokal:
+        git_oder_fehler(ordner, "push", "-q", "-u", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
+        return f"{branch}: neu nach origin gepusht"
     art = stand_zu_gitlab(ordner, branch, lokal, gl) if lokal else None
     if art not in ("lokal_voraus", "umgeschrieben"):
         raise Fehler(f"{branch}: nichts zu pushen ({STAND_TEXT.get(art, 'gleich mit GitLab')})")

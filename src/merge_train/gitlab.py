@@ -176,6 +176,45 @@ def mr_meta_holen(mr):
     return mr, meta
 
 
+def gitlab_klon(ordner):
+    """(host, projekt), wenn origin des Klons ein GitLab-Projekt sein kann, sonst None – ohne GitLab zu fragen. GitHub
+    zählt nicht (remote_info nimmt jeden Remote, mit gitlab_host als Host)."""
+    url = (git(ordner, "remote", "get-url", "origin", check=False) or "").strip()
+    if not url or "github.com" in url:
+        return None
+    try:
+        return remote_info(ordner)
+    except Fehler:
+        return None
+
+
+def mrs_zum_branch(host, projekt, branch):
+    """Offene MRs mit diesem Quell-Branch, aus GitLab: [Waggon]."""
+    out = []
+    for it in glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}") or []:
+        try:
+            out.append(mr_ref(it.get("web_url", "")))
+        except Fehler:
+            pass
+    return out
+
+
+def mr_anlegen(host, projekt, quelle, ziel, titel, beschreibung, ordner):
+    """MR in GitLab anlegen (docs/ein-waggon.md, Schritt 2), seine MR-Daten holen und den Klon merken: so findet ihn
+    eigene_mrs, und der lokale Waggon geht im MR auf. Der Branch muss schon auf origin sein. Rückgabe: Waggon."""
+    roh = glab(host, f"projects/{enc(projekt)}/merge_requests", "POST",
+               {"source_branch": quelle, "target_branch": ziel, "title": titel, "description": beschreibung})
+    return mr_uebernehmen(mr_ref((roh or {}).get("web_url", "")), ordner)
+
+
+def mr_uebernehmen(mr, ordner):
+    """MR-Daten holen und ordner als seinen Klon merken (eigene_mrs findet ihn dann). Rückgabe: Waggon (kanonisch)."""
+    mr, _ = mr_meta_holen(mr)
+    with akte_bearbeiten(mr) as akte:
+        akte["klon"] = ordner
+    return mr
+
+
 _GEHOLT = set()  # (klon, quelle, ziel), für die mr_lokal schon einmal origin geholt hat (je Serverlauf)
 
 

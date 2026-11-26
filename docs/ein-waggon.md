@@ -1,6 +1,6 @@
 # Ein Waggon je Branch (Zielbild)
 
-*Mit dem Nutzer abgestimmt am 26.11.2026. Schritt 1 ist gebaut, 2–4 stehen als todo-Einträge im Projekt.*
+*Mit dem Nutzer abgestimmt am 26.11.2026. Schritte 1 und 2 sind gebaut, 3 und 4 stehen als todo-Einträge im Projekt.*
 
 ## Worum es geht
 
@@ -38,8 +38,10 @@ Läufe des Myrlings sind Skripte, keine Branches. Sie bleiben eine eigene Art.
    `feedback`, `status` und `horchen` im Klon gehen an den MR. Die Fäden des lokalen Waggons zu diesem Branch ziehen
    beim ersten Zusammenlegen in den MR um. Kommentare der Quelle hängen an ihrem Anker (Regeln oben), samt
    „passt hier“. GitLab-Kommentare an Zeilen nur, wo der Code dem GitLab-Stand entspricht.
-2. **Branch ohne MR:** derselbe Waggon, ohne Kommentare der Quelle, mit Knopf „MR erstellen“ (`glab mr create`, mit
-   Rückfrage).
+2. **Branch ohne MR:** derselbe Waggon, ohne Kommentare der Quelle, mit Knopf „MR erstellen“. Der fragt zuerst GitLab
+   nach einem offenen MR zum Branch und übernimmt ihn, wenn es einen gibt. Sonst kommt eine Rückfrage (Ziel-Branch, Titel,
+   Beschreibung, Entwurf; was gepusht wird). Dann pusht er den Branch und legt den MR über die API an (`glab api`, wie
+   alle Aufrufe). Danach greift Schritt 1.
 3. **Fremder MR:** derselbe Waggon auf dem Commit-Stand, Agent nur antworten, Knopf „auschecken“ (nur sauber).
 4. **Aufräumen:** eine Akte je Branch, die Arten Lokal und MR werden eins. Danach: Agent-Hinweise über die CLI statt
    über die Review-JSON (jira-review), mit fester id je Hinweis.

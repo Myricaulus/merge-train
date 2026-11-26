@@ -227,6 +227,12 @@ Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train
     damaligen Code. **„passt hier“** bestätigt den Ort: Die Marke verschwindet, und die Diskussion wandert von dort weiter mit.
   - Eigene GitLab-Kommentare an einer Zeile gehen nur, wo der Code dem Stand in GitLab entspricht (sie bekommen dessen
     Position). An lokal geänderten Zeilen erst nach dem Push; Fragen an den Agenten gehen überall.
+- **MR erstellen**: Hat der Klon eines lokalen Waggons ein GitLab-Origin, steht im Kopf „MR erstellen“. Der Knopf fragt
+  GitLab nach einem offenen MR zum Branch (bis bzw. beim Arbeitsstand der ausgecheckte). Gibt es einen, wird er
+  übernommen. Sonst fragt ein Dialog nach Ziel-Branch (vorgeschlagen: von, sonst der Standard-Branch von origin),
+  Titel, Beschreibung und „als Entwurf“ und zeigt, was gepusht wird und was nicht in den MR kommt (nicht Committetes).
+  „erstellen“ pusht den Branch (neu mit Upstream, sonst nur vorspulen bzw. nach einem Rebase mit Lease), legt den MR an
+  und springt zu ihm. Ist der Branch ausgecheckt, ist es von da an ein Waggon.
 
 Der Review-Stand liegt in `~/.local/share/merge-train/reviews/`, der Seiten-Cache in `~/.cache/merge-train/`.
 

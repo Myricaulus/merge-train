@@ -4,11 +4,11 @@ import glob, json, os, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, DATEN, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import LOKAL_ART, MR_ART, MYRLING_ART, Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
-from .git import (arbeitsstand, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, ohne_basis, kurzpfad, projekt_wurzel, statistik, wip_name,
-                  wip_sha)
+from .git import (STAND_TEXT, arbeitsstand, branch_pushen, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, ohne_basis,
+                  kurzpfad, projekt_wurzel, stand_zu_gitlab, statistik, wip_name, wip_sha)
 from .akte import (akte_bearbeiten, akte_lesen, ausstehend, diskussionen_stand, faeden_archivieren, faeden_zaehlen, in_gitlab,
                    review_kommentare, struktur_laden)
-from .gitlab import ausgecheckt, eigener_mr, mr_liste, mr_ref
+from .gitlab import ausgecheckt, eigener_mr, gitlab_klon, mr_anlegen, mr_liste, mr_ref, mr_uebernehmen, mrs_zum_branch
 from .abhaken import abhaken, haken_weg, teil_abgeben
 from .seite import LAUF_STAND, mr_seite, myrling_seite, projekt_seite
 from . import myrling
@@ -454,6 +454,99 @@ def faeden_umziehen(lokal, mr, branch):
         akte["kommentare"] = [k for k in akte.get("kommentare") or [] if k.get("id") not in ids]
     melden(f"{mr.name}: {len(weg)} Faden/Fäden aus dem lokalen Waggon übernommen (eigener MR, ein Waggon)")
     return len(weg)
+
+
+# ---- Branch ohne MR (docs/ein-waggon.md, Schritt 2): der lokale Waggon, ohne Kommentare der Quelle, mit Knopf
+# „MR erstellen“. Erst fragen (mr_planen: gibt es schon einen MR, sonst mr_vorschlag in einen Dialog), dann pushen und
+# anlegen (mr_erstellen). Danach ist es ein eigener MR, und Schritt 1 legt die Waggons zusammen.
+
+def mr_quellbranch(projekt):
+    """(Klon, Quell-Branch) für „MR erstellen“: bis des Projekts, beim Arbeitsstand der ausgecheckte Branch."""
+    wurzel = projekt_wurzel(projekt)
+    bis = von_bis(projekt)[1]
+    branch = ausgecheckt(wurzel) if bis == ARBEITSSTAND else bis
+    if not branch or git(wurzel, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", check=False) is None:
+        raise Fehler(f"{projekt}: {branch or 'losgelöster HEAD'} ist kein lokaler Branch – ein MR braucht einen")
+    return wurzel, branch
+
+
+def mr_vorschlag(projekt):
+    """Was „MR erstellen“ fragt, ohne GitLab: Quell-Branch, Ziel-Branches auf origin (vorgeschlagen: von des Projekts,
+    sonst der Standard-Branch von origin), Titel und Beschreibung aus den Commits, ob und wie gepusht wird, Warnungen
+    und Hindernisse (dann kein Erstellen)."""
+    wurzel, branch = mr_quellbranch(projekt)
+    gl = gitlab_klon(wurzel)
+    if not gl:
+        raise Fehler(f"{projekt}: origin ist kein GitLab-Projekt")
+    ziele = [z for z in (git(wurzel, "for-each-ref", "--format=%(refname:strip=3)", "refs/remotes/origin",
+                             check=False) or "").split() if z not in ("HEAD", branch)]
+    von = re.sub(r"^(refs/remotes/)?origin/", "", von_bis(projekt)[0])
+    std = (git(wurzel, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD", check=False) or "").strip()
+    ziel = next((z for z in (von, std.split("/", 1)[-1], "main", "master") if z in ziele), ziele[0] if ziele else "")
+    hindernisse, warnungen = [], []
+    if not ziel:
+        hindernisse.append("Im Klon ist kein Branch von origin bekannt (git fetch).")
+    commits = [c.strip("\n").split("\x1f", 1) for c in (git(wurzel, "log", "--reverse", "--format=%s%x1f%b%x1e",
+               f"refs/remotes/origin/{ziel}..refs/heads/{branch}", check=False) or "").split("\x1e") if c.strip()] if ziel else []
+    if ziel and not commits:
+        warnungen.append(f"{branch} hat keine Commits gegenüber {ziel}.")
+    if len(commits) == 1:
+        titel, beschreibung = commits[0][0], commits[0][1].strip()
+    else:
+        titel = re.sub(r"[-_/]+", " ", branch).strip().capitalize()
+        beschreibung = "\n".join(f"- {c[0]}" for c in commits)
+    lokal = git(wurzel, "rev-parse", f"refs/heads/{branch}").strip()
+    origin = (git(wurzel, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{branch}", check=False) or "").strip()
+    push = "neu" if not origin else stand_zu_gitlab(wurzel, branch, lokal, origin)
+    push_text = {"neu": f"{branch} wird neu nach origin gepusht (als Upstream).", None: f"{branch} ist schon auf origin.",
+                 "lokal_voraus": f"Die neuen Commits von {branch} werden nach origin gepusht.",
+                 "umgeschrieben": f"{branch} ist umgeschrieben: Force-Push mit Lease nach origin."}.get(push)
+    if push_text is None:
+        hindernisse.append(f"{branch}: {STAND_TEXT.get(push, push)}.")
+    offen = len((git(wurzel, "status", "--porcelain", "--untracked-files=no", check=False) or "").splitlines())
+    if offen:
+        warnungen.append(f"{offen} Datei(en) nicht committet: Sie kommen nicht in den MR.")
+    if ausgecheckt(wurzel) != branch:
+        warnungen.append(f"{branch} ist nicht ausgecheckt: MR und lokaler Waggon bleiben getrennt, bis du ihn auscheckst.")
+    return {"projekt": projekt, "quelle": branch, "ziel": ziel, "ziele": ziele, "titel": titel,
+            "beschreibung": beschreibung, "commits": len(commits), "push": push, "push_text": push_text or "",
+            "origin": origin, "warnungen": warnungen, "hindernisse": hindernisse, "host": gl[0], "gl_projekt": gl[1]}
+
+
+def mr_planen(projekt):
+    """Erster Klick auf „MR erstellen“: Gibt es in GitLab schon einen offenen MR zu diesem Branch, wird er übernommen
+    (url: dorthin). Sonst der Vorschlag für den Dialog."""
+    v = mr_vorschlag(projekt)
+    da = mrs_zum_branch(v["host"], v["gl_projekt"], v["quelle"])
+    if da:
+        wurzel = projekt_wurzel(projekt)
+        mr = mr_uebernehmen(da[0], wurzel)
+        zusammengelegt(wurzel)
+        return {"ok": True, "text": f"{mr.name} gibt es schon für {v['quelle']} – übernommen", "url": mr.url}
+    return {"ok": True, "vorschlag": v}
+
+
+def mr_erstellen(projekt, ziel, titel, beschreibung, entwurf=False):
+    """Nach der Rückfrage: Quell-Branch pushen (wie im Vorschlag), MR anlegen, die Waggons zusammenlegen (ist der Branch
+    ausgecheckt). Rückgabe für die Seite: ok, text, url des MR."""
+    v = mr_vorschlag(projekt)
+    branch, wurzel = v["quelle"], projekt_wurzel(projekt)
+    titel = " ".join(str(titel).split())
+    if v["hindernisse"]:
+        raise Fehler(" ".join(v["hindernisse"]))
+    if ziel not in v["ziele"]:
+        raise Fehler(f"Ziel-Branch {ziel} gibt es auf origin nicht")
+    if not titel:
+        raise Fehler("Der MR braucht einen Titel")
+    if git(wurzel, "rev-list", "--count", f"refs/remotes/origin/{ziel}..refs/heads/{branch}").strip() == "0":
+        raise Fehler(f"{branch} hat keine Commits gegenüber {ziel} – nichts für einen MR")
+    if entwurf and not re.match(r"(?i)(draft|wip)\b", titel):
+        titel = "Draft: " + titel
+    texte = [branch_pushen(wurzel, branch, v["origin"], neu=v["push"] == "neu")] if v["push"] else []
+    mr = mr_anlegen(v["host"], v["gl_projekt"], branch, ziel, titel, str(beschreibung or ""), wurzel)
+    texte.append(f"{mr.name} erstellt ({branch} → {ziel})" + (" – ein Waggon mit dem lokalen" if zusammengelegt(wurzel) else ""))
+    melden(" · ".join(texte))
+    return {"ok": True, "text": " · ".join(texte), "url": mr.url}
 
 
 class GitLab(Quelle):
