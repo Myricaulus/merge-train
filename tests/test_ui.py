@@ -510,9 +510,31 @@ def teil_tausch(b, f):
     b.warten_bis(f"{sel} && !{sel}.classList.contains('wartet') && {sel}.textContent.includes('neu dazu')")
 
 
+def teil_aussen(b, f):
+    """Faden außerhalb der Änderungen (steht erst unter dem Dateinamen): Klick in der Liste und auf einen Siehe-auch-Link
+    dorthin klappen den Kontext auf, der Faden steht an seiner Zeile, kein Popup."""
+    pfad, von, bis = ("lib/rechnen.py", 32, 34) if f.mr.startswith("projekt:") else ("App.cs", 24, 26)
+    _, zpfad, zeile, _ = f.ziel
+    p = f.mr.removeprefix("projekt:")
+    f.srv.agent("thread", "-p", p, "--als", "Claude", "--ort", f"{pfad}:{von}-{bis}", "Faden außen")
+    f.srv.agent("thread", "-p", p, "--als", "Claude", "--ort", f"{zpfad}:{zeile}", "--siehe", f"{pfad}:{von}-{bis}|zum Außenfaden",
+                "Siehe dort")
+    sel = "[...document.querySelectorAll('.kbox.gs')].find(x => x.textContent.includes('Faden außen'))"
+    an_zeile = (f"({sel} && !{sel}.closest('.kunter') && document.querySelector('tr.kx[data-b=\"{von}\"]')"
+                f" && !document.getElementById('popup'))")
+    for klick in ("[...document.querySelectorAll('.ke')].find(x => x.textContent.includes('Faden außen'))",
+                  "[...document.querySelectorAll('.sa a')].find(a => a.textContent === 'zum Außenfaden')"):
+        seite(b, f)
+        b.warten_bis(f"{sel} && {sel}.closest('.kunter') && {klick}")
+        b.js(f"{klick}.id = 'ui-aussen'")
+        b.klicken("#ui-aussen")
+        b.warten_bis(an_zeile)
+
+
 TEILE = {"senden": teil_senden, "vorschau": teil_vorschau, "zuletzt": teil_zuletzt, "eingabe": teil_eingabe,
          "faden": teil_faden, "loeschen": teil_loeschen, "liste": teil_liste, "seitenleiste": teil_seitenleiste, "dateifilter": teil_dateifilter,
-         "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch}
+         "abhaken": teil_abhaken, "abmelden": teil_abmelden, "siehe_ziel": teil_siehe_ziel, "tausch": teil_tausch,
+         "aussen": teil_aussen}
 
 
 def main():

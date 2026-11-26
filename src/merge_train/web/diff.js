@@ -1,7 +1,7 @@
 // Diff-Seiten (GitLab-MR und lokales Projekt): Kontext und große Dateien nachladen, Zeile zeigen, Popup mit Code bzw.
 // Dateivergleich, Kommentarliste links (sortierbar), Datei abhaken. Braucht von App: waggon, kann, el, aufdecken, dateienFiltern, melden, dateien, jedeDatei, dateiEinrichten,
 // dateiFesthalten, dateiLinks, wagenFuellen, dateiBegonnen, naechsteOffene; aus review.js (später geladen, daher erst beim Aufruf): review, zeichnen, STAENDE, werZeichen,
-// direkt, fadenErledigen, kommentarAktion. Stellt bereit: hakenLaden, waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen,
+// direkt, fadenErledigen, kommentarAktion. Stellt bereit: hakenLaden, waggonAbfrage, nurLesen, seitAnsicht, zeileZeigen, ortZeigen,
 // zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe.
 (() => {
   const {el, waggon, dateien} = App;
@@ -184,7 +184,8 @@
       }
       const lu = x.b && [...tab.querySelectorAll('tr.lu')].find(t => +t.dataset.von <= x.b && x.b <= +t.dataset.bis);
       if (lu)
-        return aufklappen(lu, x.b - 6, x.b + 6).then(ok => {
+        // ganzer Bereich ab–b (Faden an einem Bereich), dazu etwas Kontext
+        return aufklappen(lu, Math.min(x.ab || x.b, x.b) - 6, x.b + 6).then(ok => {
           const r2 = ok && zeileFinden(tab, x.a, x.b);
           if (r2) aufblitzen(r2);
           return !!r2;
@@ -207,10 +208,27 @@
       blinken(b);
       return true;
     };
-    if (hin()) return;
+    // außerhalb der Änderungen (Kasten unter dem Dateinamen): erst den Kontext aufklappen, dann steht er an seiner Zeile
+    const aussen = i.x.unter != null && i.x.b && i.x.datei != null;
+    if (!aussen && hin()) return;
     (i.x.datei != null ? zeileZeigen(i.x, true) : Promise.resolve(false)).then(() => {
       if (!hin()) zeileZeigen(i.x);
     });
+  }
+  /** Verweis auf pfad:zeile(-bis) (see_also, Code-Link im Text): steht dort ein Faden außerhalb der Änderungen, zu ihm
+   * springen (Kontext aufklappen, wie aus der Liste), sonst Popup. */
+  function ortZeigen(pfad, zeile, label, bisZ, stand) {
+    const von = +zeile,
+      bis = +(bisZ || zeile),
+      f =
+        !stand &&
+        zeile &&
+        (App.review?.faeden || []).find(
+          k =>
+            k.path === pfad && k.b && k.datei != null && k.unter != null && (k.ab || k.b) <= bis && von <= k.b
+        );
+    if (f) springen({id: f.id, x: f});
+    else popup(pfad, zeile, label, bisZ, stand);
   }
   var sortieren = false; // Sortiermodus der Box „GitLab-Kommentare“
   function kommentarListe() {
@@ -454,7 +472,7 @@
               )
             : el(
                 'a',
-                {title: wo + (stand ? ' auf ' + s.ref : ''), onclick: () => popup(s.path, s.zeile, s.label, s.bis, stand)},
+                {title: wo + (stand ? ' auf ' + s.ref : ''), onclick: () => ortZeigen(s.path, s.zeile, s.label, s.bis, stand)},
                 name
               );
         return s.warnung ? el('span', {}, link, el('span', {class: 'warn', title: s.warnung}, ' ⚠')) : link;
@@ -781,6 +799,7 @@
     nurLesen,
     seitAnsicht,
     zeileZeigen,
+    ortZeigen,
     zeileFinden,
     popup,
     sieheAuch,

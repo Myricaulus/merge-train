@@ -55,7 +55,8 @@ Grundlage für mitwandernde Fäden, Commit-Ansichten, fremde Diskussionen.
 - Erweitern: jede „gehört diese Zeile noch hierher?“-Frage geht über diese Funktionen.
 
 ### 7. Code-Verweise und Popup
-`pfad:zeile`, Bereiche, Siehe-auch und Vergleiche (⇄) öffnen ein Popup.
+`pfad:zeile`, Bereiche, Siehe-auch und Vergleiche (⇄) öffnen ein Popup. Steht dort ein Faden außerhalb der
+Änderungen, springen sie zu ihm und klappen den Kontext auf (`ortZeigen`, `springen`, `zeileZeigen` in `web/diff.js`).
 - Achsen: Verweisart, Herkunft (Hinweis, Nachricht, Thread), Stand (`stand_waehlen`, `@ref`), Repo (Hauptrepo, Submodul).
 - Ort: `hinweise.py` (`ort_lesen`, `see_also_aufloesen`, `stand_waehlen`), `code_links` (`gespraech.py`),
   `vergleich_daten`/`zeilen_daten` (`review.py`), `inhalt`/`fehlt_grund` (`git.py`), `web/diff.js`;

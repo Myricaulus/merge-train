@@ -1,7 +1,7 @@
 // Diff-Seiten: Review-Kommentare, Agent-Hinweise (drafts) und Gesprächsfäden an den Zeilen; Eingabefelder, Senden,
 // Abschließen; fragt alle 4 s den Stand ab (neue Daten, neuer Stand: neuHolen, neuer Server). Braucht von App: waggon, kann,
 // el, uhrzeit, melden, meldung, serverWeg, dateien, dateiLinks, kopfhoeheSetzen, aus diff.js waggonAbfrage, nurLesen,
-// seitAnsicht, zeileZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
+// seitAnsicht, zeileZeigen, ortZeigen, zeileFinden, popup, sieheAuch, ortLink, dateiLaden, kommentarListe; später geladen:
 // hudZeichnen, serverLed, serverStandSetzen (hud.js), zugHolen (bahnhof.js), neuHolen (tausch.js). Stellt bereit: review (Daten der Seite),
 // zeichnen, STAENDE, werZeichen, direkt, fadenErledigen, kommentarAktion, reviewLaden.
 (() => {
@@ -16,6 +16,7 @@
     nurLesen,
     seitAnsicht,
     zeileZeigen,
+    ortZeigen,
     zeileFinden,
     popup,
     sieheAuch,
@@ -520,7 +521,7 @@
           {
             class: 'codelink',
             title: l.path + (l.zeile ? ':' + l.zeile + (l.bis ? '-' + l.bis : '') : ''),
-            onclick: () => popup(l.path, l.zeile, null, l.bis)
+            onclick: () => ortZeigen(l.path, l.zeile, null, l.bis)
           },
           m[1]
         )
