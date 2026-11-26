@@ -597,7 +597,7 @@
           'button',
           {
             class: 'haupt',
-            title: 'als Review-Kommentar übernehmen',
+            title: (h.extra || {}).reply_to ? 'als Antwort in die Diskussion übernehmen' : 'als Review-Kommentar übernehmen',
             onclick: () => kommentarAktion({aktion: 'neu', hinweis: h.key})
           },
           'übernehmen'
@@ -621,7 +621,7 @@
       ['Begründung', h.rationale],
       ['Behoben, wenn', h.resolved_when],
       ...Object.entries(ex)
-        .filter(([k]) => k !== 'problem' && k !== 'decision')
+        .filter(([k]) => k !== 'problem' && k !== 'decision' && k !== 'reply_to')
         .map(([k, v]) => [NAMEN[k] || k, v])
     ].filter(x => x[1] != null && x[1] !== '');
     box.append(
@@ -636,6 +636,7 @@
         ex.status ? el('span', {class: 'badge'}, 'Status: ' + ex.status) : null,
         kn
       ),
+      antwortAuf(ex.reply_to),
       el('div', {class: 'kt'}, h.text)
     );
     const sa = sieheAuch(h.see_also);
@@ -649,6 +650,19 @@
     }
     angehaengt(box, zuSchluessel.hinweis(h), nurLesen || h.lesen || h.status === 'verworfen' ? null : kn);
     return box;
+  }
+  /** Antwortentwurf (Marker reply_to): auf welche GitLab-Diskussion er antwortet, mit ihrem ersten Beitrag. */
+  function antwortAuf(did) {
+    if (!did) return null;
+    const d = review.diskussionen.find(x => String(x.diskussion) === String(did)),
+      m = d && d.nachrichten[0];
+    return el(
+      'div',
+      {class: 'sub antwortauf'},
+      m
+        ? '↩ Antwort auf ' + (m.wer || 'GitLab') + ': „' + (m.text.length > 120 ? m.text.slice(0, 120) + '…' : m.text) + '“'
+        : '↩ Antwort auf eine Diskussion, die es nicht mehr gibt (↻ MR-Daten)'
+    );
   }
   /** Box unter Zeile r (hinter schon eingefügten Boxen): inline über die ganze Breite, nebeneinander nur auf der Seite
    *  ihres Orts (b → rechts, nur a → links). ort {a, b} steht an der Zeile (data-ka/-kb) fürs Verschieben. */

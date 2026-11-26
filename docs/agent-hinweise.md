@@ -99,6 +99,9 @@ Mit `--seit` sind weggefallene needles kein Fehler (Exit 1 nur bei kaputten `see
   Pfade in Submodulen gehen wie andere: merge-train liest die Datei aus dem Submodul im Stand laut Gitlink. Fehlt der
   Stand im Klon, nennt `pruefen` das Submodul und den Befehl, der ihn holt.
   Die Verweise gehören **nicht** zum GitLab-Kommentar.
+- `reply_to`: id einer GitLab-Diskussion (aus `merge-train agent kommentare`). Der Eintrag ist dann ein Antwortentwurf:
+  „übernehmen“ legt ihn als Antwort in dieser Diskussion an, nicht als neuen Kommentar. `merge-train agent kommentar
+  <Diskussions-id> "…"` schreibt so einen Eintrag.
 - `problem`, `decision`, `status` und weitere Felder erscheinen unter „Details“, `status` zusätzlich als Etikett.
 - Oben optional `"mr": "<MR-URL>"`.
 

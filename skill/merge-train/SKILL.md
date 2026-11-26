@@ -73,6 +73,10 @@ the hint, or a new draft next to a staged/sent comment); the user takes them ove
 comment, no answer in the thread; otherwise answer in one line what changed. The comment text follows the `text`
 rules of the mr-review skill (English, short, no internal ids, no line numbers).
 
+**Draft a reply to a GitLab discussion** (someone else's review comment, "formulier eine Antwort"):
+`merge-train agent kommentar <discussion-id> "Reply"` – the ids are in `merge-train agent kommentare`. It becomes a
+draft at the discussion's line; the user takes it over as a reply in that discussion.
+
 ## Say who you are
 
 merge-train recognizes Claude Code, Cursor, Gemini CLI, Codex and the `AI_AGENT` variable. Otherwise a command fails

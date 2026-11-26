@@ -895,6 +895,20 @@ def gitlab_test():
         pruefe(r["ok"] and any(x.get("in_reply_to_discussion_id") == "d950" and x["note"] == "Noch was." for x in drafts())
                and faden["stand"] == "gitlab_entwurf" and r["review"]["in_gitlab"] >= 1,
                "Abschließen: Antwort als Draft-Note in der Diskussion (Stand: Entwurf in GitLab)")
+        # Antwortentwurf vom Agenten: agent kommentar <Diskussions-id> → draft mit reply_to, „übernehmen“ → Antwort (staged)
+        r = sh(sys.executable, SKRIPT, "agent", "kommentar", "d950", "Weil es schneller ist.", "--als", "Claude", env=ENV, check=False)
+        rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
+        aw = [h for h in rv["hinweise"] if (h.get("extra") or {}).get("reply_to") == "d950"]
+        pruefe(r.returncode == 0 and "Antwortentwurf" in r.stdout and len(aw) == 1 and aw[0]["status"] == "offen"
+               and aw[0]["text"] == "Weil es schneller ist." and aw[0]["b"] == 11,
+               f"agent kommentar <Diskussions-id>: Antwortentwurf als draft an der Zeile der Diskussion – {r.stdout} {r.stderr}")
+        r = post("/api/kommentar", dict(basis, aktion="neu", hinweis=aw and aw[0]["key"]))
+        ent = [x for x in r["review"]["kommentare"] if x.get("antwort_auf") == "d950" and x["text"] == "Weil es schneller ist."]
+        faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
+        pruefe(r["ok"] and len(ent) == 1 and faden["nachrichten"][-1]["text"] == "Weil es schneller ist."
+               and faden["nachrichten"][-1].get("stufe") == "neu",
+               "Antwortentwurf übernehmen: wird Antwort in der Diskussion (staged), kein neuer Kommentar")
+        post("/api/kommentar", dict(basis, aktion="loeschen", id=ent[0]["id"])) if ent else None
         r = post("/api/kommentar", dict(basis, aktion="erledigen", diskussion="d950"))
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
         # Stand bleibt gitlab_entwurf: die Antwort „Noch was.“ liegt noch als Entwurf in GitLab, das geht vor

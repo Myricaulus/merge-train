@@ -244,6 +244,7 @@ es auch ohne):
 merge-train agent feedback gitlab.example.com/gruppe/projekt/42   # oder im Klon: merge-train agent feedback
 merge-train agent antworten <id> "…"
 merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "…"   # GitLab-Kommentar umformulieren (siehe unten)
+merge-train agent kommentar <Diskussions-id> "…"                  # Antwort auf eine GitLab-Diskussion vorschlagen
 merge-train agent kommentare [MR]                                  # lesen: was am MR schon kommentiert ist
 merge-train agent vorfall "<Titel>" --art bug|wunsch -              # Bericht, wo merge-train in die Irre führte: todo, sonst vorfaelle/ (Issue nur mit vorfall_github) (docs/vorfaelle/README.md)
 merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   # Seite zeigt „🎧 Copilot hört zu“
@@ -251,9 +252,11 @@ merge-train agent horchen gitlab.example.com/gruppe/projekt/42 --als Copilot   #
 
 Bittet man im Faden, einen GitLab-Kommentar umzuformulieren, landet die Änderung im Kommentar selbst: `feedback` zeigt
 unter jedem Faden die Kommentare und Agent-Hinweise an dessen Zeile. `agent kommentar h:<key>` ändert einen noch nicht
-übernommenen Agent-Hinweis (dessen `text` in der Review-JSON). Bei einem bestehenden Kommentar oder einer Faden-id legt
-es einen neuen Agent-Hinweis an derselben Stelle an. Review-Kommentare entstehen nur durch „übernehmen“: Der Agent
-legt nie selbst welche an, und der alte Kommentar bleibt, bis man ihn selbst löscht.
+übernommenen Agent-Hinweis (dessen `text` in der Review-JSON); Fäden daran hängen danach am neuen Text. Bei einem
+bestehenden Kommentar oder einer Faden-id legt es einen neuen Agent-Hinweis an derselben Stelle an. Mit der id einer
+GitLab-Diskussion (`agent kommentare`) legt es einen Antwortentwurf an; „übernehmen“ macht daraus eine Antwort in
+dieser Diskussion. Review-Kommentare entstehen nur durch „übernehmen“: Der Agent legt nie selbst welche an, und der
+alte Kommentar bleibt, bis man ihn selbst löscht.
 
 Direkter geht es mit **„💬 an Agent“** an einem Kommentar oder Agent-Hinweis: Die Nachricht wird ein Faden, der an
 genau diesem Kommentar hängt und darunter steht. Wie jeder Faden geht er nie nach GitLab, wird mit „An Agent senden“

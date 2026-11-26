@@ -220,7 +220,8 @@ def faeden_abholen(ziele, alle=False, markieren=True, weg=None, wer=None, vorsch
     if gesamt:
         teile.append('Antworten: merge-train agent antworten <id> "Text"   (umgesetzt: --erledigt · Text von stdin: -)')
         if any(waggon.kann["review"] for waggon in ziele):
-            teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"')
+            teile.append('GitLab-Kommentar umformulieren: merge-train agent kommentar <h:key | Kommentar-id | Faden-id> "Text"'
+                         ' · Antwort auf eine GitLab-Diskussion vorschlagen: <Diskussions-id> (agent kommentare)')
             teile.append('Faden „HÄNGT AN“ einem Kommentar: merge-train agent kommentar <Faden-id> "Text" ändert genau diesen '
                          'und erledigt den Faden – keine Antwort im Faden, außer der Nutzer will etwas erklärt haben')
     text = "\n".join(teile) or "(nichts offen)"
@@ -279,13 +280,15 @@ def kommentare_ausgeben(ziele):
     if not teile:
         return "(kein MR zu diesem Repo – merge-train agent kommentare <MR>)"
     teile.append('Umformulieren: merge-train agent kommentar <h:key | Kommentar-id> "Text" (legt bei staged/sent einen neuen '
-                 'draft daneben an). GitLab-Diskussionen: Stand des letzten „↻ MR-Daten“.')
+                 'draft daneben an). Antwort vorschlagen: merge-train agent kommentar <Diskussions-id> "Text" (draft, '
+                 'den der Nutzer als Antwort übernimmt). GitLab-Diskussionen: Stand des letzten „↻ MR-Daten“.')
     return "\n".join(teile)
 
 
 def umformulieren_ziel_finden(ziel, ziele=None):
-    """Was meint der Agent? h:<key> → Agent-Hinweis (art "h"), sonst Kommentar-id ("k") oder Faden-id ("f"), Anfang
-    genügt (ab 4 Zeichen). Rückgabe (waggon, art, eintrag); Fehler, wenn nichts oder mehreres passt."""
+    """Was meint der Agent? h:<key> → Agent-Hinweis (art "h"), sonst Kommentar-id ("k"), Faden-id ("f") oder, wenn
+    keins passt, GitLab-Diskussion ("d", Eintrag aus review_daten); Anfang genügt (ab 4 Zeichen). Rückgabe (waggon,
+    art, eintrag); Fehler, wenn nichts oder mehreres passt."""
     ziel = ziel.strip()
     hkey = ziel[2:] if ziel.startswith("h:") else None
     passt = lambda i, z: i == z or (len(z) >= 4 and i.startswith(z))
@@ -303,17 +306,26 @@ def umformulieren_ziel_finden(ziel, ziele=None):
             akte = akte_lesen(waggon)
             treffer += [(waggon, "k", k) for k in review_kommentare(akte) if passt(k["id"], ziel)]
             treffer += [(waggon, "f", k) for k in faeden_von(akte) if passt(k["id"], ziel)]
+    if not treffer and not hkey:  # GitLab-Diskussion (agent kommentare): Antwortentwurf
+        for waggon in ziele or alle_gespraeche():
+            if waggon.kann["review"]:
+                try:
+                    treffer += [(waggon, "d", d) for d in review_daten(waggon)["diskussionen"] if passt(str(d["diskussion"]), ziel)]
+                except Fehler:
+                    pass
     if not treffer:
-        raise Fehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar oder Faden in einem MR (merge-train agent feedback zeigt sie)")
+        raise Fehler(f"{ziel}: kein Agent-Hinweis, GitLab-Kommentar, Faden oder GitLab-Diskussion in einem MR "
+                     "(merge-train agent kommentare zeigt sie)")
     if len(treffer) > 1:
-        raise Fehler(f"{ziel} ist nicht eindeutig: " + ", ".join((x.get("key") or x["id"]) for _, _, x in treffer))
+        raise Fehler(f"{ziel} ist nicht eindeutig: " + ", ".join(str(x.get("key") or x.get("diskussion") or x["id"]) for _, _, x in treffer))
     return treffer[0]
 
 
 def kommentar_umformulieren(ziel, text, ziele=None, als=None):
     """GitLab-Kommentar für den Nutzer umformulieren (Regel aus AGENTS.md): ein draft (noch nicht übernommener
     Agent-Hinweis) wird in seiner JSON geändert; zu allem anderen (staged/sent, übernommener/verworfener Hinweis, Faden)
-    kommt ein neuer draft daneben. Review-Kommentare (staged) legt nur der Nutzer an („übernehmen“). Ein Faden, der an
+    kommt ein neuer draft daneben, zu einer GitLab-Diskussion ein draft als Antwort darauf (reply_to). Review-Kommentare
+    (staged) legt nur der Nutzer an („übernehmen“). Ein Faden, der an
     einem Kommentar hängt (zu), meint diesen; danach ist der Faden erledigt und hängt am neuen bzw. geänderten draft.
     Rückgabe: Meldung."""
     text = (text or "").strip()
@@ -388,6 +400,9 @@ def draft_daneben(waggon, art, x, text, agent=None):
     if fid:
         m["finding"] = fid
     m["title"] = "neu formuliert" + (f" (zu {fid})" if fid else "")
+    if art == "d":  # Antwort auf die Diskussion: „übernehmen“ macht daraus eine Antwort (staged), keinen neuen Kommentar
+        m["reply_to"] = str(x["diskussion"])
+        m["title"] = "Antwort an " + ((x.get("nachrichten") or [{}])[0].get("wer") or "die Diskussion")
     if path and b:
         m.update(path=path, line=b)
     elif path:  # nur alte Seite oder Zeile seitdem geändert: als allgemeiner Hinweis mit Ort im Titel
@@ -407,6 +422,9 @@ def draft_daneben(waggon, art, x, text, agent=None):
     markers.append(m)
     ersetzen(datei, json.dumps(daten, indent=2, ensure_ascii=False) + "\n")
     ort = f"{path}:{b}" if path and b else "allgemein"
+    if art == "d":
+        return (f"Antwortentwurf (draft) auf Diskussion {x['diskussion']} bei {ort} in {kurzpfad(datei)} – der Nutzer "
+                "übernimmt ihn als Antwort oder verwirft ihn", datei, len(markers) - 1)
     return (f"neuer Agent-Hinweis (draft) bei {ort} in {kurzpfad(datei)} – der Nutzer übernimmt oder verwirft ihn; "
             "der bisherige Kommentar bleibt unverändert", datei, len(markers) - 1)
 
@@ -822,13 +840,14 @@ def agent_parser():
                                    "fragt GitLab nicht. Vor eigenen Anmerkungen aufrufen, damit nichts doppelt entsteht.")
     p.add_argument("projekt", nargs="?", help="MR (Kennung/URL/gruppe/projekt!42) oder Projektordner; Standard: die MRs des aktuellen Repos")
     p.set_defaults(aufruf=lambda o: print(kommentare_ausgeben(gespraech_ziele(o.projekt))) or 0)
-    p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren (draft ändern, sonst neuer draft)",
+    p = sub.add_parser("kommentar", help="GitLab-Kommentar umformulieren oder Antwort vorschlagen (draft)",
                        description="GitLab-Kommentar für den Nutzer umformulieren: h:<key> eines drafts (noch nicht übernommener "
-                                   "Agent-Hinweis) ändert dessen text in der JSON; eine Kommentar-id (staged/sent) oder Faden-id legt "
-                                   "einen neuen draft an derselben Stelle an (der alte bleibt). staged wird ein Kommentar nur, "
-                                   "wenn der Nutzer ihn übernimmt. "
-                                   "IDs zeigt „agent feedback“; Stufen siehe AGENTS.md.")
-    p.add_argument("ziel", help="h:<key> (draft), Kommentar-id oder Faden-id (Anfang genügt)")
+                                   "Agent-Hinweis) ändert dessen text in der JSON, Fäden daran hängen weiter daran; eine "
+                                   "Kommentar-id (staged/sent) oder Faden-id legt einen neuen draft an derselben Stelle an (der "
+                                   "alte bleibt); eine Diskussions-id (fremde GitLab-Diskussion) legt einen Antwortentwurf an, "
+                                   "den der Nutzer als Antwort übernimmt. staged wird ein Kommentar nur, wenn der Nutzer ihn "
+                                   "übernimmt. IDs zeigen „agent feedback“ und „agent kommentare“; Stufen siehe AGENTS.md.")
+    p.add_argument("ziel", help="h:<key> (draft), Kommentar-id, Faden-id oder Diskussions-id (Anfang genügt)")
     p.add_argument("text", help="neuer Kommentartext; - = von stdin")
     p.add_argument("-p", "--projekt", help="MR (Standard: in allen MRs suchen)")
     p.add_argument("--als", help="wer den draft schreibt (Standard: aus der Umgebung erkannt, sonst Pflicht)")

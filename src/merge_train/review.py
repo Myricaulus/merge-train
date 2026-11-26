@@ -314,6 +314,12 @@ def kommentar_neu(waggon, akte, eingabe, ansicht):
         i = h["datei"]
         k.update(text=text or h["text"], path=h["path"] or None, a=h["a"], b=h["b"], finding=h["finding"],
                  agent=h.get("agent"), hinweis=h["key"], old_path=struktur["dateien"][i]["alt"] if i is not None else h["path"])
+        antwort = (h.get("extra") or {}).get("reply_to")
+        if antwort:  # Antwortentwurf: wird Antwort in der Diskussion (wie antwort_entwurf), Ort wie die Diskussion
+            d = diskussion_finden(akte, str(antwort))
+            if not d:
+                return False, "Die Diskussion zu dieser Antwort ist nicht mehr da – „↻ MR-Daten“."
+            k.update(antwort_auf=d["id"], path=d.get("path"), a=d.get("a"), b=d.get("b"))
     elif eingabe.get("datei") is not None:
         fehler, ort = zeile_aus_klick(struktur, eingabe, ansicht)
         if fehler:

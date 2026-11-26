@@ -18,7 +18,7 @@ complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_se
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a antworten -d 'an Faden <id> anhängen (--siehe, --vergleich, --erledigt)'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a feedback -d 'wartende Fragen des Nutzers abholen (--alle, --horchen)'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a horchen -d 'im Hintergrund auf neue Nachrichten warten'
-complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a kommentar -d 'GitLab-Kommentar umformulieren (draft ändern, sonst neuer daneben)'
+complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a kommentar -d 'GitLab-Kommentar umformulieren oder Antwort vorschlagen (draft)'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a kommentare -d 'am MR schon Kommentiertes lesen'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a zeigen -d 'Review-JSON beim MR anmelden und öffnen'
 complete -c merge-train -n "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from $agent_befehle" -a pruefen -d 'Review-JSON gegen den MR-Stand prüfen (--seit)'

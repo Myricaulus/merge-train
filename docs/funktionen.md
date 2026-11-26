@@ -88,7 +88,8 @@ Kommentare schreiben, „Review abschließen“, Urteil.
 
 ### 11. Agent-Hinweise (drafts)
 Review-JSON eines Agenten, an ihrer Zeile übernehmen oder verwerfen.
-- Achsen: Marker-Feld, Prüf-Ergebnis, Zuordnung zum MR (`mr_fuer_hinweise`).
+- Achsen: Marker-Feld (`reply_to` = Antwortentwurf auf eine GitLab-Diskussion), Prüf-Ergebnis, Zuordnung zum MR
+  (`mr_fuer_hinweise`).
 - Ort: `hinweise.py`, `agent_cli.py` (`pruefen`, `zeigen`, `kommentar`, `kommentare`), `hinweis_aktion` (`review.py`),
   Route `api/hinweis`. Format: `docs/agent-hinweise.md`.
 
