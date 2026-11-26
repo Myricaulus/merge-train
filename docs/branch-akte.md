@@ -3,6 +3,70 @@
 *Stand 27.11.2026, mit dem Nutzer abgestimmt, noch nicht gebaut. Schritt 4b (Agent-Hinweise über die CLI statt
 Review-JSON) kommt danach und ist dem Nutzer weniger wichtig.*
 
+## Auf dem Laptop testen (echtes GitLab)
+
+Der Laptop holt `main`. Die Commits müssen also erst über `reviewed` nach `main`. Rückmeldungen gehen als Faden in
+merge-train oder in den todo-Eintrag „heutige Änderungen auf der Arbeit testen“. Die Ergebnisse von Schritt 3 kommen
+vor dem Bau von 4a. Was dabei auffällt, fließt in den Bauplan unten ein.
+
+**Nach Schritt 3 (Stand `2aa9f45`, prüft Schritt 1–3)**
+
+- *Eigener MR, Quell-Branch ausgecheckt:*
+  - Der Zug zeigt nur `!N projekt`, kein lokaler Waggon daneben.
+  - Die Seite zeigt den Arbeitsstand. Eine nicht committete Änderung erscheint nach kurzer Zeit, ohne Neuladen.
+  - Fäden, die vorher im lokalen Waggon zu diesem Branch hingen, stehen jetzt im MR. In keinem der beiden Waggons
+    fehlt einer oder steht doppelt.
+  - Im Klon zeigen `merge-train status` und `thread` auf den MR, nicht auf `projekt:…`.
+  - Eine GitLab-Diskussion an einer lokal geänderten Zeile ist „lokal geändert“ markiert und zeigt den damaligen Code.
+    Nach „passt hier“ verschwindet die Marke, auch nach dem Neuladen.
+  - An einer lokal geänderten Zeile gibt es keinen GitLab-Kommentar, nach dem Push schon. Antworten auf Diskussionen
+    gehen immer.
+- *Branch ohne MR:*
+  - „MR erstellen“ zuerst auf einem Branch probieren, der in GitLab schon einen MR hat. merge-train übernimmt ihn, ohne
+    einen zweiten anzulegen.
+  - Dann echt anlegen, mit „als Entwurf“. Prüfen:
+    - Ziel-Branch-Vorschlag: `von` bzw. der Standard-Branch von origin.
+    - Titel und Beschreibung kommen aus den Commits.
+    - Der Hinweis sagt, was gepusht wird.
+    - Der MR in GitLab heißt „Draft: …“.
+    - Danach landet die Seite im MR, und es ist ein Waggon (wie oben).
+- *Fremder MR (von einem Kollegen):*
+  - Mit sauberem Arbeitsverzeichnis öffnen. Der Quell-Branch wird ausgecheckt, der lokale Waggon verschwindet (nur wenn
+    er bis = Arbeitsstand hat). Der Agent darf nur antworten.
+  - Dann im Klon selbst auf einen anderen Branch wechseln. Unter den Commits erscheint der Hinweis „nur lesen“ mit
+    „auschecken“.
+  - Mit offenen Änderungen lehnt „auschecken“ ab und nennt den Grund. Mit sauberem Stand checkt es aus, und die Seite
+    lädt neu.
+  - Fäden aus dem Klon gehen beim fremden MR als Review-Gespräch an den MR.
+- *Nebenher:* mehrere Tabs auf denselben MR. Die Branches dürfen nicht hin- und herspringen, denn ausgecheckt wird nur
+  beim ersten Öffnen.
+
+**Nach Schritt 4a**
+
+Vorher `DATEN/` sichern: Die Migration schreibt die Projekt-Akten um. Ein Rückweg ist nicht eingebaut.
+
+- *Migration:*
+  - Ein Projekt mit Fäden auf mehreren Branches öffnen. Unter „fremde Fäden“ stehen alle noch da, jeder bei seinem
+    Branch, keiner fehlt.
+  - `DATEN/lokal/<projekt>.json` enthält nur noch `mr`, `zweige` und `zweige_migriert`.
+  - Die Branch-Akten liegen unter `DATEN/zweige/<projekt>/`.
+- *Eine Akte:*
+  - Eigener MR, lokale Seite mit festem bis = Quell-Branch: Es gibt keinen lokalen Waggon neben dem MR (Lücke 2), auch
+    wenn ein anderer Branch ausgecheckt ist.
+  - Ein im Klon angelegter Faden steht sofort im MR.
+  - Haken („abgehakt“) und die Struktur einer Seite stören die andere nicht. Keine Seite gilt ständig als veraltet.
+- *MR neu anlegen* (Schritt 2) für einen Branch, der schon Fäden hat: Die Fäden stehen danach im MR.
+- *Branch wechseln:* Der Agent antwortet auf einen Faden, nachdem du den Branch gewechselt hast. Die Antwort landet am
+  richtigen Faden.
+- *Aufräumen:*
+  - Einen Branch mit Fäden löschen, einen anderen nach `von` mergen. Spätestens 10 min danach (Seite neu laden) sind
+    beide aus „fremde Fäden“ verschwunden.
+  - Die Dateien liegen in `DATEN/zweige/<projekt>/archiv/`.
+  - Ein geschlossener MR behält seine Fäden, bis sein Branch weg oder gemergt ist.
+- *Gespräch:*
+  - `merge-train agent feedback` findet Fragen aus allen Branches.
+  - `merge-train agent horchen` im Klon wacht bei einem neuen Faden auf (anderer Pfad für `.horcht`).
+
 ## Ziel
 
 Fäden und Review-Daten eines Branches liegen in **einer** Akte. Der lokale Waggon und der MR-Waggon desselben Branches
