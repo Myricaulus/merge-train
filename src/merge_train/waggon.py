@@ -3,7 +3,7 @@ GitLab-Merge-Request oder ein Lauf des Myrlings, der auf eine Prüfung wartet (S
 von/bis eines lokalen Projekts: von_bis."""
 import re
 from .einstellungen import ARBEITSSTAND, BIS, KONF, VON, dateiname
-from .akte import akte_lesen
+from .akte import projekt_akte_lesen
 from typing import NamedTuple, Optional
 
 
@@ -22,8 +22,9 @@ def zweige_standard(projekt):
 
 
 def zweige_gewaehlt(projekt):
-    """Auf der Seite (aufgeklappter Waggon) gewähltes {von, bis}, leer = Standard."""
-    return akte_lesen(Waggon(lokal=projekt)).get("zweige") or {}
+    """Auf der Seite (aufgeklappter Waggon) gewähltes {von, bis}, leer = Standard (in der Projekt-Akte, nicht je Branch:
+    welche Branch-Akte gilt, hängt selbst von bis ab)."""
+    return projekt_akte_lesen(projekt).get("zweige") or {}
 
 
 def von_bis(projekt):

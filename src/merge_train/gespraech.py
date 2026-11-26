@@ -4,7 +4,7 @@ from .einstellungen import DATEN, KONF, jetzt
 from .waggon import ARTEN, Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
-from .akte import (akte_lesen, aktion_ausfuehren, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
+from .akte import (akte_lesen, aktion_ausfuehren, andere_zweig_akten, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
     faden_geaendert, faden_stand,
     faden_status, faeden_von, kommentar_finden)
 from .hinweise import hinweise_aufloesen, see_also_aufloesen
@@ -92,7 +92,12 @@ def gespraech_daten(waggon, ansicht=None, seite=None):
         vorher = len(kommentare)
         kommentare = ansicht_zuordnen(struktur, ansicht_seite, kommentare)
         ausserhalb = vorher - len(kommentare)
-    fremd = [faden_fremd(k) for k in faeden_von(akte) if k.get("branch") != branch]
+    fremd = {k["id"]: k for k in faeden_von(akte) if k.get("branch") != branch}
+    for p in andere_zweig_akten(waggon):  # lokal: die Akten der anderen Branches (eine Akte je Branch)
+        for k in faeden_von(akte_lesen(waggon, pfad=p)):
+            if k.get("branch") != branch:
+                fremd.setdefault(k["id"], k)
+    fremd = [faden_fremd(k) for k in fremd.values()]
     entwuerfe = sum(1 for k in faeden_von(akte, branch) for m in k["nachrichten"] if m["von"] == "ich" and not m.get("gesendet"))
     return {"ok": True, "kommentare": kommentare, "fremd": fremd, "branch": branch, "stand": stand(waggon, akte),
             "ausstehend": entwuerfe, "ausserhalb": ausserhalb, "horcht": horcht(waggon), "kontext": kontext(waggon),

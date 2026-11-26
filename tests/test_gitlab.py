@@ -465,6 +465,7 @@ def gemischt_test(mr):
     fremd_test(mr, env2, hol)
     eigen_test(mr, env2, hol)
     mr_erstellen_test(env2, hol)
+    branch_akte_test(env2)
 
 
 def gemischt_server(env):
@@ -532,6 +533,69 @@ def mr_erstellen_test(env2, hol):
         for p in (f"{T}/glab/erstellt.json", f"{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_2.json"):
             if os.path.exists(p):
                 os.remove(p)
+
+
+BRANCH_AKTE = ALLES_LADEN + r"""
+import json, os, sys
+m = alles_laden(sys.argv[1]); repo = sys.argv[2]
+D, W = m["DATEN"], m["Waggon"](lokal="repo")
+mr = m["Waggon"](host="gitlab.example.com", projekt="gruppe/demo", iid=1)
+lies = lambda p: json.load(open(os.path.join(D, p)))
+faden = lambda i, b=None: dict({"id": i, "nachrichten": [{"id": "n" + i, "von": "ich", "text": i, "zeit": "2026-11-27T00:00:00",
+                                                          "gesendet": "2026-11-27T00:00:00", "abgeholt": "2026-11-27T00:00:00"}]}, **({"branch": b} if b else {}))
+os.makedirs(D + "/lokal"); os.makedirs(D + "/reviews")
+json.dump({"mr": {"lokal": "repo"}, "struktur": "/lokal.json", "kommentare": [faden("f1", "feature"), faden("f2", "weg"), faden("f3")]},
+          open(D + "/lokal/repo.json", "w"))
+out = {}
+a = m["akte_lesen"](W)
+out["migriert"] = (sorted(k["id"] for k in a["kommentare"]), a.get("struktur"), sorted(lies("lokal/repo.json")),
+                   [k["id"] for k in lies("zweige/repo/weg.json")["kommentare"]])
+out["fremd"] = [k["id"] for p in m["andere_zweig_akten"](W) for k in m["faeden_von"](m["akte_lesen"](W, pfad=p))]
+m["faden_antworten"]("f2", "Antwort nach dem Wechsel", ziele=[W], als="Claude")
+out["antwort"] = [n["text"] for n in lies("zweige/repo/weg.json")["kommentare"][0]["nachrichten"]]
+json.dump({"mr": dict(m["MR_ART"].als_dict(mr), source_branch="feature"), "struktur": "/mr.json", "kommentare": []},
+          open(D + "/reviews/" + mr.dateiname + ".json", "w"))
+out["verknuepft"] = m["zweig_verknuepfen"](mr, "repo", "feature")
+ma = lies("reviews/" + mr.dateiname + ".json")
+out["mr_akte"] = (lies("zweige/repo/feature.json"), sorted(k["id"] for k in ma["kommentare"]), ma["struktur"], ma.get("seiten"))
+with m["akte_bearbeiten"](W) as a:
+    out["sicht"] = a["struktur"]
+    a["struktur"] = "/lokal2.json"
+    m["faden_anhaengen"](a, faden("f4", "feature"))
+ma = lies("reviews/" + mr.dateiname + ".json")
+out["geteilt"] = (ma["struktur"], ma["seiten"], sorted(k["id"] for k in ma["kommentare"]), m["akte_lesen"](mr)["struktur"])
+out["aufgeraeumt"] = (m["zweige_aufraeumen"](repo), sorted(os.listdir(D + "/zweige/repo")),
+                      [n[:4] for n in os.listdir(D + "/zweige/repo/archiv")])
+with m["projekt_akte_bearbeiten"]("repo") as pa:  # Lücke 2: bis fest auf einen anderen Branch als den ausgecheckten
+    pa["zweige"] = {"von": "feature", "bis": "main"}
+out["luecke2"] = m["im_mr_waggon"](repo, {(os.path.realpath(repo), "main"): mr})
+print(json.dumps(out))
+"""
+
+
+def branch_akte_test(env2):
+    """Eine Akte je Branch (docs/branch-akte.md), in eigenem Datenordner: alte Projekt-Akte wird verteilt, Antwort auf
+    einen Faden eines anderen Branches, Verweis auf die MR-Akte samt getauschter Seiten-Felder, Lücke 2, Aufräumen."""
+    env = dict(env2, XDG_DATA_HOME=f"{T}/data-branch")
+    r = subprocess.run([sys.executable, "-c", BRANCH_AKTE, SKRIPT, REPO], cwd=REPO, env=env, capture_output=True, text=True)
+    try:
+        o = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        pruefe(False, f"Branch-Akte: Skript lief nicht – {r.stderr[-800:]}")
+        return
+    pruefe(o["migriert"] == [["f1", "f3"], "/lokal.json", ["mr", "zweige_migriert"], ["f2"]],
+           f"Branch-Akte: alte Projekt-Akte auf die Branches verteilt, ohne Branch in den aktuellen ({o['migriert']})")
+    pruefe(o["fremd"] == ["f2"], "Branch-Akte: fremde Fäden aus den Akten der anderen Branches")
+    pruefe(o["antwort"] == ["f2", "Antwort nach dem Wechsel"], "Branch-Akte: agent antworten findet den Faden eines anderen Branches")
+    pruefe(o["verknuepft"] == 2 and o["mr_akte"] == [{"verweis": "reviews/gitlab.example.com_gruppe_demo_1.json"}, ["f1", "f3"],
+                                                     "/mr.json", {"projekt:repo": {"struktur": "/lokal.json"}}],
+           f"Branch-Akte: Branch mit MR wird Verweis, Fäden in der MR-Akte, Seiten-Felder unter seiten ({o['mr_akte']})")
+    pruefe(o["sicht"] == "/lokal.json" and o["geteilt"] == ["/mr.json", {"projekt:repo": {"struktur": "/lokal2.json"}},
+                                                           ["f1", "f3", "f4"], "/mr.json"],
+           f"Branch-Akte: lokale Seite sieht ihre Felder, schreibt Fäden in die MR-Akte, MR-Struktur bleibt ({o['geteilt']})")
+    pruefe(o["aufgeraeumt"] == [["weg"], ["archiv", "feature.json"], ["weg-"]],
+           f"Branch-Akte: Akte eines gelöschten Branches im Archiv ({o['aufgeraeumt']})")
+    pruefe(o["luecke2"], "Branch-Akte: fester bis mit MR, anderer Branch ausgecheckt → kein eigener lokaler Waggon (Lücke 2)")
 
 
 LOKALER_FADEN = ALLES_LADEN + r"""

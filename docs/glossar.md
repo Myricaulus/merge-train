@@ -27,7 +27,9 @@
 | **Quelle** | Woher Waggons kommen: **lokal**, **Myrling**, **GitLab** (geplant GitHub). Einzeln an- und abschaltbar. `Quelle` | | R, F 1 |
 | **Art** (eines Waggons) | Wie ein Waggon gebaut ist: Kennung, Seite, Dateiname, Akten-Ordner, Fähigkeiten. `LokalArt`, `MyrlingArt`, `MrArt` | | F 1 |
 | **Fähigkeit** | Was ein Waggon kann: `review` (Kommentare nach GitLab), `fertig` (Ziel-Branch setzen), `committen` (Agent darf umsetzen statt nur antworten). `kann` | | F 2 |
-| **Akte** | JSON-Datei je Waggon mit Kommentaren, Fäden, Hinweis-Status und Abhaken. Liegt im Aktenschrank. `akte.py` | | F, R „Wo liegt was“ |
+| **Akte** | JSON-Datei je Waggon (lokales Projekt: je Branch, siehe Branch-Akte) mit Kommentaren, Fäden, Hinweis-Status und Abhaken. Liegt im Aktenschrank. `akte.py` | | F, R „Wo liegt was“ |
+| **Branch-Akte** | Akte eines Branches eines lokalen Projekts, `zweige/<projekt>/<branch>.json`. Hat der Branch einen offenen MR, ist sie ein **Verweis** auf die Akte des MR: lokaler und MR-Waggon teilen sie. `zweig_akte_pfad`, `zweig_verknuepfen` | | F, R „Wo liegt was“ |
+| **Projekt-Akte** | `lokal/<projekt>.json`: nur was zum Projekt gehört (Feld `zweige`, auf der Seite gewähltes von/bis). `projekt_akte_lesen` | | F |
 | **Aktenschrank** | `~/.local/share/merge-train/`, im Repo als Symlink `aktenschrank`. | | R |
 | **Einstellung** | `~/.config/merge-train/config.toml`, im Repo als Symlink `config`. | | R |
 | **Nutzer** (du) | Der Mensch, der reviewt, entscheidet und freigibt. Auf der Seite „du“, Symbol `ich_symbol` (🤓). | 🤓 | A, R |

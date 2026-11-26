@@ -110,7 +110,7 @@ def zuhoerer_abmelden(waggon):
     if not wer:
         return None
     pid = open(horcht_datei(waggon)).read().split()[0]
-    for d in glob.glob(os.path.join(os.path.dirname(os.path.dirname(akte_datei(waggon))), "*", "*.horcht")):
+    for d in glob.glob(os.path.join(os.path.dirname(os.path.dirname(horcht_datei(waggon))), "*", "*.horcht")):
         try:
             if open(d).read().split()[0] == pid:
                 os.remove(d)
@@ -237,7 +237,7 @@ def zuhoerer(waggon):
     sitzung = agent_sitzung(waggon)
     if not sitzung:
         return None
-    for d in glob.glob(os.path.join(os.path.dirname(akte_datei(waggon)), "*.horcht")):
+    for d in glob.glob(os.path.join(os.path.dirname(horcht_datei(waggon)), "*.horcht")):
         try:
             if agent_session(int(open(d).read().split()[0])) == sitzung[0]:
                 return None

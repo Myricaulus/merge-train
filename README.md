@@ -170,7 +170,9 @@ Der Knopf merkt sich die Wahl.
 - **Eigener Befehl**: `feedback_befehl` in der Einstellung startet stattdessen etwas Eigenes, z. B.
   `feedback_befehl = "konsole --workdir {ordner} -e claude {prompt}"` (Platzhalter `{ordner}`, `{projekt}`, `{prompt}`).
 
-Die Akte des Projekts (Fäden, Nachrichten) liegt in `~/.local/share/merge-train/lokal/<projekt>.json`.
+Fäden und Nachrichten liegen je Branch in `~/.local/share/merge-train/zweige/<projekt>/<branch>.json`. Hat der Branch
+einen offenen MR, dessen Klon das Projekt ist, steht dort nur ein Verweis auf die Akte des MR: Beide Waggons teilen sie.
+Fäden gelöschter oder in von gemergter Branches räumt der Zug nach `zweige/<projekt>/archiv/`.
 
 ## GitLab-Review
 
@@ -323,7 +325,7 @@ liegen im Repo zwei Symlinks aus der [Installation](#installation) (in `.gitigno
 | Was | Ort | im Repo |
 |---|---|---|
 | Einstellung | `~/.config/merge-train/config.toml` (`$XDG_CONFIG_HOME`, `$MERGE_TRAIN_CONFIG`) | `config/` |
-| Akten: Fäden, Nachrichten, Review-Stände, gewählte von/bis | `~/.local/share/merge-train/` (`$XDG_DATA_HOME`): `lokal/<projekt>.json`, `reviews/<mr>.json`, `beobachten/` | `aktenschrank/` |
+| Akten: Fäden, Nachrichten, Review-Stände, gewählte von/bis | `~/.local/share/merge-train/` (`$XDG_DATA_HOME`): `lokal/<projekt>.json` (von/bis), `zweige/<projekt>/<branch>.json`, `reviews/<mr>.json`, `beobachten/` | `aktenschrank/` |
 | Seiten-Cache, MR-Liste, Log der Anfragen | `~/.cache/merge-train/` (`$XDG_CACHE_HOME`) | – |
 
 ## Einstellungen

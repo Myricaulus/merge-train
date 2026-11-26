@@ -6,7 +6,7 @@ from .waggon import Fehler, Waggon, von_bis
 from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
-from .akte import (akte_bearbeiten, akte_datei, akte_lesen, entwuerfe_senden, faden_anhaengen, faden_damals, faden_finden,
+from .akte import (akte_bearbeiten, akte_datei, akte_lesen, andere_zweig_akten, entwuerfe_senden, faden_anhaengen, faden_damals, faden_finden,
                    faden_geaendert, faden_status, faeden_von, kommentar_finden,
     kommentar_status, review_kommentare, struktur_laden)
 from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
@@ -44,7 +44,8 @@ def agent_name(als=None, sonst=None):
 def gespraech_ziele(name=None):
     """Welche Gespräche meint der Agent? MR-Kennung/URL bzw. „myrling:skript“ → dieses; Projekt → dessen lokales
     Gespräch; ohne Angabe: das aktuelle Repo (lokales Gespräch und alle MRs und Myrling-Läufe mit diesem Klon). Ist der
-    Quell-Branch eines offenen MR ausgecheckt, steht dieser MR vorn statt des lokalen Gesprächs (zusammengelegt).
+    Branch des lokalen Gesprächs (branch_von) ein offener MR mit diesem Klon, steht dieser MR vorn statt des lokalen
+    Gesprächs (zusammengelegt: beide teilen die Akte).
     Rückgabe: Liste von Schlüsseln."""
     if name:
         mr = None
@@ -65,7 +66,7 @@ def gespraech_ziele(name=None):
     wurzel = repo_wurzel(ordner)
     if not wurzel:
         raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
-    eigen = zusammengelegt(wurzel) if KONF["gitlab"] else None  # MR mit ausgechecktem Quell-Branch: er ist der lokale Waggon
+    eigen = zusammengelegt(wurzel) if KONF["gitlab"] else None  # MR zum Branch des lokalen Waggons: er ist der lokale Waggon
     ziele = [eigen] if eigen else [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
     echt = os.path.realpath(wurzel)
     for waggon in alle_gespraeche(leere=True):
@@ -515,16 +516,18 @@ def faden_ungelesen(k):
 def faden_antworten(fid, text, erledigt=False, als=None, ziele=None, siehe=()):
     """Antwort auf Faden fid (Anfang genügt) – gesucht in ziele, sonst in allen Gesprächen. siehe: weitere see_also-
     Einträge für den Faden (wie bei faden_anlegen), geprüft gegen den aktuellen Stand."""
-    treffer = []
+    treffer = {}  # (waggon, Akte: None = die aktuelle, sonst die eines anderen Branches) je Faden-id
     for waggon in ziele or alle_gespraeche():
-        akte = akte_lesen(waggon)
-        treffer += [(waggon, k["id"]) for k in faeden_von(akte) if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid))]
+        for pfad in [None] + andere_zweig_akten(waggon):  # der Nutzer hat inzwischen den Branch gewechselt
+            for k in faeden_von(akte_lesen(waggon, pfad=pfad)):
+                if k["id"] == fid or (len(fid) >= 4 and k["id"].startswith(fid)):
+                    treffer.setdefault(k["id"], (waggon, pfad))
     if not treffer:
         raise Fehler(f"Gespräch {fid} gibt es nicht (merge-train agent feedback --alle)")
     if len(treffer) > 1:
-        raise Fehler(f"{fid} ist nicht eindeutig: " + ", ".join(t[1] for t in treffer))
-    waggon, kid = treffer[0]
-    with akte_bearbeiten(waggon) as akte:
+        raise Fehler(f"{fid} ist nicht eindeutig: " + ", ".join(treffer))
+    kid, (waggon, pfad) = next(iter(treffer.items()))
+    with akte_bearbeiten(waggon, pfad=pfad) as akte:
         k = faden_finden(akte, kid)
         if not k:
             raise Fehler(f"Gespräch {kid} wurde inzwischen gelöscht")

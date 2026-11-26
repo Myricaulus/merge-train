@@ -20,10 +20,14 @@ Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
 - Erweitern: neue Quelle = Unterklasse von `Quelle` plus eine von `Art` (mit `logo`), keine eigene Seite, keine
   `if lokal`-Ketten.
 - Ein Waggon je Branch (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
-  `mrs_mit_klon`, `zusammengelegt`, `im_mr_waggon`, `faeden_umziehen`, `Quelle.ein_waggon` (`quellen.py`),
+  `mrs_mit_klon`, `klon_mrs`, `zusammengelegt`, `im_mr_waggon`, `Quelle.ein_waggon` (`quellen.py`),
   `entwicklung_ziel`, `review_ziel` (`agent_cli.py`). Auschecken: `mr_auschecken` (erster Besuch),
   `auschecken_versuchen`, `auscheck_hinweis` (`review.py`, über `api/stand`), Aktion `auschecken`, `auscheckHinweis`
   (`web/review.js`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
+- Eine Akte je Branch (`docs/branch-akte.md`): `zweig_akte_pfad` (über `akte_datei`), `zweige_migrieren`,
+  `zweig_akten`, `andere_zweig_akten`, `zweig_verknuepfen` (Verweis auf die MR-Akte), `_seite_tauschen`
+  (`SEITEN_FELDER` unter `seiten`), `projekt_akte_lesen`/`projekt_akte_bearbeiten` (`akte.py`), `zweige_aufraeumen`
+  (`quellen.py`). Eine Akte eines anderen Branches: `pfad=` an `akte_lesen`/`akte_bearbeiten`.
 - Branch ohne MR, „MR erstellen“: `mr_quellbranch`, `mr_vorschlag`, `mr_planen`, `mr_erstellen` (`quellen.py`),
   `gitlab_klon`, `mrs_zum_branch`, `mr_anlegen`, `mr_uebernehmen` (`gitlab.py`), `branch_pushen(neu=True)`, Aktionen
   `mrplanen`/`mrerstellen` an `api/gitlab`, Dialog in `web/bahnhof.js`. Weitere Knöpfe einer Quelle im Kopf:
@@ -187,7 +191,7 @@ Achsen berechnet der Server.
 
 | Bedarf | Baustein |
 |---|---|
-| Daten je Waggon speichern | Akte: `akte_bearbeiten`, `akte_lesen` (`akte.py`) |
+| Daten je Waggon speichern | Akte: `akte_bearbeiten`, `akte_lesen` (`akte.py`); je Projekt statt je Branch: `projekt_akte_bearbeiten` |
 | git aufrufen | `git()` (`git.py`) |
 | Zeitstempel | `jetzt()` (`einstellungen.py`) |
 | GitLab aufrufen | `gitlab.py`, nur auf Knopfdruck |
