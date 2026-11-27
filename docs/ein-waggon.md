@@ -1,6 +1,6 @@
 # Ein Waggon je Branch (Zielbild)
 
-*Mit dem Nutzer abgestimmt am 26.11.2026. Schritte 1–3 und 4a sind gebaut, 4b steht als todo-Eintrag im Projekt.*
+*Mit dem Nutzer abgestimmt am 26.11.2026. Schritte 1–3 und 4a sind gebaut, 4b steht als todo-Eintrag im Projekt, 5 ist geplant.*
 
 ## Worum es geht
 
@@ -52,3 +52,5 @@ Läufe des Myrlings sind Skripte, keine Branches. Sie bleiben eine eigene Art.
    Branches teilen eine Akte (die des MR, die Branch-Datei verweist darauf), Fäden gelöschter oder gemergter Branches
    wandern ins Archiv. Danach (4b, weniger wichtig): Agent-Hinweise über die CLI statt über die Review-JSON
    (jira-review), mit fester id je Hinweis.
+5. **Eine Art „Branch“** (Bauplan: [`branch-waggon.md`](branch-waggon.md)): Waggon = Repo (origin) + Branch, eine Akte
+   für alle Klone; ein MR ist nur eine Schicht darauf. Lokale und MR-Art, Verweis und Zusammenlegen entfallen.
