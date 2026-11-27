@@ -82,14 +82,14 @@ def mr_html(w, mr, meta, dateien, commits, texte, struktur):
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
     ah = ansicht_html(w.url, "ganzer MR", ans) if ans else ""
-    abw = stand_html(struktur["ordner"], meta, struktur["refs"].get("commit_sha") or head)
+    abw = stand_html(struktur["ordner"], w.branch, meta, struktur["refs"].get("commit_sha") or head)
     titel = f'{mr.projekt}!{mr.iid}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
     return diff_seite(titel=f'!{mr.iid} {html.escape(meta.get("title") or "")}', sid=slug, lesen=lesen, daten=daten,
                       head=head, dateien=dateien, texte=texte, commits=commits, h1=f'{entwurf}{html.escape(meta.get("title") or "")}',
                       commits_titel="Beschreibung &amp; Commits", commits_liste=cl, nach_commits=abw + ah,
                       nach_h1=f'\n<a class="gl-link" href="{html.escape(web)}" target="_blank" rel="noopener">{html.escape(titel)} ↗</a>',
-                      sub_vor=f'{html.escape(meta.get("source_branch") or "")} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
+                      sub_vor=f'{html.escape(w.branch)} → {html.escape(meta.get("target_branch") or "")} · {html.escape(autor)} ·\n',
                       nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus dem lokalen Klon">· lokal: {html.escape(kurzpfad(struktur["ordner"]))}</span>'
                                + arbeitsstand_html(struktur["refs"]),
                       hilfe=hilfe, leer=leer)
@@ -116,10 +116,10 @@ STAND_KNOPF = {
                      '--force-with-lease={b}:{gl} origin {b}">⇡ force-push (with lease)</button>'}
 
 
-def stand_html(ordner, meta, head):
+def stand_html(ordner, branch, meta, head):
     """Meldung über den Diffs, wenn der lokale Quell-Branch nicht auf dem zuletzt geholten GitLab-Stand steht: rot,
     wenn lokal etwas fehlt oder auseinandergelaufen ist; sonst (lokal weiter, schon gepusht) als Hinweis."""
-    gl, branch = (meta.get("diff_refs") or {}).get("head_sha"), meta.get("source_branch") or ""
+    gl = (meta.get("diff_refs") or {}).get("head_sha")
     art = stand_zu_gitlab(ordner, branch, head, gl)
     if not art:
         return ""

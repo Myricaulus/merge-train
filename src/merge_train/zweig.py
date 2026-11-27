@@ -60,7 +60,7 @@ def holen_einmal(klon, branch):
     return True
 
 
-def branch_ort(w, akte=None):
+def branch_ort(w, akte=None, *, holen=True):
     """(Klon, ausgecheckt): aus welchem Klon der Branch gezeigt wird. Ist er im Haupt-Klon ausgecheckt, dieser
     (ausgecheckt = True: nur dort gibt es den Arbeitsstand); sonst der Haupt-Klon, wenn er den Branch hat (lokal oder
     origin/…), sonst der erste Klon oder Worktree mit dem Branch. Fehlt er überall, einmal git fetch im Haupt-Klon."""
@@ -72,30 +72,31 @@ def branch_ort(w, akte=None):
     for k in dict.fromkeys(([haupt] if haupt else []) + klone):
         if ref_sha(k, w.branch):
             return k, False
-    if haupt and holen_einmal(haupt, w.branch) and ref_sha(haupt, w.branch):
+    if holen and haupt and holen_einmal(haupt, w.branch) and ref_sha(haupt, w.branch):
         return haupt, False
     raise Fehler(f"{w.name}: Branch {w.branch} in keinem Klon von {w.repo}" + (
         f" ({', '.join(kurzpfad(k) for k in klone)})" if klone else
         " – kein Klon bekannt: unter [repos] eintragen, klon_ordner setzen oder „merge-train agent zeigen“ im Repo aufrufen"))
 
 
-def branch_refs(w, akte=None):
+def branch_refs(w, akte=None, *, holen=True):
     """(Klon, refs) des Branches. Mit MR-Schicht: Basis = merge-base mit dem Ziel des MR (bzw. die Basis aus GitLab,
     wenn GitLab beim letzten Holen auf demselben Stand war), Arbeitsstand nur als eigener MR. Ohne: gegen von des
     Projekts (Teilstand <von>-wip: diff_basis), Arbeitsstand bei bis = arbeitsstand. Den Arbeitsstand gibt es nur im
-    Haupt-Klon (branch_ort); dann refs.arbeitsstand und refs.commit_sha (letzter Commit des Branches)."""
-    akte = akte or akte_lesen(w)
-    klon, aus = branch_ort(w, akte)
+    Haupt-Klon (branch_ort); dann refs.arbeitsstand und refs.commit_sha (letzter Commit des Branches).
+    holen=False: nur vorhandene Refs benutzen, etwa für den Zug."""
+    akte = akte if akte is not None else akte_lesen(w)
+    klon, aus = branch_ort(w, akte, holen=holen)
     commit = (git(klon, "rev-parse", "HEAD").strip() if w.branch == "HEAD" and aus else ref_sha(klon, w.branch))
     mr = mr_von(akte) if KONF["gitlab"] else None
     if mr:
         meta = akte.get("meta") or {}
-        ziel = meta.get("target_branch") or (akte.get("gitlab") or {}).get("target_branch") or ""
+        ziel = meta.get("target_branch") or ""
         tgt = ref_sha(klon, ziel, remote_zuerst=True)
-        if not tgt and holen_einmal(klon, ziel):
+        if not tgt and holen and holen_einmal(klon, ziel):
             tgt = ref_sha(klon, ziel, remote_zuerst=True)
         if not tgt:
-            raise Fehler(f"{kurzpfad(klon)}: Ziel-Branch {ziel} fehlt (auch nach git fetch)")
+            raise Fehler(f"{kurzpfad(klon)}: Ziel-Branch {ziel} fehlt" + (" (auch nach git fetch)" if holen else ""))
         zref = f"origin/{ziel}" if git(klon, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{ziel}", check=False) else ziel
         gl = meta.get("diff_refs") or {}
         if gl.get("head_sha") == commit and gl.get("base_sha") and \

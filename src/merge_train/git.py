@@ -195,7 +195,10 @@ def wip_sha(wurzel, von):
 
 def diff_basis(wurzel, von, bis):
     """Basis des Diffs eines lokalen Projekts (bis = sha): der Teilstand <von>-wip, sonst der gemeinsame Vorgänger."""
-    return wip_sha(wurzel, von) or git(wurzel, "merge-base", von, bis).strip()
+    basis = wip_sha(wurzel, von) or (git(wurzel, "merge-base", von, bis, check=False) or "").strip()
+    if not basis:
+        raise Fehler(f"{kurzpfad(wurzel)}: kein gemeinsamer Vorgänger von {von} und {bis}")
+    return basis
 
 
 def ohne_basis(wurzel, von=None, bis=None):
@@ -240,16 +243,19 @@ def finde_repos(alle=False):
 
 def statistik(wurzel, von=None, bis=None):
     von, bis = von or von_bis(projektname(wurzel))[0], bis_sha(wurzel, bis)
-    basis = diff_basis(wurzel, von, bis)
+    return dict(diff_statistik(wurzel, diff_basis(wurzel, von, bis), bis, von, bis),
+                p=projektname(wurzel), datei=dateiname(projektname(wurzel)), status="offen")
+
+
+def diff_statistik(wurzel, basis, bis, commit_von, commit_bis):
+    """Dateien und Zeilen des Diffs; Commits und Todos aus dem angegebenen Log-Bereich."""
     plus = minus = dateien = 0
     for z in git(wurzel, "diff", "--numstat", "--find-renames", basis, bis).splitlines():
         a, b, _ = z.split("\t", 2); dateien += 1
         if a != "-": plus += int(a); minus += int(b)
-    log = git(wurzel, "log", "--format=%B", f"{von}..{bis}")
-    return {"p": projektname(wurzel), "datei": dateiname(projektname(wurzel)), "plus": plus, "minus": minus,
-            "dateien": dateien, "commits": int(git(wurzel, "rev-list", "--count", f"{von}..{bis}")),
-            "todos": sorted(set(re.findall(r"todo:([\w.-]+)", log))), "status": "offen",
-            "sha": bis}
+    log = git_commits(wurzel, commit_von, commit_bis)
+    todos = {t for c in log for t in re.findall(r"todo:([\w.-]+)", c[2] + " " + c[3])}
+    return {"plus": plus, "minus": minus, "dateien": dateien, "commits": len(log), "todos": sorted(todos), "sha": bis}
 
 
 def kurzpfad(p):

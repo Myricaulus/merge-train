@@ -661,7 +661,7 @@ class DiskussionenTest(unittest.TestCase):
         from merge_train.quellen import mr_wagen_fuer
         n = self.note
         mr = mr_akte("g/fertig", 3)
-        wagen = lambda: mr_wagen_fuer(mr, akte_lesen(mr), "", 0)
+        wagen = lambda: mr_wagen_fuer(mr, akte_lesen(mr), "")
         with akte_bearbeiten(mr) as akte:
             review.diskussionen_abgleichen(akte, [{"id": "x", "notes": [n(50, 5, "Frage", resolved=False)]},
                                                   {"id": "y", "notes": [n(51, 5, "Noch eine", resolved=False)]}], 1)
@@ -996,7 +996,7 @@ class AktualisierenTest(unittest.TestCase):
         with self.assertRaises(Fehler):  # Lease: origin steht nicht auf dem angegebenen Stand
             branch_pushen(self.klon, "mr", gl)
         self.assertIn("force-with-lease", branch_pushen(self.klon, "mr", neu))
-        self.assertEqual(self.g("rev-parse", "mr", ort=f"{self.d}/origin.git"), neu2)
+        self.assertEqual(self.g("--git-dir=origin.git", "rev-parse", "mr", ort=self.d), neu2)
         anders = self.commit(self.oben, "x"); self.g("push", "-qf", "origin", "HEAD:mr", ort=self.oben)
         self.g("fetch", "-q", ort=self.klon)
         self.assertEqual(stand_zu_gitlab(self.klon, "mr", neu2, anders), "abweichend")
@@ -1092,19 +1092,19 @@ class ZweigeTest(unittest.TestCase):
         alt = (g.PROJEKTE_LISTE[:], dict(e.KONF))
         try:
             g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = [w]
-            e.KONF.update(von="reviewed", bis="claude", zweige={})
+            e.KONF.update(lokal=True, gitlab=False, von="reviewed", bis="claude", zweige={})
             self.assertEqual(von_bis("demo"), ("reviewed", "claude"))
             self.assertEqual(g.finde_repos(), [])  # Branches fehlen
             self.assertEqual(g.finde_repos(alle=True), [w])  # direkt genannt: zum Einstellen im Zug
-            self.assertEqual(q.stand_oder_fehlt(w)["status"], "fehlt")
+            self.assertEqual(q.branch_wagen()[0]["status"], "fehlt")
             self.assertFalse(q.projekt_einstellen("demo", "gibtsnicht", "x")[0])
             self.assertTrue(q.projekt_einstellen("demo", "main", "x")[0])
             self.assertEqual(von_bis("demo"), ("main", "x"))
             self.assertEqual(g.finde_repos(), [w])
-            self.assertEqual(q.stand_oder_fehlt(w)["commits"], 1)
+            self.assertEqual(q.branch_wagen()[0]["commits"], 1)
             sh("switch", "-q", "--orphan", "neu"); schreiben(f"{w}/a", "3\n"); sh("add", "a"); sh("commit", "-qm", "c")
             self.assertTrue(q.projekt_einstellen("demo", "main", "neu")[0])  # ohne gemeinsamen Vorgänger (Rebase)
-            self.assertEqual(q.stand_oder_fehlt(w)["marke"], "⚠ keine Basis")
+            self.assertEqual(q.branch_wagen()[0]["marke"], "⚠ keine Basis")
             self.assertTrue(q.projekt_einstellung("demo")["ohne_basis"])
             self.assertTrue(q.projekt_einstellen("demo", "main", "x")[0]); sh("switch", "-q", "x"); sh("branch", "-qD", "neu")
             self.assertTrue(Waggon(repo="demo", branch="x").kann["fertig"])
@@ -1159,7 +1159,7 @@ class ZweigeTest(unittest.TestCase):
         alt = (g.PROJEKTE_LISTE[:], dict(e.KONF))
         try:
             g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = [w]
-            e.KONF.update(von="reviewed", bis="claude", zweige={})
+            e.KONF.update(lokal=True, gitlab=False, von="reviewed", bis="claude", zweige={})
             wg = frische_akte("wipdemo", "claude")
             kopf = sh("rev-parse", "claude").strip()
             st = q.BRANCH.seite(wg)[1]
@@ -1173,7 +1173,7 @@ class ZweigeTest(unittest.TestCase):
             self.assertNotIn("b", sh("ls-tree", "--name-only", "reviewed-wip").split())
             self.assertEqual(sh("status", "--porcelain"), " M c\n")
             self.assertEqual(g.statistik(w)["dateien"], 1)
-            wagen = q.lokal_wagen([g.statistik(w)])
+            wagen = q.branch_wagen()
             self.assertTrue(wagen[0]["abgegeben"])
             self.assertNotIn("abgehakt", akte_lesen(wg))
             st = q.BRANCH.seite(wg)[1]
@@ -1183,10 +1183,44 @@ class ZweigeTest(unittest.TestCase):
             self.assertTrue(ok, text)
             self.assertEqual(sh("rev-parse", "reviewed"), sh("rev-parse", "claude"))
             self.assertEqual(sh("branch", "--list", "reviewed-wip"), "")
-            self.assertEqual(q.lokal_wagen([g.statistik(w)])[0]["status"], "fertig")
+            self.assertEqual(q.branch_wagen()[0]["status"], "fertig")
         finally:
             g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = alt[0]
             e.KONF.clear(); e.KONF.update(alt[1])
+
+    def test_mr_wagen_zaehlt_diff_der_seite(self):
+        """Lokales „von“ und MR-Ziel weichen ab: ein Wagen und dieselben Änderungen wie auf der Seite."""
+        from unittest.mock import patch
+        from merge_train import git as g, einstellungen as e, quellen as q
+        w = f"{tempfile.mkdtemp(dir=T)}/zugdemo"
+        def sh(*a):
+            return subprocess.run(["git", "-C", w, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                  capture_output=True, text=True, check=True).stdout
+        os.makedirs(w)
+        sh("init", "-q", "-b", "main")
+        sh("remote", "add", "origin", "https://gitlab.example/g/zugdemo.git")
+        sh("commit", "-qm", "Basis", "--allow-empty")
+        sh("switch", "-qc", "reviewed")
+        schreiben(f"{w}/reviewed.txt", "schon lokal abgenommen\n")
+        sh("add", "."); sh("commit", "-qm", "lokal abgenommen")
+        sh("switch", "-qc", "claude")
+        schreiben(f"{w}/feature.txt", "neu\n")
+        sh("add", "."); sh("commit", "-qm", "neue Änderung")
+        mr = mr_akte("g/zugdemo", 1, branch="claude")
+        with patch.object(g, "PROJEKTE_LISTE", [w]), patch.dict(e.KONF, lokal=True, gitlab=True, von="reviewed", bis="claude",
+                                                              zweige={}), patch.object(q, "mr_liste", return_value=([], None)):
+            self.assertEqual(g.statistik(w)["dateien"], 1)
+            pfad, struktur = q.BRANCH.seite(mr)
+            with open(pfad, encoding="utf-8") as f:
+                self.assertIn("2 Commit(s) · 2 Datei(en)", f.read())
+            wagen, = q.branch_wagen()
+            self.assertEqual((wagen["p"], wagen["quelle"], wagen["dateien"], wagen["plus"], wagen["minus"], wagen["commits"]),
+                             (mr.id, "gitlab", len(struktur["dateien"]), 2, 0, 2))
+            self.assertEqual(wagen["sha"], struktur["refs"]["head_sha"])
+            akte = akte_lesen(mr)
+            self.assertEqual(set(akte["gitlab"]), {"host", "projekt", "iid"})
+            self.assertNotIn("source_branch", akte["meta"])
+            self.assertTrue(akte["meta"]["web_url"].endswith("/merge_requests/1"))
 
     def test_toml_ohne_tomllib(self):
         from merge_train.einstellungen import _toml_einfach

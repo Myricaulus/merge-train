@@ -140,7 +140,7 @@ vorher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("r
 s1 = m["arbeitsstand"](w); s2 = m["arbeitsstand"](w)
 m["_ARBEIT"].clear(); s3 = m["arbeitsstand"](w)  # ohne Zwischenspeicher: gleicher Inhalt, gleicher sha
 nachher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("rev-parse", "HEAD"))
-st = m["statistik"](w)
+st, = m["branch_wagen"]()
 pfad, struktur = m["branch_seite"](m["projekt_waggon"](w))
 print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
                   "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
@@ -158,7 +158,7 @@ def arbeitsstand_test():
     open(f"{w}/a.py", "w").write("a = 1\n"); open(f"{w}/weg.py", "w").write("w = 1\n")
     g("add", "-A"); g("commit", "-qm", "Start")
     g("checkout", "-qb", "feature/x")
-    open(f"{w}/a.py", "w").write("a = 2\n")             # geändert, nicht committet
+    open(f"{w}/a.py", "w").write("a = 20\n")            # andere Größe: unabhängig vom Git-Statcache
     open(f"{w}/neu.py", "w").write("n = 1\n")            # neu, nicht hinzugefügt
     os.remove(f"{w}/weg.py")                              # gelöscht
     open(f"{w}/.gitignore", "w").write("*.log\n"); open(f"{w}/x.log", "w").write("ignoriert\n")
@@ -172,8 +172,8 @@ def arbeitsstand_test():
         pruefe(False, "Arbeitsstand: " + (r.stderr.strip().splitlines() or ["?"])[-1]); return
     pruefe(d["s1"] == d["s2"] == d["s3"] and d["s1"] != d["head"], "Arbeitsstand: eigener Commit, gleicher Inhalt → gleicher sha")
     pruefe(d["unveraendert"], "Arbeitsstand: Index, Arbeitsverzeichnis und Branch unverändert")
-    pruefe(sorted(d["baum"]) == [".gitignore", "a.py", "neu.py"] and d["inhalt"] == "a = 2\n",
-           "Arbeitsstand: geänderte, neue und gelöschte Dateien, ignorierte nicht")
+    pruefe(sorted(d["baum"]) == [".gitignore", "a.py", "neu.py"] and d["inhalt"] == "a = 20\n",
+           f"Arbeitsstand: geänderte, neue und gelöschte Dateien, ignorierte nicht – {d['baum']!r}, {d['inhalt']!r}")
     pruefe(d["stat"]["dateien"] == 4 and d["stat"]["sha"] == d["s1"] and sorted(d["dateien"]) == [".gitignore", "a.py", "neu.py", "weg.py"]
            and d["seite"], "Arbeitsstand: Waggon-Statistik und Diff-Seite gegen von")
     pruefe(d["fertig"] is False, "Arbeitsstand: „fertig“ ist aus (würde von verschieben)")
@@ -515,7 +515,7 @@ def mr_erstellen_test(env2, hol):
         pruefe(r.get("ok") and r.get("url") == "/b/" + BR2 and erstellt
                and erstellt[0]["title"] == "Draft: Zweiter MR" and erstellt[0]["source_branch"] == "zweiter"
                and erstellt[0]["target_branch"] == "main", "MR erstellen: angelegt (Entwurf, Titel bereinigt)" + ("" if r.get("ok") else f" – {r}"))
-        pruefe(sh("git", "-C", origin, "rev-parse", "zweiter").stdout == g("rev-parse", "zweiter").stdout
+        pruefe(sh("git", f"--git-dir={origin}", "rev-parse", "zweiter").stdout == g("rev-parse", "zweiter").stdout
                and g("rev-parse", "--abbrev-ref", "zweiter@{upstream}").stdout.strip() == "origin/zweiter",
                "MR erstellen: Branch neu gepusht, mit Upstream")
         z = json.loads(hol("/zug.js?akt=projekt:repo")[len("window.MR_ZUG="):-1])

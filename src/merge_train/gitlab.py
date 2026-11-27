@@ -182,8 +182,7 @@ def mr_normalisieren(meta, mr):
 
 # MR-Daten (Titel, Beschreibung, Branches …) kommen aus dem Cache im Review-Stand. GitLab wird nur auf
 # Anforderung gefragt: CLI (merge-train <MR>, agent pruefen/zeigen – also vom jira-review), Güterbahnhof, Abschließen.
-META_FELDER = ("title", "description", "web_url", "source_branch", "target_branch", "draft", "work_in_progress",
-               "diff_refs", "sha", "iid", "state")
+META_FELDER = ("title", "description", "web_url", "target_branch", "draft", "work_in_progress", "diff_refs", "sha", "state")
 
 
 class MetaFehlt(GitLabFehler):
@@ -210,9 +209,9 @@ def mr_meta_holen(mr):
     autor = roh.get("author") or {}
     meta["author"] = {"name": autor.get("name", ""), "id": autor.get("id")}  # id: eigener MR? (eigener_mr)
     meta["_zeit"] = datetime.now().strftime("%d.%m. %H:%M")
-    if not meta.get("source_branch"):
+    if not roh.get("source_branch"):
         raise GitLabFehler(f"{mr.name}: GitLab nennt keinen Quell-Branch")
-    w = Waggon(repo=mr.projekt.lower(), branch=meta["source_branch"])
+    w = Waggon(repo=mr.projekt.lower(), branch=roh["source_branch"])
     with akte_bearbeiten(w) as akte:
         alt = mr_von(akte)
         if alt and alt.iid != mr.iid:  # neuer MR für denselben Branch: die alte Schicht ins Archiv
@@ -224,9 +223,7 @@ def mr_meta_holen(mr):
         if os.path.exists(frueher):
             akten_vereinigen(akte, _json_lesen(frueher) or {})
         akte["meta"] = meta
-        akte["gitlab"] = {"host": mr.host, "projekt": mr.projekt, "iid": mr.iid, "web_url": meta.get("web_url") or "",
-                          "titel": meta.get("title") or "", "source_branch": meta["source_branch"],
-                          "target_branch": meta.get("target_branch") or ""}
+        akte["gitlab"] = mr._asdict()
     if os.path.exists(frueher):
         os.remove(frueher)
     return w, meta

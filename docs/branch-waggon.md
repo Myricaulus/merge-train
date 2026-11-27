@@ -1,6 +1,6 @@
 # Eine Art „Branch“ (Schritt 5 aus `ein-waggon.md`): Bauplan
 
-*Mit dem Nutzer abgestimmt am 27.11.2026, noch nicht gebaut. Ersetzt den Verweis aus Schritt 4a (`branch-akte.md`).*
+*Mit dem Nutzer abgestimmt am 27.11.2026. Ersetzt den Verweis aus Schritt 4a (`branch-akte.md`).*
 
 ## Ziel
 
@@ -40,7 +40,8 @@ doppelt.
 
 - `zweige/<quote(repo)>/<quote(branch)>.json`: **die** Akte des Branches. Felder wie heute; `mr` wird `{repo, branch}`.
   Die MR-Schicht liegt flach daneben wie heute in der MR-Akte (`meta`, `diskussionen`, Review-Kommentare, `hinweise` …),
-  dazu `gitlab` = `{host, projekt, iid}` des aktuellen MR. Keine `seiten`, kein Verweis.
+  dazu `gitlab` = `{host, projekt, iid}` des aktuellen MR. Titel, URL und Ziel-Branch stehen nur in `meta`, der
+  Quell-Branch in der Waggon-Kennung. Keine `seiten`, kein Verweis.
 - Neuer MR für denselben Branch (anderer iid): die Felder der alten MR-Schicht gehen als Kopie nach
   `zweige/<repo>/archiv/`, die Fäden bleiben.
 - Begleitdateien (`.horcht`, `.prompt`, `.seite`, `.agent`) neben der Akte des Branches: ein Zuhörer je Branch.
@@ -80,7 +81,8 @@ und Routen `*.html`/`mr/…` (nur noch als Weiterleitung).
 
 **5c Zug und Server**
 - Ein Zugbau: je Projekt der Branch, den es zeigt; je MR aus der MR-Liste sein Quell-Branch; gleiche Kennung = ein
-  Waggon.
+  Waggon. Erst nach Kennung zusammenführen, dann aus denselben Diff-Refs wie die Seite zählen. Der Zug holt keine
+  Git-Refs nach; fehlen sie für einen MR, zeigt er ersatzweise die Dateizahl aus der MR-Liste.
 - Routen `b/<Kennung>`; `*.html`, `mr/…`, `mr-oeffnen` leiten weiter. `api/projekt` (von/bis) über den Ordner des
   Klons.
 - `web/*.js`: Kennung statt `projekt:`/MR-Pfad, sonst nur `kann`.

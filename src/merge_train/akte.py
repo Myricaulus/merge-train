@@ -13,7 +13,7 @@ quellen.zweige_aufraeumen nach zweige/<repo>/archiv/. Alte Akten (vor Schritt 5)
 
 Aufbau einer Akte:
   mr               Waggon.als_dict() ({repo, branch} bzw. {myrling})
-  gitlab           MR-Schicht: {host, projekt, iid, web_url, titel, source_branch, target_branch} des MR zu diesem
+  gitlab           MR-Identität: {host, projekt, iid} des MR zu diesem
                    Branch, sobald MR-Daten geholt sind (gitlab.mr_meta_holen); ohne: keine Kommentare der Quelle
   meta             MR-Daten aus GitLab (META_FELDER in gitlab.py, _zeit = Abruf)
   klon             gemerkter Klon (agent zeigen, MR erstellen), falls er sonst nicht zu finden ist
@@ -130,14 +130,21 @@ def akten_vereinigen(ziel, dazu):
     return ziel
 
 
-MR_FELDER = ("web_url", "titel", "source_branch", "target_branch")  # standen bis Schritt 5 in „mr“ der MR-Akte
-
-
-def gitlab_schicht(alt_mr, meta=None):
-    """Feld „gitlab“ aus dem „mr“ einer alten MR-Akte (host, projekt, iid, MR_FELDER)."""
-    meta = meta or {}
-    return {"host": alt_mr.get("host"), "projekt": alt_mr.get("projekt"), "iid": alt_mr.get("iid"),
-            **{f: alt_mr.get(f) or meta.get({"titel": "title"}.get(f, f)) or "" for f in MR_FELDER}}
+def mr_schicht_vereinheitlichen(akte):
+    """Alte MR-Schicht beim Laden: Identität in gitlab, Metadaten in meta, Quell-Branch in der Waggon-Kennung."""
+    g = akte.get("gitlab")
+    if not g:
+        return
+    meta = akte.get("meta") or {}
+    for feld, ziel in (("titel", "title"), ("web_url", "web_url"), ("target_branch", "target_branch")):
+        alt = g.pop(feld, None)
+        if alt and not meta.get(ziel):
+            meta[ziel] = alt
+    g.pop("source_branch", None)
+    meta.pop("source_branch", None)
+    meta.pop("iid", None)
+    if meta or "meta" in akte:
+        akte["meta"] = meta
 
 
 _MIGRIERT = [False]
@@ -181,8 +188,8 @@ def akten_migrieren():
             quelle = m.get("source_branch") or (akte.get("meta") or {}).get("source_branch")
             if not (m.get("projekt") and m.get("iid") and quelle):
                 continue  # ohne MR-Daten: bleibt, bis „MR-Daten holen“ sie mitnimmt
-            akte["gitlab"] = gitlab_schicht(m, akte.get("meta"))
-            akte.pop("mr")
+            akte["gitlab"] = akte.pop("mr")
+            mr_schicht_vereinheitlichen(akte)
             dazu(m["projekt"].lower(), quelle, akte, [p[:-5]])
             os.remove(p)
         for pfad, akte in neu.items():
@@ -263,6 +270,7 @@ def akte_laden(waggon, kaputte_beiseite=False, pfad=None):
         akte = {}
     akte.setdefault("mr", waggon.als_dict())
     akte.setdefault("kommentare", []); akte.setdefault("hinweise", {}); akte.setdefault("hinweis_dateien", [])
+    mr_schicht_vereinheitlichen(akte)
     return akte
 
 

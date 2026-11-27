@@ -554,11 +554,11 @@ def mr_daten_aktion(anfrage):
 
 
 def branch_aktion(anfrage, tun):
-    """Knopf an der Stand-Meldung eines MR: tun(Klon, meta) am Quell-Branch, dann die MR-Daten holen."""
+    """Knopf an der Stand-Meldung eines MR: tun(Klon, Branch, GitLab-SHA), dann die MR-Daten holen."""
     mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
     meta = akte_lesen(mr).get("meta") or {}
     ordner, _ = branch_ort(mr)
-    text = tun(ordner, meta)
+    text = tun(ordner, mr.branch, (meta.get("diff_refs") or {}).get("head_sha") or "")
     try:  # der Branch ist schon geändert: scheitert GitLab, trotzdem melden und neu laden
         text += " · " + mr_daten_holen(mr)["text"]
     except Fehler as e:
@@ -570,15 +570,14 @@ def aktualisieren_aktion(anfrage):
     """Rote Meldung „GitLab ist weiter“: Quell-Branch im Klon von origin nachziehen (siehe branch_aktualisieren), dann
     die MR-Daten holen – wurde inzwischen weiter gepusht, ist origin schon neuer als der zuletzt geholte GitLab-Stand,
     und die Meldung bliebe sonst (ohne Knopf) stehen."""
-    return branch_aktion(anfrage, lambda ordner, meta: branch_aktualisieren(ordner, meta.get("source_branch") or ""))
+    return branch_aktion(anfrage, lambda ordner, branch, _: branch_aktualisieren(ordner, branch))
 
 
 def pushen_aktion(anfrage):
     """Meldung „lokal weiter / umgeschrieben“: Quell-Branch pushen (branch_pushen, umgeschrieben mit Lease auf den
     zuletzt geholten GitLab-Stand), dann die MR-Daten holen. Hat GitLab den Push noch nicht verarbeitet, sagt die
     Meldung danach „gepusht“ mit „↻ MR-Daten“."""
-    return branch_aktion(anfrage, lambda ordner, meta: branch_pushen(
-        ordner, meta.get("source_branch") or "", (meta.get("diff_refs") or {}).get("head_sha") or ""))
+    return branch_aktion(anfrage, branch_pushen)
 
 
 def lokales_projekt(anfrage):
@@ -612,7 +611,7 @@ def auschecken_aktion(anfrage):
     if not akte.get("meta"):
         raise Fehler("Noch keine MR-Daten – erst „↻ MR-Daten“")
     erledigt, text = auschecken_versuchen(mr, akte)
-    return {"ok": erledigt, "text": text or f"{akte['meta'].get('source_branch')} ist ausgecheckt", "neu_laden": erledigt}
+    return {"ok": erledigt, "text": text or f"{mr.branch} ist ausgecheckt", "neu_laden": erledigt}
 
 
 GITLAB_AKTIONEN = {"mrliste": mr_liste_aktion, "mrdaten": mr_daten_aktion, "aktualisieren": aktualisieren_aktion,

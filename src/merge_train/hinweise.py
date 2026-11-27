@@ -6,7 +6,7 @@ from .git import fehlt_grund, git, inhalt
 from .zeilen import alt_zeile, bereich_vorwaerts, im_diff
 from .diff_html import zeilenzahl
 from .akte import datei_index
-from .gitlab import mr_ref
+from .gitlab import mr_ref, mr_von
 
 def stand_waehlen(ordner, head, ref, ziel):
     """"ref" eines Verweises → (Commit, Name für die Seite) bzw. (None, Problem). "ziel" = Zielbranch (ziel: sein Ref
@@ -147,7 +147,7 @@ def hinweise_lesen(pfad):
     return daten
 
 
-def hinweis_passt(pfad, info):
+def hinweis_passt(pfad, mr, branch):
     try:
         h = hinweise_lesen(pfad)
     except (OSError, ValueError):
@@ -157,16 +157,19 @@ def hinweis_passt(pfad, info):
             ref = mr_ref(h["mr"], os.path.dirname(pfad))
         except Fehler:
             return False
-        return ref.iid == info.get("iid") and (ref.projekt or "").lower() == (info.get("projekt") or "").lower()
-    return bool(h.get("branch")) and h["branch"] == info.get("source_branch")
+        return bool(mr and ref.iid == mr.iid and ref.projekt.lower() == mr.projekt.lower())
+    return bool(h.get("branch")) and h["branch"] == branch
 
 
-def hinweis_dateien(mr, akte):
+def hinweis_dateien(waggon, akte):
     dateien = [p for p in akte["hinweis_dateien"] if os.path.exists(p)]
+    mr = mr_von(akte)
+    if not mr:
+        return dateien
     for muster in KONF["hinweise"]:
         for p in sorted(glob.glob(os.path.expanduser(muster))):
             p = os.path.abspath(p)
-            if p not in dateien and hinweis_passt(p, akte.get("gitlab") or {}):
+            if p not in dateien and hinweis_passt(p, mr, waggon.branch):
                 dateien.append(p)
     return dateien
 

@@ -13,21 +13,20 @@ Verhalten hier, die gehören in den Docstring.
 ### 1. Mehrere Quellen für Waggons
 Lokale Branches, Läufe des Myrlings und GitLab-MRs, alle in einem Zug.
 - Achsen: Quelle (lokal, Myrling, GitLab; geplant GitHub), Waggon-Art.
-- Ort: `quellen.py` (Basis `Quelle`, `Lokal`, `Myrling`, `GitLab`, `quelle(waggon)`), `waggon.py` (Basis `Art`,
-  `LokalArt`, `MyrlingArt`, `MrArt` in `ARTEN`), `gitlab.py`, `myrling.py` (Vertrag oben im Modul), `cli.py`.
-- Bausteine: `von_bis(projekt)` für von/bis eines lokalen Projekts, `stand_oder_fehlt` bei fehlendem Branch oder
-  Vorgänger, `lauf_ort` (Basis je Datei eines Laufs), Waggon-Karte `projekt_einstellung`/`projekt_einstellen`.
-- Erweitern: neue Quelle = Unterklasse von `Quelle` plus eine von `Art` (mit `logo`), keine eigene Seite, keine
-  `if lokal`-Ketten.
-- Ein Waggon je Branch (`docs/ein-waggon.md`): `eigener_mr`, `ausgecheckt`, `eigener_arbeitsstand` (`gitlab.py`),
-  `mrs_mit_klon`, `klon_mrs`, `zusammengelegt`, `im_mr_waggon`, `Quelle.ein_waggon` (`quellen.py`),
-  `entwicklung_ziel`, `review_ziel` (`agent_cli.py`). Auschecken: `mr_auschecken` (erster Besuch),
+- Ort: `quellen.py` (`Quelle`, `Branch`, `Myrling`, `quelle(waggon)`), `waggon.py` (`Art`, `BranchArt`, `MyrlingArt`),
+  `gitlab.py`, `myrling.py` (Vertrag oben im Modul), `cli.py`.
+- Bausteine: `von_bis(projekt)` für von/bis eines lokalen Projekts, `lauf_ort` (Basis je Datei eines Laufs),
+  Waggon-Karte `projekt_einstellung`/`projekt_einstellen`.
+- Erweitern: Git-Anbieter als Schicht auf `Branch`, andere Waggon-Art als Unterklasse von `Quelle` und `Art`.
+- Ein Waggon je Branch (`docs/branch-waggon.md`): `branch_wagen` und `branch_wagen_fuer` (`quellen.py`), Vergleich
+  für Wagen und Seite aus `branch_refs` (`zweig.py`), Zählung mit `diff_statistik` (`git.py`). Auschecken:
+  `mr_auschecken` (erster Besuch),
   `auschecken_versuchen`, `auscheck_hinweis` (`review.py`, über `api/stand`), Aktion `auschecken`, `auscheckHinweis`
-  (`web/review.js`). Wo lokal und MR zusammengehen, fragt der Code `zusammengelegt` bzw. `ein_waggon`, keine eigene Prüfung.
-- Eine Akte je Branch (`docs/branch-akte.md`): `zweig_akte_pfad` (über `akte_datei`), `zweige_migrieren`,
-  `zweig_akten`, `andere_zweig_akten`, `zweig_verknuepfen` (Verweis auf die MR-Akte), `_seite_tauschen`
-  (`SEITEN_FELDER` unter `seiten`), `projekt_akte_lesen`/`projekt_akte_bearbeiten` (`akte.py`), `zweige_aufraeumen`
-  (`quellen.py`). Eine Akte eines anderen Branches: `pfad=` an `akte_lesen`/`akte_bearbeiten`.
+  (`web/review.js`).
+- Eine Akte je Branch: `akte_datei`, `zweig_akten`, `andere_zweig_akten`, `akten_migrieren`,
+  `projekt_akte_lesen`/`projekt_akte_bearbeiten` (`akte.py`), `zweige_aufraeumen` (`quellen.py`).
+  MR-Identität: `mr_von` (`gitlab.py`), Metadaten unter `meta`; alte Felder liest `mr_schicht_vereinheitlichen`
+  (`akte.py`). Eine Akte eines anderen Branches: `pfad=` an `akte_lesen`/`akte_bearbeiten`.
 - Branch ohne MR, „MR erstellen“: `mr_quellbranch`, `mr_vorschlag`, `mr_planen`, `mr_erstellen` (`quellen.py`),
   `gitlab_klon`, `mrs_zum_branch`, `mr_anlegen`, `mr_uebernehmen` (`gitlab.py`), `branch_pushen(neu=True)`, Aktionen
   `mrplanen`/`mrerstellen` an `api/gitlab`, Dialog in `web/bahnhof.js`. Weitere Knöpfe einer Quelle im Kopf:

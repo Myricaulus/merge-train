@@ -4,14 +4,14 @@ import json, os, re, subprocess
 from datetime import datetime
 from .einstellungen import ARBEITSSTAND, KONF, RUNDE, SPERRE, dateiname, melden, projektname
 from .waggon import BRANCH_ART, MYRLING_ART, Fehler, Waggon, fertig_moeglich, von_bis, zweige_gewaehlt, zweige_standard
-from .git import (STAND_TEXT, branch_pushen, branch_von, fehlende_zweige, finde_repos, git, git_oder_fehler, haupt_klon,
-                  kurzpfad, ohne_basis, projekt_wurzel, repo_kennung, stand_zu_gitlab, statistik, wip_name, wip_sha,
-                  worktrees)
+from .git import (STAND_TEXT, branch_pushen, branch_von, diff_statistik, fehlende_zweige, finde_repos, git, git_oder_fehler,
+                  haupt_klon, kurzpfad, ohne_basis, projekt_wurzel, repo_kennung, stand_zu_gitlab, statistik, wip_name,
+                  wip_sha, worktrees)
 from .akte import (akte_bearbeiten, akte_lesen, akten_sperre, ausstehend, diskussionen_stand, faeden_archivieren,
                    faeden_zaehlen, in_gitlab, projekt_akte_bearbeiten, review_kommentare, struktur_laden, zweig_ordner)
 from .gitlab import (ausgecheckt, eigener_mr, gitlab_klon, mr_anlegen, mr_index, mr_liste, mr_ref, mr_uebernehmen,
                      mr_von, mr_waggon, mrs_zum_branch)
-from .zweig import gemerkte_klone, projekt_von, projekt_waggon
+from .zweig import branch_refs, gemerkte_klone, projekt_von, projekt_waggon
 from .abhaken import abhaken, haken_weg, teil_abgeben
 from .seite import LAUF_STAND, branch_seite, myrling_seite
 from . import myrling
@@ -24,25 +24,6 @@ def runde_laden():
         r = {}
     heute = datetime.now().strftime("%Y-%m-%d")
     return {p: w for p, w in r.items() if w.get("tag") == heute}
-
-
-def lokal_wagen(stats, wurzeln=None):
-    """Wagen der Projekt-Ordner: offene (heute teilweise abgegebene mit „abgegeben“) + heute fertig gewordene (sofern
-    seitdem nichts Neues kam), absteigend nach Umfang. Je Wagen der Branch, den das Projekt zeigt (p = seine Kennung,
-    projekt = der Ordner). wurzeln: {projekt: Klon}, Standard alle unter projekte."""
-    wurzeln = wurzeln or {projektname(r): r for r in finde_repos(alle=True)}
-    fertig = runde_laden()
-    wagen = [w for w in stats if w["dateien"] or w["status"] == "fehlt"]  # offen ist, was jetzt noch Unterschiede hat
-    offen = {w["p"] for w in wagen}
-    wagen += [dict(w, status="fertig") for p, w in fertig.items() if p not in offen and p in wurzeln]
-    wagen.sort(key=lambda w: -(w["plus"] + w["minus"]))
-    for w in wagen:  # Gespräch: offene Fäden / neue Antworten des Agenten
-        if w["status"] == "offen" and fertig.get(w["p"], {}).get("status") == "abgegeben":
-            w["abgegeben"] = True  # heute ein Teil abgegeben: zählt für die Abfahrt, der Rest bleibt offen
-        waggon = projekt_waggon(wurzeln[w["p"]])
-        w["projekt"], w["p"], w["datei"], w["quelle"] = w["p"], waggon.id, waggon.url, "lokal"
-        w["gs"], w["gs_neu"] = faeden_zaehlen(waggon, waggon.branch)
-    return wagen
 
 
 def abgabe_pruefen(projekt, sha):
@@ -130,21 +111,6 @@ def fertig(projekt, sha):
     return True, text
 
 
-def stand_oder_fehlt(wurzel):
-    """statistik; fehlt von oder bis im Klon oder haben sie keinen gemeinsamen Vorgänger (ohne_basis), ein Waggon
-    „⚠ fehlt“ bzw. „⚠ keine Basis“ – aufklappen und andere Zweige wählen."""
-    fehlt = fehlende_zweige(wurzel)
-    if not fehlt and not ohne_basis(wurzel):
-        return statistik(wurzel)
-    p = projektname(wurzel)
-    von, bis = von_bis(p)
-    marke, titel = (("⚠ fehlt", f"{', '.join(fehlt)} fehlt im Klon") if fehlt else
-                    ("⚠ keine Basis", f"{bis} und {von} haben keinen gemeinsamen Vorgänger (Rebase?)"))
-    return {"p": p, "datei": dateiname(p), "plus": 0, "minus": 0, "dateien": 0, "commits": 0, "todos": [],
-            "status": "fehlt", "sha": "", "zeile2": f"{bis} → {von}", "marke": marke,
-            "titel": f"{p}: {titel} – ▾ zum Einstellen"}
-
-
 def projekt_einstellung(projekt):
     """Für den aufgeklappten Waggon: Projektinfos, von/bis (gewählt bzw. Standard) und die Branches zur Auswahl."""
     wurzel = projekt_wurzel(projekt)
@@ -188,7 +154,7 @@ def projekt_einstellen(projekt, von, bis):
 
 
 def wagen_eintrag(p, name, titel, datei, marke, *, zeile2=None, plus=0, minus=0, dateien=0, status="offen", **mehr):
-    """Ein Wagen im Zug für MR und Myrling (lokale kommen fertig aus statistik)."""
+    """Ein Wagen im Zug, mit optionaler Anzeige der Quelle."""
     return {"p": p, "name": name, "titel": titel, "zeile2": zeile2, "datei": datei, "plus": plus, "minus": minus,
             "dateien": dateien, "commits": 0, "todos": [], "status": status, "marke": marke, **mehr}
 
@@ -203,10 +169,8 @@ def faeden_text(gs, gs_neu):
     return f"{gs} Faden/Fäden" + (f" ({gs_neu} neu)" if gs_neu else "") if gs else ""
 
 
-def mr_wagen_fuer(w, akte, titel, aenderungen, rollen=(), basis=None):
-    """Wagen eines Branches mit MR-Schicht: Marke und Titel aus Diskussionen, Kommentaren und Fäden. basis: der Wagen
-    seines Projekts (Statistik gegen von, Ordner), sonst zählt changes_count aus der MR-Liste. Ein im Haupt-Klon
-    ausgecheckter MR ist erkennbar (⎇, „ausgecheckt“)."""
+def mr_wagen_fuer(w, akte, titel, rollen=()):
+    """Anzeige der MR-Schicht: Marke und Titel aus Diskussionen, Kommentaren und Fäden; ⎇ für ausgecheckt."""
     mr = mr_von(akte)
     n = sum(1 for k in review_kommentare(akte) if not k.get("geloescht"))
     gs, gs_neu = faeden_zaehlen(w, w.branch)
@@ -218,24 +182,60 @@ def mr_wagen_fuer(w, akte, titel, aenderungen, rollen=(), basis=None):
               and not (ds["dran"] or ds["entwurf"] or ds["gitlab_entwurf"]))
     haupt = haupt_klon(w.repo, gemerkte_klone(akte))
     aus = bool(haupt and ausgecheckt(haupt) == w.branch)
+    eigen = eigener_mr(w, akte)
     kurz = mr.projekt.rsplit("/", 1)[-1]
     marke = faeden_marke(gs_neu, f"● {ds['dran']} dran" if ds["dran"] else (
         "✓ in GitLab" if akte.get("abgeschlossen") else "✓ erledigt") if fertig else f"● {n} Komm." if n else "● offen")
     stand = " · ".join(t for t in (
         ", ".join({"reviewer": "Reviewer", "author": "Autor", "assignee": "zugewiesen"}.get(r, r) for r in rollen),
-        ("eigener MR" if eigener_mr(w, akte) else "") + (", " if eigener_mr(w, akte) and aus else "")
+        ("eigener MR" if eigen else "") + (", " if eigen and aus else "")
         + (f"{w.branch} im Haupt-Klon ausgecheckt" if aus else ""),
         f"{ds['dran']} Diskussion(en): du bist dran" if ds["dran"] else "",
         f"{ds['wartet']} wartet auf andere" if ds["wartet"] else "",
         f"{ds['erledigt']} erledigt" if ds["erledigt"] else "",
         f"{gesendet} Entwurf/Entwürfe in GitLab" if gesendet else "",
         f"{n} eigene Kommentare" if n else "", faeden_text(gs, gs_neu)) if t)
-    zahlen = {k: basis[k] for k in ("plus", "minus", "dateien", "commits", "todos")} if basis else {"dateien": aenderungen or 0}
-    mehr = {k: basis[k] for k in ("projekt", "sha", "abgegeben") if k in basis} if basis else {}
-    return dict(wagen_eintrag(w.id, f'!{mr.iid} {kurz}' + (" ⎇" if aus else ""),
-                              f'{mr.name}: {titel}' + (f"\n{stand}" if stand else ""), w.url, marke, zeile2=titel,
-                              status="fertig" if fertig and not gs_neu else "offen", ausgecheckt=aus, quelle="gitlab",
-                              **mehr), **zahlen)
+    return wagen_eintrag(w.id, f'!{mr.iid} {kurz}' + (" ⎇" if aus else ""),
+                        f'{mr.name}: {titel}' + (f"\n{stand}" if stand else ""), w.url, marke, zeile2=titel,
+                        status="fertig" if fertig and not gs_neu else "offen", ausgecheckt=aus, quelle="gitlab")
+
+
+def branch_wagen_fuer(w, akte, wurzel, runde, liste):
+    """Ein Branch-Wagen aus denselben Refs wie seine Seite. Ohne lokale MR-Refs zählt ersatzweise die MR-Liste."""
+    mr = KONF["gitlab"] and mr_von(akte)
+    if not (mr or wurzel):
+        return None
+    titel, aenderungen, rollen = liste
+    projekt = projektname(wurzel) if wurzel else None
+    try:
+        klon, refs = branch_refs(w, akte, holen=False)
+        basis, head = refs["base_sha"], refs["head_sha"]
+        zahlen = diff_statistik(klon, basis, head, basis, refs.get("commit_sha", head) if mr else head)
+    except Fehler as e:
+        if mr:
+            zahlen = {"dateien": aenderungen or 0}
+        else:
+            von, bis = von_bis(projekt)
+            ohne = not fehlende_zweige(wurzel) and ohne_basis(wurzel)
+            grund = f"{bis} und {von} haben keinen gemeinsamen Vorgänger (Rebase?)" if ohne else str(e)
+            return wagen_eintrag(w.id, None, f"{grund} – ▾ zum Einstellen", w.url,
+                                 "⚠ keine Basis" if ohne else "⚠ fehlt", zeile2=f"{bis} → {von}",
+                                 status="fehlt", projekt=projekt, quelle="lokal", sha="")
+    if mr:
+        wagen = mr_wagen_fuer(w, akte, titel or (akte.get("meta") or {}).get("title", ""), rollen)
+    else:
+        if not (zahlen["dateien"] or runde):
+            return None
+        gs, gs_neu = faeden_zaehlen(w, w.branch)
+        wagen = wagen_eintrag(w.id, None, None, w.url, None, quelle="lokal", gs=gs, gs_neu=gs_neu)
+        if not zahlen["dateien"]:
+            zahlen = {k: runde[k] for k in ("plus", "minus", "dateien", "commits", "todos", "sha")}
+            wagen["status"] = "fertig"
+    if projekt:
+        wagen["projekt"] = projekt
+        if wagen["status"] == "offen" and runde.get("status") == "abgegeben":
+            wagen["abgegeben"] = True
+    return dict(wagen, **zahlen)
 
 
 def branch_wagen(akt=None):
@@ -248,14 +248,14 @@ def branch_wagen(akt=None):
         akt = Waggon.aus_id(akt).id if akt else None
     except Fehler:
         akt = None
-    basis = {}
+    projekte = {}
     if KONF["lokal"]:
-        repos = finde_repos(alle=True)
-        for r in repos:
-            zweige_aufraeumen(r)
-        with ThreadPoolExecutor(8) as ex:
-            stats = list(ex.map(stand_oder_fehlt, repos))
-        basis = {x["p"]: x for x in lokal_wagen(stats, {projektname(r): r for r in repos})}
+        for wurzel in finde_repos(alle=True):
+            zweige_aufraeumen(wurzel)
+            w = projekt_waggon(wurzel)
+            if w not in projekte or haupt_klon(w.repo) == os.path.realpath(wurzel):
+                projekte[w] = wurzel
+    runde = runde_laden() if projekte else {}
     mrs, ohne = {}, []
     if KONF["gitlab"]:
         index = mr_index()
@@ -266,7 +266,7 @@ def branch_wagen(akt=None):
                 continue
             w = mr_waggon(ref, index)
             if w:
-                mrs[w.id] = (w, it.get("title", ""), it.get("changes_count"), it.get("rollen") or ())
+                mrs[w] = (it.get("title", ""), it.get("changes_count"), it.get("rollen") or ())
             else:
                 ohne.append(wagen_eintrag(ref.id, f"!{ref.iid} {ref.projekt.rsplit('/', 1)[-1]}",
                                           f"{ref.name}: {it.get('title', '')}\nnoch keine MR-Daten – öffnen holt sie",
@@ -274,24 +274,25 @@ def branch_wagen(akt=None):
                                           ohne_daten=True, quelle="gitlab"))
         haupt_branch = {}
         for _, w in index.values():
-            if w.id in mrs:
+            if w in projekte or w in mrs:
+                continue
+            if w.id == akt:
+                mrs[w] = ("", 0, ())
                 continue
             if w.repo not in haupt_branch:
                 h = haupt_klon(w.repo)
                 haupt_branch[w.repo] = h and ausgecheckt(h)
-            akte = akte_lesen(w)
-            if (w.id in basis or haupt_branch[w.repo] == w.branch or w.id == akt) \
-               and (akte.get("meta") or {}).get("state") in (None, "opened"):
-                mrs[w.id] = (w, (akte.get("gitlab") or {}).get("titel", ""), 0, ())
-    wagen = [mr_wagen_fuer(Waggon.aus_id(wid), akte_lesen(Waggon.aus_id(wid)), *mrs.pop(wid)[1:], basis=x)
-             if wid in mrs else x for wid, x in basis.items()]
-    wagen += [mr_wagen_fuer(w, akte_lesen(w), titel, n, rollen) for w, titel, n, rollen in mrs.values()] + ohne
-    if akt and not any(x["p"] == akt for x in wagen):
-        w = Waggon.aus_id(akt)
-        akte = akte_lesen(w) if w.branch else {}
-        if mr_von(akte):
-            wagen.insert(0, mr_wagen_fuer(w, akte, (akte.get("gitlab") or {}).get("titel", ""), 0))
-    return wagen
+            if haupt_branch[w.repo] == w.branch and (akte_lesen(w).get("meta") or {}).get("state") in (None, "opened"):
+                mrs[w] = ("", 0, ())
+
+    def bauen(w):
+        wurzel = projekte.get(w)
+        abgabe = runde.get(projektname(wurzel), {}) if wurzel else {}
+        return branch_wagen_fuer(w, akte_lesen(w), wurzel, abgabe, mrs.get(w, ("", 0, ())))
+
+    with ThreadPoolExecutor(8) as ex:
+        wagen = [x for x in ex.map(bauen, dict.fromkeys((*projekte, *mrs))) if x]
+    return sorted(wagen, key=lambda x: ("projekt" not in x, -(x["plus"] + x["minus"]) if "projekt" in x else 0)) + ohne
 
 
 # Quellen der Waggons: Branches (in den Klonen, mit GitLab als Schicht) und der Myrling. Der Zug mischt die Waggons
@@ -334,7 +335,7 @@ class Branch(Quelle):
     def ziel(self, w):
         """Ref des Zielbranchs (see_also "ref": "ziel"): mit MR origin/<target_branch>, sonst von des Projekts."""
         akte = akte_lesen(w)
-        return ((struktur_laden(akte) or {}).get("refs") or {}).get("ziel") or (akte.get("gitlab") or {}).get("target_branch") \
+        return ((struktur_laden(akte) or {}).get("refs") or {}).get("ziel") or (akte.get("meta") or {}).get("target_branch") \
             or (von_bis(projekt_von(w, akte) or "")[0])
 
     def seite(self, w, ansicht=None):

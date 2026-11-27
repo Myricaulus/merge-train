@@ -83,7 +83,7 @@ def diskussionen_fuer_seite(akte, struktur):
     Antwort-Entwürfe ungesendet mit ihrer Stufe), Stand (entwurf | wartet | antwort | erledigt), Ort auf den Stand der
     Seite umgerechnet. Bei eigenen gilt der Ort des Kommentars (allgemein gesendete stehen so an ihrer Zeile)."""
     eigene = {(k.get("gitlab_diskussion") or {}).get("id"): k for k in review_kommentare(akte) if k.get("gitlab_weg")}
-    head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], (akte.get("gitlab") or {}).get("web_url") or ""
+    head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], (akte.get("meta") or {}).get("web_url") or ""
     ich_id = akte.get("ich_id")
     out = []
     lokal = bool(struktur["refs"].get("arbeitsstand"))
@@ -220,7 +220,7 @@ def review_daten(mr, ansicht=None, seite=None):
         ausserhalb = vorher - len(kommentare) - sum(1 for h in hinweise if h["status"] == "offen")
     return {"ok": True, "kommentare": kommentare, "hinweise": hinweise, "diskussionen": diskussionen,
             "diskussionen_stand": diskussionen_stand(akte), "quellen": quellen, "stand": stand(mr, akte),
-            "web_url": (akte.get("gitlab") or {}).get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
+            "web_url": (akte.get("meta") or {}).get("web_url") or "", "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
             "in_gitlab": in_gitlab(akte),
             "reihenfolge": reihenfolge}
 
@@ -948,7 +948,7 @@ def abschliessen(mr, direkt=False, urteil="kommentieren"):
     Je MR nur ein Lauf gleichzeitig: zwei Läufe planten denselben Stand und legten jeden Entwurf doppelt an."""
     with _ABSCHLUSS_SPERRE:
         if mr.id in _ABSCHLUSS_LAEUFT:
-            return False, LAEUFT_SCHON, (akte_lesen(mr).get("gitlab") or {}).get("web_url", "")
+            return False, LAEUFT_SCHON, (akte_lesen(mr).get("meta") or {}).get("web_url") or ""
         _ABSCHLUSS_LAEUFT.add(mr.id)
     try:
         return abschluss_lauf(mr, direkt, urteil)
@@ -962,7 +962,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
         raise Ungueltig(f"unbekanntes Urteil {urteil!r}")
     akte = akte_lesen(mr)
     head = ((struktur_laden(akte) or {}).get("refs") or {}).get("head_sha")
-    web = (akte.get("gitlab") or {}).get("web_url", "")
+    web = (akte.get("meta") or {}).get("web_url") or ""
     proj_url = web.split("/-/merge_requests/")[0]
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
