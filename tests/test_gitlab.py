@@ -25,6 +25,7 @@ T = tempfile.mkdtemp(prefix="merge-train-test-")
 # HUD-Stand (git log am Ort des Skripts) stimmt trotzdem
 SKRIPT = os.environ.get("MERGE_TRAIN_SKRIPT") or os.path.join(HIER, "bau", f"merge-train-{os.getpid()}")
 REPO = os.path.join(T, "repo")
+BR1, BR2 = "gruppe/demo@feature", "gruppe/demo@zweiter"  # Branches von MR !1 und !2 (Waggon-Kennungen)
 AGENT_VARS = ("AI_AGENT", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "OPENCODE", "MERGE_TRAIN_AGENT")
 ohne_agent = lambda env: {k: v for k, v in env.items() if k not in AGENT_VARS}  # kein Harness erkennbar
 ENV = dict(ohne_agent(os.environ), CLAUDECODE="1", XDG_CONFIG_HOME=f"{T}/config", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
@@ -118,7 +119,7 @@ exec(ALLES_LADEN)
 ARBEIT_PRUEFEN = ALLES_LADEN + r"""
 import json, os, subprocess, sys
 def thread_pruefen(m, w):
-    g = m["Waggon"](lokal=m["projektname"](w))
+    g = m["projekt_waggon"](w)
     fid, _ = m["faden_anlegen"]([g], "Unklar: a.py:1 und `neu.py` – fehlt.py nicht", "a.py:1",
                             [{"path": "neu.py", "line": 1, "label": "neu"}, {"path": "neu.py", "diff": "a.py"}])
     allg, _ = m["faden_anlegen"]([g], "Zusammenfassung", None)
@@ -140,7 +141,7 @@ s1 = m["arbeitsstand"](w); s2 = m["arbeitsstand"](w)
 m["_ARBEIT"].clear(); s3 = m["arbeitsstand"](w)  # ohne Zwischenspeicher: gleicher Inhalt, gleicher sha
 nachher = (g("status", "--porcelain"), g("diff", "--cached", "--name-only"), g("rev-parse", "HEAD"))
 st = m["statistik"](w)
-pfad, struktur = m["projekt_seite"](w)
+pfad, struktur = m["branch_seite"](m["projekt_waggon"](w))
 print(json.dumps({"s1": s1, "s2": s2, "s3": s3, "unveraendert": vorher == nachher, "head": vorher[2].strip(),
                   "baum": g("ls-tree", "-r", "--name-only", s1).split(), "inhalt": g("show", s1 + ":a.py"),
                   "stat": st, "fertig": m["fertig_moeglich"](m["projektname"](w)), "dateien": [d["neu"] for d in struktur["dateien"]],
@@ -187,7 +188,7 @@ def arbeitsstand_test():
     pruefe(d["fehler"] == [True, True, True] and d["abholen"] == 0, "agent thread: falsche Orte abgelehnt, nichts für den Agenten offen")
     g("add", "-A"); g("commit", "-qm", "alles")
     r = subprocess.run([sys.executable, "-c", ALLES_LADEN + "import sys; m=alles_laden(sys.argv[1]); "
-                        "print(open(m['projekt_seite'](sys.argv[2])[0],encoding='utf-8').read().split('<h1>')[1].split('</h1>')[0])",
+                        "print(open(m['branch_seite'](m['projekt_waggon'](sys.argv[2]))[0],encoding='utf-8').read().split('<h1>')[1].split('</h1>')[0])",
                         SKRIPT, w], capture_output=True, text=True, env=env)
     pruefe(r.stdout.strip() == "klon: HEAD feature/x → main", "Arbeitsstand: ohne offene Änderungen „HEAD <branch>“ – " + r.stdout.strip() + r.stderr[-300:])
 
@@ -371,7 +372,7 @@ def horchen_waise_test(proj, env, k, hol):
     kx = json.loads(hol(f"/api/review?mr=projekt:proj&k={k}")).get("kontext") or {}
     pruefe(kx.get("tokens") == 50000 and kx.get("prozent") == 25 and kx.get("name") == "Fake" and kx.get("schwellen") == [15, 20, 25, 35],
            f"horchen: HUD bekommt den Kontext-Füllstand der Session aus dem Transcript ({kx})")
-    datei = f"{T}/data/merge-train/lokal/proj.horcht"
+    datei = f"{T}/data/merge-train/zweige/proj/claude.horcht"
     ag.kill(); ag.wait()  # Session hart beendet: horchen ist jetzt verwaist
     for _ in range(50):
         if not os.path.exists(datei):
@@ -397,7 +398,7 @@ def warten_bis(bedingung, n=60):
 def horchen_seite_zu_test(proj, env, k, hol):
     """Wird die Seite geschlossen (kein Lebenszeichen mehr), hört horchen auf – aber erst, wenn sie nach dem Start da war –,
     und zwar still: kein Wort und kein Ende (das weckte den Agenten), der Waggon zeigt niemanden mehr."""
-    datei, aus = f"{T}/data/merge-train/lokal/proj.horcht", f"{T}/still-seite.out"
+    datei, aus = f"{T}/data/merge-train/zweige/proj/claude.horcht", f"{T}/still-seite.out"
     ag = still_horchen(proj, dict(env, MERGE_TRAIN_SEITE_WEG_S="2"), aus)
     time.sleep(3)
     pruefe(os.path.exists(datei), "horchen: ohne Seite seit dem Start hört es weiter zu")
@@ -443,7 +444,7 @@ def gemischt_test(mr):
         zug = hol("/zug.js?akt=" + urllib.parse.quote(mr))
         z = json.loads(zug[len("window.MR_ZUG="):-1])
         quellen = {w["quelle"]: w for w in z["wagen"]}
-        pruefe(set(quellen) == {"lokal", "gitlab"} and quellen["lokal"]["p"] == "proj" and quellen["gitlab"]["p"] == mr,
+        pruefe(set(quellen) == {"lokal", "gitlab"} and quellen["lokal"]["p"] == "proj@claude" and quellen["gitlab"]["p"] == BR1,
                "gemischt: ein Zug mit lokalem Waggon und MR")
         pruefe([w["quelle"] for w in z["wagen"]][0] == "lokal", "gemischt: lokale Waggons vorn")
         ms = hol("/mr/" + mr)
@@ -452,13 +453,13 @@ def gemischt_test(mr):
         ls_ = hol("/proj.html")
         pruefe('id="fertig"' in ls_ and 'id="abschliessen"' not in ls_ and 'data-g="mrliste"' in ls_, "gemischt: lokale Seite mit fertig")
         start = urllib.request.urlopen(f"http://127.0.0.1:{PORT_GEMISCHT}/", timeout=60)
-        pruefe(start.geturl().endswith("/proj.html"), "gemischt: Start springt zum offenen lokalen Waggon")
+        pruefe(start.geturl().endswith("/b/proj@claude"), "gemischt: Start springt zum offenen Waggon eines Projekts")
         # Klon eines fremden MR, zugleich lokales Projekt, Quell-Branch ausgecheckt: status zeigt das Review, thread geht zum MR
         env2 = dict(env, MERGE_TRAIN_CONFIG=f"{T}/config/merge-train/gemischt-klon.toml")
         open(env2["MERGE_TRAIN_CONFIG"], "w").write(open(env["MERGE_TRAIN_CONFIG"]).read().replace(
             f'projekte = "{T}/Projects"', f'projekte = ["{T}/Projects/proj", "{REPO}"]') + '\n[zweige.repo]\nvon = "main"\nbis = "arbeitsstand"\n')
         r = subprocess.run([sys.executable, SKRIPT, "status"], cwd=REPO, env=env2, capture_output=True, text=True)
-        pruefe(r.returncode == 0 and "Review MR gruppe/demo!1" in r.stdout and "thread -p gruppe/demo!1" in r.stdout
+        pruefe(r.returncode == 0 and "Review MR gruppe/demo!1" in r.stdout and f"thread -p {BR1}" in r.stdout
                and "Erwartet:" not in r.stdout, "status im Klon auf dem Quell-Branch eines fremden MR: Review statt Entwicklung")
     finally:
         srv.terminate(); srv.wait()
@@ -511,71 +512,83 @@ def mr_erstellen_test(env2, hol):
         r = post_l({"aktion": "mrerstellen", "mr": "projekt:repo", "ziel": "main", "titel": "  Zweiter   MR ",
                     "beschreibung": "Text", "entwurf": True})
         erstellt = json.load(open(f"{T}/glab/erstellt.json")) if os.path.exists(f"{T}/glab/erstellt.json") else []
-        pruefe(r.get("ok") and r.get("url") == "/mr/gitlab.example.com/gruppe/demo/2" and erstellt
+        pruefe(r.get("ok") and r.get("url") == "/b/" + BR2 and erstellt
                and erstellt[0]["title"] == "Draft: Zweiter MR" and erstellt[0]["source_branch"] == "zweiter"
                and erstellt[0]["target_branch"] == "main", "MR erstellen: angelegt (Entwurf, Titel bereinigt)" + ("" if r.get("ok") else f" – {r}"))
         pruefe(sh("git", "-C", origin, "rev-parse", "zweiter").stdout == g("rev-parse", "zweiter").stdout
                and g("rev-parse", "--abbrev-ref", "zweiter@{upstream}").stdout.strip() == "origin/zweiter",
                "MR erstellen: Branch neu gepusht, mit Upstream")
         z = json.loads(hol("/zug.js?akt=projekt:repo")[len("window.MR_ZUG="):-1])
-        w = next((w for w in z["wagen"] if w["p"] == "gitlab.example.com/gruppe/demo/2"), {})
-        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "eigener MR" in w.get("titel", ""),
+        w = next((w for w in z["wagen"] if w["p"] == BR2), {})
+        pruefe(sum(x["p"] == BR2 for x in z["wagen"]) == 1 and "eigener MR" in w.get("titel", ""),
                "MR erstellen: danach ein Waggon (eigener MR, ausgecheckt)")
+        ap2 = f"{T}/data/merge-train/zweige/gruppe%2Fdemo/zweiter.json"  # MR in GitLab, merge-train kennt ihn noch nicht
+        akte2 = json.load(open(ap2)); akte2.pop("gitlab"); akte2.pop("meta"); json.dump(akte2, open(ap2, "w"))
         r = post_l({"aktion": "mrplanen", "mr": "projekt:repo"})
-        pruefe(r.get("ok") and "gibt es schon" in r.get("text", "") and r.get("url", "").endswith("/2"),
-               "MR erstellen: vorhandener MR wird übernommen statt doppelt angelegt")
+        pruefe(r.get("ok") and "gibt es schon" in r.get("text", "") and r.get("url") == "/b/" + BR2,
+               "MR erstellen: vorhandener MR wird übernommen statt doppelt angelegt" + ("" if r.get("ok") else f" – {r}"))
     finally:
         srv.terminate(); srv.wait()
         g("checkout", "-q", "feature"); g("branch", "-qD", "zweiter")
         g("config", "--unset", "remote.origin.pushurl")
         for ref in ("refs/remotes/origin/main", "refs/remotes/origin/zweiter"):
             sh("git", "-C", REPO, "update-ref", "-d", ref, check=False)
-        for p in (f"{T}/glab/erstellt.json", f"{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_2.json"):
+        for p in (f"{T}/glab/erstellt.json", f"{T}/data/merge-train/zweige/gruppe%2Fdemo/zweiter.json"):
             if os.path.exists(p):
                 os.remove(p)
 
 
 BRANCH_AKTE = ALLES_LADEN + r"""
-import json, os, sys
+import json, os, subprocess, sys
 m = alles_laden(sys.argv[1]); repo = sys.argv[2]
-D, W = m["DATEN"], m["Waggon"](lokal="repo")
-mr = m["Waggon"](host="gitlab.example.com", projekt="gruppe/demo", iid=1)
+D = m["DATEN"]
+W = m["Waggon"](repo="gruppe/demo", branch="feature")
 lies = lambda p: json.load(open(os.path.join(D, p)))
 faden = lambda i, b=None: dict({"id": i, "nachrichten": [{"id": "n" + i, "von": "ich", "text": i, "zeit": "2026-11-27T00:00:00",
-                                                          "gesendet": "2026-11-27T00:00:00", "abgeholt": "2026-11-27T00:00:00"}]}, **({"branch": b} if b else {}))
-os.makedirs(D + "/lokal"); os.makedirs(D + "/reviews")
+                                                          "gesendet": "2026-11-27T00:00:00", "abgeholt": "2026-11-27T00:00:00"}]},
+                               **({"branch": b} if b else {}))
+for o in ("lokal", "reviews", "zweige/repo"):
+    os.makedirs(os.path.join(D, o))
 json.dump({"mr": {"lokal": "repo"}, "struktur": "/lokal.json", "kommentare": [faden("f1", "feature"), faden("f2", "weg"), faden("f3")]},
           open(D + "/lokal/repo.json", "w"))
+json.dump({"mr": {"lokal": "repo"}, "kommentare": [faden("f5", "alt")]}, open(D + "/zweige/repo/alt.json", "w"))
+json.dump({"verweis": "reviews/gitlab.example.com_gruppe_demo_1.json"}, open(D + "/zweige/repo/feature.json", "w"))
+json.dump({"mr": {"host": "gitlab.example.com", "projekt": "gruppe/demo", "iid": 1, "source_branch": "feature",
+                  "web_url": "https://gitlab.example.com/gruppe/demo/-/merge_requests/1"},
+           "meta": {"source_branch": "feature", "target_branch": "main", "state": "opened"},
+           "kommentare": [{"id": "k1", "text": "Review"}, faden("f9", "feature")]},
+          open(D + "/reviews/gitlab.example.com_gruppe_demo_1.json", "w"))
+json.dump({"mr": {"host": "gitlab.example.com", "projekt": "gruppe/demo", "iid": 5}, "hinweis_dateien": ["/x.json"]},
+          open(D + "/reviews/gitlab.example.com_gruppe_demo_5.json", "w"))
 out = {}
 a = m["akte_lesen"](W)
-out["migriert"] = (sorted(k["id"] for k in a["kommentare"]), a.get("struktur"), sorted(lies("lokal/repo.json")),
-                   [k["id"] for k in lies("zweige/repo/weg.json")["kommentare"]])
-out["fremd"] = [k["id"] for p in m["andere_zweig_akten"](W) for k in m["faeden_von"](m["akte_lesen"](W, pfad=p))]
+out["migriert"] = (sorted(k["id"] for k in a["kommentare"]), (a.get("gitlab") or {}).get("iid"), lies("lokal/repo.json"),
+                   [k["id"] for k in lies("zweige/gruppe%2Fdemo/weg.json")["kommentare"]],
+                   [k["id"] for k in lies("zweige/gruppe%2Fdemo/alt.json")["kommentare"]],
+                   sorted(os.listdir(D + "/reviews")), os.path.isdir(D + "/zweige/repo"),
+                   os.path.exists(D + "/vor-schritt-5/reviews/gitlab.example.com_gruppe_demo_1.json"))
+out["fremd"] = sorted(k["id"] for p in m["andere_zweig_akten"](W) for k in m["faeden_von"](m["akte_lesen"](W, pfad=p)))
 m["faden_antworten"]("f2", "Antwort nach dem Wechsel", ziele=[W], als="Claude")
-out["antwort"] = [n["text"] for n in lies("zweige/repo/weg.json")["kommentare"][0]["nachrichten"]]
-json.dump({"mr": dict(m["MR_ART"].als_dict(mr), source_branch="feature"), "struktur": "/mr.json", "kommentare": []},
-          open(D + "/reviews/" + mr.dateiname + ".json", "w"))
-out["verknuepft"] = m["zweig_verknuepfen"](mr, "repo", "feature")
-ma = lies("reviews/" + mr.dateiname + ".json")
-out["mr_akte"] = (lies("zweige/repo/feature.json"), sorted(k["id"] for k in ma["kommentare"]), ma["struktur"], ma.get("seiten"))
-with m["akte_bearbeiten"](W) as a:
-    out["sicht"] = a["struktur"]
-    a["struktur"] = "/lokal2.json"
-    m["faden_anhaengen"](a, faden("f4", "feature"))
-ma = lies("reviews/" + mr.dateiname + ".json")
-out["geteilt"] = (ma["struktur"], ma["seiten"], sorted(k["id"] for k in ma["kommentare"]), m["akte_lesen"](mr)["struktur"])
-out["aufgeraeumt"] = (m["zweige_aufraeumen"](repo), sorted(os.listdir(D + "/zweige/repo")),
-                      [n[:4] for n in os.listdir(D + "/zweige/repo/archiv")])
-with m["projekt_akte_bearbeiten"]("repo") as pa:  # Lücke 2: bis fest auf einen anderen Branch als den ausgecheckten
-    pa["zweige"] = {"von": "feature", "bis": "main"}
-out["luecke2"] = m["im_mr_waggon"](repo, {(os.path.realpath(repo), "main"): mr})
+out["antwort"] = [n["text"] for n in lies("zweige/gruppe%2Fdemo/weg.json")["kommentare"][0]["nachrichten"]]
+out["abkuerzung"] = [m["Waggon"].aus_id(k) == W for k in ("gitlab.example.com/gruppe/demo/1", "projekt:repo")]
+wt = repo + "-wt"
+subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", "wt", wt], check=True)
+try:
+    out["worktree"] = (os.path.realpath(wt) in m["repo_klone"]("gruppe/demo"),
+                       m["branch_ort"](m["Waggon"](repo="gruppe/demo", branch="wt")) == (os.path.realpath(repo), False),
+                       m["klon_waggon"](wt) == m["Waggon"](repo="gruppe/demo", branch="wt"))
+finally:
+    subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", wt], check=True)
+    subprocess.run(["git", "-C", repo, "branch", "-qD", "wt"], check=True)
+out["aufgeraeumt"] = (sorted(m["zweige_aufraeumen"](repo)), sorted(n for n in os.listdir(D + "/zweige/gruppe%2Fdemo") if n.endswith(".json")))
 print(json.dumps(out))
 """
 
 
 def branch_akte_test(env2):
-    """Eine Akte je Branch (docs/branch-akte.md), in eigenem Datenordner: alte Projekt-Akte wird verteilt, Antwort auf
-    einen Faden eines anderen Branches, Verweis auf die MR-Akte samt getauschter Seiten-Felder, Lücke 2, Aufräumen."""
+    """Eine Akte je Branch (docs/branch-waggon.md), in eigenem Datenordner: alte Akten (je Projekt, Branch-Akten aus 4a,
+    MR-Akten) werden auf zweige/<repo>/<branch>.json verteilt, MR-Akten ohne MR-Daten bleiben; fremde Fäden, Antwort auf
+    einen anderen Branch, Abkürzungen, Worktree (dieselbe Akte, Arbeitsstand nur im Haupt-Klon), Aufräumen."""
     env = dict(env2, XDG_DATA_HOME=f"{T}/data-branch")
     r = subprocess.run([sys.executable, "-c", BRANCH_AKTE, SKRIPT, REPO], cwd=REPO, env=env, capture_output=True, text=True)
     try:
@@ -583,25 +596,20 @@ def branch_akte_test(env2):
     except (ValueError, IndexError):
         pruefe(False, f"Branch-Akte: Skript lief nicht – {r.stderr[-800:]}")
         return
-    pruefe(o["migriert"] == [["f1", "f3"], "/lokal.json", ["mr", "zweige_migriert"], ["f2"]],
-           f"Branch-Akte: alte Projekt-Akte auf die Branches verteilt, ohne Branch in den aktuellen ({o['migriert']})")
-    pruefe(o["fremd"] == ["f2"], "Branch-Akte: fremde Fäden aus den Akten der anderen Branches")
+    pruefe(o["migriert"] == [["f1", "f3", "f9", "k1"], 1, {}, ["f2"], ["f5"], ["gitlab.example.com_gruppe_demo_5.json"], False, True],
+           f"Branch-Akte: alte Akten verteilt, MR-Schicht am Quell-Branch, MR ohne Daten bleibt, Sicherung ({o['migriert']})")
+    pruefe(o["fremd"] == ["f2", "f5"], "Branch-Akte: fremde Fäden aus den Akten der anderen Branches")
     pruefe(o["antwort"] == ["f2", "Antwort nach dem Wechsel"], "Branch-Akte: agent antworten findet den Faden eines anderen Branches")
-    pruefe(o["verknuepft"] == 2 and o["mr_akte"] == [{"verweis": "reviews/gitlab.example.com_gruppe_demo_1.json"}, ["f1", "f3"],
-                                                     "/mr.json", {"projekt:repo": {"struktur": "/lokal.json"}}],
-           f"Branch-Akte: Branch mit MR wird Verweis, Fäden in der MR-Akte, Seiten-Felder unter seiten ({o['mr_akte']})")
-    pruefe(o["sicht"] == "/lokal.json" and o["geteilt"] == ["/mr.json", {"projekt:repo": {"struktur": "/lokal2.json"}},
-                                                           ["f1", "f3", "f4"], "/mr.json"],
-           f"Branch-Akte: lokale Seite sieht ihre Felder, schreibt Fäden in die MR-Akte, MR-Struktur bleibt ({o['geteilt']})")
-    pruefe(o["aufgeraeumt"] == [["weg"], ["archiv", "feature.json"], ["weg-"]],
-           f"Branch-Akte: Akte eines gelöschten Branches im Archiv ({o['aufgeraeumt']})")
-    pruefe(o["luecke2"], "Branch-Akte: fester bis mit MR, anderer Branch ausgecheckt → kein eigener lokaler Waggon (Lücke 2)")
+    pruefe(o["abkuerzung"] == [True, True], "Branch-Akte: MR-Kennung und projekt:<name> führen zum Branch")
+    pruefe(o["worktree"] == [True, True, True], f"Branch-Akte: Worktree ist ein Klon des Repos, Stand aus dem Haupt-Klon ({o['worktree']})")
+    pruefe(o["aufgeraeumt"] == [["alt", "weg"], ["feature.json"]],
+           f"Branch-Akte: Akten gelöschter Branches im Archiv, der mit offenem MR bleibt ({o['aufgeraeumt']})")
 
 
 LOKALER_FADEN = ALLES_LADEN + r"""
 import sys
 m = alles_laden(sys.argv[1])
-print(m["faden_anlegen"]([m["Waggon"](lokal="repo")], "Alt lokal", "App.cs:3")[0])
+print(m["faden_anlegen"]([m["Waggon"].aus_id("projekt:repo")], "Alt lokal", "App.cs:3")[0])
 """
 
 
@@ -619,8 +627,8 @@ def fremd_test(mr, env2, hol):
         return json.loads(urllib.request.urlopen(req, timeout=60).read())
     try:
         z = json.loads(hol("/zug.js?akt=" + urllib.parse.quote(mr))[len("window.MR_ZUG="):-1])
-        w = next((w for w in z["wagen"] if w["p"] == mr), {})
-        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "Quell-Branch ausgecheckt" in w.get("titel", "")
+        w = next((w for w in z["wagen"] if w["p"] == BR1), {})
+        pruefe(sum(x["p"] == BR1 for x in z["wagen"]) == 1 and "im Haupt-Klon ausgecheckt" in w.get("titel", "") and "⎇" in w.get("name", "")
                and "eigener MR" not in w.get("titel", ""), "fremder MR: ausgecheckt ein Waggon, kein lokaler „repo“")
         seite = hol("/mr/" + mr)
         pruefe("Arbeitsstand (nicht Committetes dabei)" not in seite and hinweis() is None,
@@ -650,7 +658,7 @@ def eigen_test(mr, env2, hol):
     liste_pfad = f"{T}/cache/merge-train/mrliste.json"
     liste_alt = open(liste_pfad).read()
     k = open(f"{T}/cache/merge-train/schluessel").read().strip()
-    ap = f"{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json"
+    ap = f"{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json"
     def post_g(pfad, d):
         req = urllib.request.Request(f"http://127.0.0.1:{PORT_GEMISCHT}{pfad}", json.dumps(dict(d, mr=mr, k=k)).encode(),
                                      {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT_GEMISCHT}"})
@@ -671,8 +679,8 @@ def eigen_test(mr, env2, hol):
         zeilen[10] += " // lokal"
         open(f"{REPO}/App.cs", "w").write("\n".join(zeilen))
         z = json.loads(hol("/zug.js?akt=" + urllib.parse.quote(mr))[len("window.MR_ZUG="):-1])
-        w = next((w for w in z["wagen"] if w["p"] == mr), {})
-        pruefe(not any(x["p"] == "repo" for x in z["wagen"]) and "eigener MR" in w.get("titel", ""),
+        w = next((w for w in z["wagen"] if w["p"] == BR1), {})
+        pruefe(sum(x["p"] == BR1 for x in z["wagen"]) == 1 and "eigener MR" in w.get("titel", ""),
                "eigener MR: im Zug nur der MR-Waggon, kein lokaler „repo“")
         seite = hol("/mr/" + mr)
         refs = json.load(open(json.load(open(ap))["struktur"]))["refs"]
@@ -680,7 +688,7 @@ def eigen_test(mr, env2, hol):
                and "// lokal" in sh("git", "-C", REPO, "show", refs["head_sha"] + ":App.cs").stdout,
                "eigener MR: Seite zeigt den Arbeitsstand")
         akte = json.load(open(ap))
-        pruefe(any(x.get("id") == alt_id for x in akte["kommentare"]), "eigener MR: Faden des lokalen Waggons ist umgezogen")
+        pruefe(any(x.get("id") == alt_id for x in akte["kommentare"]), "eigener MR: Faden aus dem Klon steht in der Akte des Branches")
         rv = review()
         g = d950(rv)["geaendert"] or {}
         pruefe(d950(rv)["b"] == 11 and g.get("text") == "lokal geändert" and g.get("damals") == damals,
@@ -716,7 +724,7 @@ def eigen_test(mr, env2, hol):
                "eigener MR: agent thread im Klon landet im MR")
         r = subprocess.run([sys.executable, SKRIPT, "status"], cwd=REPO, env=env2, capture_output=True, text=True)
         pruefe(r.returncode == 0 and "Branch feature" in r.stdout and "Erwartet:" in r.stdout and "Review MR" not in r.stdout
-               and alt_id in r.stdout, "eigener MR: status zeigt Entwicklung samt umgezogenem Faden")
+               and alt_id in r.stdout, "eigener MR: status zeigt Entwicklung samt Faden aus dem Klon")
     finally:
         sh("git", "-C", REPO, "checkout", "-q", "--", "App.cs")
         open(liste_pfad, "w").write(liste_alt)
@@ -753,11 +761,12 @@ def mr_gespraech_test(mr, k, basis, struktur):
         time.sleep(0.1)
     prompt = open(f"{T}/copilot.prompt").read() if os.path.exists(f"{T}/copilot.prompt") else ""
     pruefe(r["ok"] and "Copilot gestartet" in r["text"], "MR-Gespräch: senden startet den Agenten aus [agenten]")
-    pruefe(f"merge-train agent feedback {mr}" in prompt and "nichts committen" in prompt, "MR-Gespräch: Prompt nennt MR und verbietet Commits")
+    pruefe(f"merge-train agent feedback {BR1}" in prompt and "gruppe/demo!1" in prompt and "nichts committen" in prompt,
+           "MR-Gespräch: Prompt nennt MR und verbietet Commits")
     r = sh(sys.executable, SKRIPT, "agent", "feedback", mr, env=genv, check=False)
     pruefe(r.returncode == 0 and f'[{f["id"]}] App.cs:11' in r.stdout and "an Copilot" in r.stdout and "Was macht Zeile 11?" in r.stdout,
            "MR-Gespräch: agent feedback mit MR-Kennung")
-    ap = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+    ap = f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'
     def autor(aid):
         a = json.load(open(ap)); a["meta"]["author"]["id"] = aid; json.dump(a, open(ap, "w"))
     autor(1)  # ich (fake-glab user id 1) bin Autor: eigener MR
@@ -771,7 +780,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r.returncode == 0 and "gruppe/demo!1" in r.stdout, "MR-Gespräch: agent feedback im Klon findet den MR")
     r = sh(sys.executable, SKRIPT, "status", cwd=REPO, env=genv, check=False)
     pruefe(r.returncode == 0 and "Review MR gruppe/demo!1" in r.stdout and "WARTET AUF DICH" in r.stdout
-           and "agent feedback gruppe/demo!1" in r.stdout and "Erwartet:" not in r.stdout,
+           and f"agent feedback {BR1}" in r.stdout and "Erwartet:" not in r.stdout,
            "merge-train status im MR-Klon: Review, wartender Faden, feedback mit MR")
     r = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "Hallo", env=ohne_agent(genv), check=False)
     pruefe(r.returncode == 2 and "--als" in r.stderr, "Agent ohne Namen: thread verlangt --als")
@@ -794,7 +803,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     pruefe(r["ok"] and "zuhört (Copilot)" in r["text"], "MR-Gespräch: Copilot hört zu → übergeben")
     aus, _ = lauscher.communicate(timeout=30)
     pruefe(lauscher.returncode == 0 and "Und warum?" in aus, "MR-Gespräch: horchen mit MR-Kennung bekommt die Nachfrage")
-    akte = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+    akte = json.load(open(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))
     pruefe(any(k.get("nachrichten") for k in akte["kommentare"]), "MR-Gespräch: Faden liegt in der Datei des Waggons")
     sh(sys.executable, SKRIPT, "agent", "antworten", f["id"], "Weil.", "--erledigt", env=genv, check=False)
     r1 = sh(sys.executable, SKRIPT, "agent", "thread", "-p", mr, "--als", "Copilot", "Stand 1", env=genv, check=False)
@@ -855,7 +864,7 @@ def mr_gespraech_test(mr, k, basis, struktur):
     for x in rv["kommentare"]:
         if x["id"] == km["id"] or x["text"] == "Shortest.":
             post("/api/kommentar", dict(basis, aktion="loeschen", id=x["id"]))
-    pruefe(not os.path.exists(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.agent.json'),
+    pruefe(not os.path.exists(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.agent.json'),
            "Kommentar umformulieren: drafts in der Review-JSON, keine eigene Datei")
     open(hw, "w", encoding="utf-8").write(sicher)
     pruefe(sh(sys.executable, SKRIPT, "agent", "kommentar", "gibtsnicht", "x", env=genv, check=False).returncode == 2,
@@ -932,7 +941,7 @@ def gitlab_test():
         pruefe("App.cs:50" in r.stdout and "allgemeiner Kommentar" in r.stdout, "K2 außerhalb des Diffs erkannt")
         pruefe("needle nicht gefunden" in r.stdout, "#3 needle nicht gefunden")
         r = sh(sys.executable, SKRIPT, "agent", "zeigen", hw, "--nicht-oeffnen", check=False)
-        pruefe(f"http://127.0.0.1:{PORT}/mr/gitlab.example.com/gruppe/demo/1" in r.stdout, "zeigen gibt MR-URL aus")
+        pruefe(f"http://127.0.0.1:{PORT}/b/gruppe/demo@feature" in r.stdout, "zeigen gibt die URL des Branches aus")
         pruefe("Quelle: lokal" in r.stdout, "Repo der Hinweis-Datei wird als lokaler Klon genutzt")
         pruefe("#7" in r.stdout and "allgemeiner MR-Kommentar" in r.stdout, "Eintrag ohne Pfad = allgemeiner Kommentar, kein FEHLT")
         pruefe(": FEHLT:" not in "".join(z for z in r.stdout.splitlines() if "siehe auch" in z), "see_also aufgelöst")
@@ -989,14 +998,14 @@ def gitlab_test():
         pruefe(not json.loads(get(f"/api/zeilen?mr={mr}&k={k}&pfad=Gibts.cs&von=1&bis=2"))["ok"], "unbekannte Datei beim Nachladen")
         pruefe(not json.loads(get(f"/api/zeilen?mr={mr}&k=falsch&pfad=App.cs&von=1&bis=2"))["ok"], "Nachladen braucht Schlüssel")
         pruefe('generierte Datei' in seite and 'class="laden"' in seite and "class Modell" not in seite, "generierte Datei erst auf Klick")
-        i_gen = next(i for i, f in enumerate(json.load(open(json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["struktur"]))["dateien"]) if f["neu"] == "Modell.Designer.cs")
+        i_gen = next(i for i, f in enumerate(json.load(open(json.load(open(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))["struktur"]))["dateien"]) if f["neu"] == "Modell.Designer.cs")
         z = json.loads(get(f"/api/datei?mr={mr}&k={k}&i={i_gen}"))
         pruefe(z["ok"] and 'class="sbs"' in z["html"] and "Modell" in z["html"], "generierte Datei nachladen")
         pruefe(not json.loads(get(f"/api/datei?mr={mr}&k={k}&i=-1"))["ok"], "ungültiger Datei-Index abgelehnt")
         pruefe('class="inl"' not in seite, "Inline-Tabelle baut erst der Browser")
         pruefe(rv["quellen"][0]["notes"] == "Team-Thema: Logging" and rv["quellen"][0]["alt"], "Notizen und veralteter Stand")
         pruefe(json.loads(get(f"/api/review?mr={mr}&k=falsch"))["ok"] is False, "falscher Schlüssel abgelehnt")
-        sha = rv["hinweise"][0] and json.load(open(rv and f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
+        sha = rv["hinweise"][0] and json.load(open(rv and f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))
         struktur = json.load(open(sha["struktur"]))
         head = struktur["refs"]["head_sha"]
         basis = dict(mr=mr, k=k, sha=head)
@@ -1064,7 +1073,7 @@ def gitlab_test():
         r = post("/api/abschliessen", basis)
         pruefe(len(drafts()) == 2 and "schon veröffentlicht" in r["text"], "veröffentlichte Entwürfe werden nicht doppelt angelegt")
         # Abbruch zwischen Anlegen in GitLab und Speichern: beim nächsten Abschließen übernehmen, nicht doppelt anlegen
-        rpd = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        rpd = f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'
         zst = json.load(open(rpd))
         kd = next(x for x in zst["kommentare"] if x.get("gitlab_id") and not x.get("gitlab_weg") and x.get("nachrichten") is None)
         gid = kd["gitlab_id"]
@@ -1126,7 +1135,7 @@ def gitlab_test():
         r = post("/api/gitlab", dict(basis, aktion="mrliste"))
         rv = json.loads(get(f"/api/review?mr={mr}&k={k}"))
         fremd = [d for d in rv.get("diskussionen", []) if d["text"] == "Warum so?"]
-        zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == mr)
+        zw = next(w for w in json.loads(get("/api/zug"))["wagen"] if w["p"] == BR1)
         pruefe(r["ok"] and fremd and fremd[0]["b"] == 11 and fremd[0]["nachrichten"][0]["wer"] == "Reviewerin"
                and fremd[0]["nachrichten"][0]["von"] == "andere" and fremd[0]["stand"] == "dran" and fremd[0]["wer"] == "extern"
                and zw["marke"] == "● 1 dran" and zw["status"] == "offen" and "Reviewer, Autor" in zw["titel"],
@@ -1180,7 +1189,7 @@ def gitlab_test():
         faden = next(d for d in r["review"]["diskussionen"] if d["diskussion"] == "d950")
         pruefe(r["ok"] and not faden["abgehakt"], "↺ doch dran: Abwarten zurückgenommen")
         # andere Abrufzeit der MR-Daten (wie ein späterer Klick auf „↻ MR-Daten“): Seite nicht neu bauen
-        rp0 = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        rp0 = f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'
         get(f"/mr/{mr}"); vor = json.load(open(rp0))["struktur"]
         zst = json.load(open(rp0)); zst["meta"]["_zeit"] = "01.01. 00:00"; json.dump(zst, open(rp0, "w"))
         get(f"/mr/{mr}")
@@ -1198,7 +1207,7 @@ def gitlab_test():
         r = post("/api/gitlab", dict(basis, aktion="mrdaten"))
         pruefe(r["ok"] and r["neu_laden"] is True and "Alter Titel" not in get(f"/mr/{mr}"), "MR-Daten geändert (Titel): Seite lädt neu")
         # früher als „weg“ markiert, aber gar nicht veröffentlicht (altes Verhalten) → MR-Daten holt ihn zurück
-        rp = f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'
+        rp = f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'
         zst = json.load(open(rp))
         alt = next(x for x in zst["kommentare"] if x.get("gitlab_id") and x.get("nachrichten") is None and x["text"] != "Insgesamt sehr gut.")
         alt["gitlab_weg"] = True
@@ -1260,16 +1269,16 @@ def gitlab_test():
         pruefe(hs["#1"]["b"] == 12 and not hs["#1"]["lesen"] and "außerhalb der Änderungen" in hs["#1"]["unter"],
                "Seit-Ansicht: #1 an MR-Zeile 12, änderbar")
         pruefe("#4" not in hs and rv["ausserhalb"] >= 1, "Seit-Ansicht: seite.html nicht geändert → nur gezählt")
-        st2 = json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))
-        sv = json.load(open(next(p[:-5] + ".json" for p in [os.path.join(f"{T}/cache/merge-train/mr", f) for f in os.listdir(f"{T}/cache/merge-train/mr")]
+        st2 = json.load(open(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))
+        sv = json.load(open(next(p[:-5] + ".json" for p in [os.path.join(f"{T}/cache/merge-train/zweige", f) for f in os.listdir(f"{T}/cache/merge-train/zweige")]
                                  if f"-seit{c1[:12]}-" in p and p.endswith(".html"))))
         i_v = next(i for i, f in enumerate(sv["dateien"]) if f["neu"] == "App.cs")
         r = post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=None, b=4, text="Eingefügt?"))
-        kn = r["ok"] and next(x for x in json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["kommentare"] if x.get("text") == "Eingefügt?")
+        kn = r["ok"] and next(x for x in json.load(open(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))["kommentare"] if x.get("text") == "Eingefügt?")
         pruefe(kn and kn["b"] == 4 and kn["a"] is None, "Seit-Ansicht: Kommentar wird auf die MR-Zeile (neu 4, im MR hinzugefügt) gelegt")
         pruefe(not post("/api/kommentar", dict(basis2, ansicht=sa, aktion="neu", datei=i_v, a=3, b=None, text="x"))["ok"],
                "Seit-Ansicht: alte Seite nicht kommentierbar")
-        pruefe(st2["struktur"] == json.load(open(f'{T}/data/merge-train/reviews/gitlab.example.com_gruppe_demo_1.json'))["struktur"]
+        pruefe(st2["struktur"] == json.load(open(f'{T}/data/merge-train/zweige/gruppe%2Fdemo/feature.json'))["struktur"]
                and "-seit" not in st2["struktur"] and "-commit" not in st2["struktur"], "Ansichten ändern die Struktur des MR nicht")
         pruefe("gehört nicht zu diesem MR" in get(f"/mr/{mr}?commit={start}") and "ungültig" in get(f"/mr/{mr}?seit=xyz"),
                "fremder Commit / ungültige sha abgelehnt")
@@ -1307,7 +1316,7 @@ def gitlab_test():
         pruefe("Güterbahnhof" in get("/") and "Demo-Änderung" not in get("/"), "Startseite ohne MR-Liste (lokal = false)")
         r = post("/api/gitlab", dict(k=k, aktion="mrliste"))
         z = json.loads(get("/api/zug?akt=" + mr))
-        pruefe(r["ok"] and any(w["name"] == "!1 demo" and "Demo-Änderung" in w["titel"] for w in z["wagen"]) and z["zeit"],
+        pruefe(r["ok"] and any(w["name"].startswith("!1 demo") and "Demo-Änderung" in w["titel"] for w in z["wagen"]) and z["zeit"],
                "Güterbahnhof holt die MR-Liste, der Zug kommt danach aus dem Cache")
         pruefe(post("/api/gitlab", dict(k=k, aktion="mrdaten", mr=mr))["ok"], "Güterbahnhof holt MR-Daten")
         pruefe(not post("/api/gitlab", dict(k="falsch", aktion="mrliste"))["ok"], "Güterbahnhof braucht Schlüssel")

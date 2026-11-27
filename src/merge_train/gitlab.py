@@ -1,11 +1,13 @@
-"""GitLab über glab: MR-Verweise lesen, Metadaten und Liste der MRs holen, lokale Klone finden."""
-import json, os, re, shlex, subprocess, time
+"""GitLab über glab: MR-Verweise lesen, MR-Daten (in die Akte des Quell-Branches) und die Liste der MRs holen. Ein MR
+ist eine Schicht auf seinem Branch (docs/branch-waggon.md): MrRef nennt ihn für GitLab, der Waggon ist der Branch."""
+import glob, json, os, re, shlex, subprocess, time
 import urllib.parse
 from datetime import datetime
-from .einstellungen import KONF, ORDNER, ersetzen
-from .waggon import Fehler, Waggon
-from .git import arbeitsstand, aussen_log, git, git_oder_fehler, kurzpfad, ref_sha
-from .akte import akte_bearbeiten, akte_lesen
+from typing import NamedTuple, Optional
+from .einstellungen import DATEN, KONF, ORDNER, ersetzen
+from .waggon import ABKUERZUNGEN, Fehler, Waggon
+from .git import aussen_log, git, origin_teile
+from .akte import ZWEIGE, _json_lesen, akte_archivieren, akte_bearbeiten, akte_lesen, akten_vereinigen, zweig_akten
 
 class GitLabFehler(Fehler):
     pass
@@ -61,16 +63,78 @@ def alle(host, pfad, max_seiten=50):
 URL_MR = re.compile(r"https?://([^/\s]+)/(.+?)/-/merge_requests/(\d+)")
 
 
+class MrRef(NamedTuple):
+    """Ein MR, wie GitLab ihn nennt (für die API). Der Waggon dazu ist sein Quell-Branch (mr_waggon)."""
+    host: Optional[str]  # None = Standardhost von glab
+    projekt: str         # gruppe/projekt
+    iid: int
+
+    @property
+    def id(self):
+        """Kennung „host/gruppe/projekt/42“ (alte Waggon-Kennung, Abkürzung für den Branch)."""
+        return f"{self.host}/{self.projekt}/{self.iid}"
+
+    @property
+    def name(self):
+        return f"{self.projekt}!{self.iid}"
+
+    @property
+    def url(self):
+        """Seite: leitet auf den Branch weiter, fehlen die MR-Daten, bietet sie „MR-Daten holen“ an."""
+        return "/mr/" + self.id
+
+
+def mr_aus_kennung(kennung):
+    """„host/gruppe/projekt/42“ → MrRef, sonst None."""
+    teile = str(kennung).split("/")
+    if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
+       or any(t in ("", ".", "..") for t in teile[1:-1]):
+        return None
+    return MrRef(teile[0] or None, "/".join(teile[1:-1]), int(teile[-1]))
+
+
+def mr_von(akte):
+    """MR der Schicht einer Akte (Feld „gitlab“), None ohne."""
+    g = akte.get("gitlab") or {}
+    return MrRef(g.get("host"), g["projekt"], int(g["iid"])) if g.get("projekt") and g.get("iid") else None
+
+
+def mr_index():
+    """Alle Branches mit MR-Schicht: {(gruppe/projekt klein, iid): (host, Waggon)}."""
+    from urllib.parse import unquote
+    out = {}
+    for ordner in glob.glob(os.path.join(DATEN, ZWEIGE, "*")):
+        for _, pfad in zweig_akten(unquote(os.path.basename(ordner))):
+            akte = _json_lesen(pfad) or {}
+            g = akte.get("gitlab") or {}
+            if g.get("projekt") and g.get("iid") and akte.get("mr"):
+                out[(g["projekt"].lower(), int(g["iid"]))] = (g.get("host"), Waggon.aus_dict(akte["mr"]))
+    return out
+
+
+def mr_waggon(mr, index=None):
+    """Der Branch, dessen Akte diesen MR trägt, None, solange seine MR-Daten nicht geholt sind."""
+    host, w = (mr_index() if index is None else index).get((mr.projekt.lower(), mr.iid), (None, None))
+    return w if w and (not mr.host or not host or host == mr.host) else None
+
+
+def _als_mr(kennung):
+    """Abkürzung (waggon.ABKUERZUNGEN): MR-Kennung, MR-URL oder gruppe/projekt!42 → sein Branch."""
+    mr = mr_aus_kennung(kennung)
+    if not mr and (URL_MR.search(kennung) or re.fullmatch(r"[\w.\-/]+!\d+", kennung)):
+        mr = mr_ref(kennung)
+    return mr and mr_waggon(mr)
+
+
+ABKUERZUNGEN.append(_als_mr)
+
+
 def remote_info(ordner):
-    """(host, projektpfad) aus dem origin-Remote eines Klons."""
-    url = (git(ordner, "remote", "get-url", "origin", check=False) or "").strip()
-    for rx in (r"^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)(?:\.git)?/?$",
-               r"^https?://(?:[^@/]+@)?([^/]+)/(.+?)(?:\.git)?/?$",
-               r"^[\w.-]+@([^:]+):(.+?)(?:\.git)?/?$"):
-        m = re.match(rx, url)
-        if m:
-            return KONF["gitlab_host"] or m.group(1), m.group(2)
-    raise Fehler(f"kein GitLab-Remote „origin“ in {ordner}")
+    """(host, projektpfad) aus dem origin-Remote eines Klons (host: gitlab_host, wenn gesetzt)."""
+    teile = origin_teile(ordner)
+    if not teile:
+        raise Fehler(f"kein GitLab-Remote „origin“ in {ordner}")
+    return KONF["gitlab_host"] or teile[0], teile[1]
 
 
 def ist_mr_ref(s):
@@ -78,11 +142,11 @@ def ist_mr_ref(s):
 
 
 def mr_ref(s, ordner=None):
-    """MR-URL, '!42' (Projekt aus git-Remote von ordner) oder 'gruppe/projekt!42' → Waggon."""
+    """MR-URL, '!42' (Projekt aus git-Remote von ordner) oder 'gruppe/projekt!42' → MrRef."""
     s = str(s).strip()
     m = URL_MR.search(s)
     if m:
-        return Waggon(host=m.group(1), projekt=m.group(2), iid=int(m.group(3)))
+        return MrRef(m.group(1), m.group(2), int(m.group(3)))
     m = re.fullmatch(r"([\w.\-/]+)!(\d+)", s)
     if m:
         host = KONF["gitlab_host"]
@@ -91,11 +155,11 @@ def mr_ref(s, ordner=None):
                 host = remote_info(ordner)[0]
             except Fehler:
                 pass
-        return Waggon(host=host, projekt=m.group(1), iid=int(m.group(2)))
+        return MrRef(host or None, m.group(1), int(m.group(2)))
     m = re.fullmatch(r"!?(\d+)", s)
     if m:
         host, projekt = remote_info(ordner or os.getcwd())
-        return Waggon(host=host, projekt=projekt, iid=int(m.group(1)))
+        return MrRef(host, projekt, int(m.group(1)))
     raise Fehler(f"kein Merge-Request erkannt: {s}")
 
 
@@ -113,42 +177,7 @@ def mr_pfad(mr):
 def mr_normalisieren(meta, mr):
     """Kanonischen Projektpfad aus web_url übernehmen (Umbenennungen, Groß/klein)."""
     m = URL_MR.search(meta.get("web_url") or "")
-    return Waggon(host=mr.host or m.group(1), projekt=m.group(2), iid=int(m.group(3))) if m else mr
-
-
-def lokale_klone(mr):
-    """Klone des MR-Projekts: [repos], der gemerkte Klon aus der Akte, dann gefundene unter klon_ordner."""
-    out = []
-    for schl in (mr.projekt, f'{mr.host}/{mr.projekt}'):
-        if schl in KONF["repos"]:
-            out.append(os.path.expanduser(KONF["repos"][schl]))
-    k = akte_lesen(mr).get("klon")
-    if k:
-        out.append(k)
-    out += klon_suchen(mr.projekt)
-    return [o for o in out if os.path.isdir(o)]
-
-
-_REMOTE = {}  # Kandidat aus klon_ordner → Projektpfad seines origin ("" ohne GitLab-Remote), je Serverlauf
-
-
-def klon_suchen(projekt):
-    """Unter jedem Eintrag von klon_ordner: <ordner>/<letzter Teil des Projektpfads> bzw. <ordner>/<ganzer Pfad>,
-    sofern dessen origin auf genau dieses Projekt zeigt (Groß/klein egal)."""
-    ordner = KONF["klon_ordner"]
-    out = []
-    for d in ordner if isinstance(ordner, list) else [ordner]:
-        for kandidat in dict.fromkeys(os.path.join(os.path.expanduser(d), t) for t in (projekt.rsplit("/", 1)[-1], projekt)):
-            if not os.path.exists(os.path.join(kandidat, ".git")):
-                continue
-            if kandidat not in _REMOTE:
-                try:
-                    _REMOTE[kandidat] = remote_info(kandidat)[1]
-                except Fehler:
-                    _REMOTE[kandidat] = ""
-            if _REMOTE[kandidat].lower() == projekt.lower():
-                out.append(kandidat)
-    return out
+    return MrRef(mr.host or m.group(1), m.group(2), int(m.group(3))) if m else mr
 
 
 # MR-Daten (Titel, Beschreibung, Branches …) kommen aus dem Cache im Review-Stand. GitLab wird nur auf
@@ -161,19 +190,46 @@ class MetaFehlt(GitLabFehler):
     pass
 
 
+# Felder der MR-Schicht in der Akte eines Branches: ein neuer MR für denselben Branch fängt sie neu an (die alten gehen
+# mit der ganzen Akte als Kopie nach archiv/), die Fäden bleiben.
+SCHICHT_FELDER = ("gitlab", "meta", "diskussionen", "diskussionen_abgehakt", "ich_id", "abgeschlossen", "reihenfolge",
+                  "hinweise", "hinweis_dateien", "hinweis_agenten", "ausgecheckt", "auscheck_grund")
+
+
+def alte_mr_akte(mr):
+    """reviews/<mr>.json von vor Schritt 5 (MR-Akte ohne MR-Daten, akten_migrieren ließ sie liegen)."""
+    return os.path.join(DATEN, "reviews", re.sub(r"[^\w.-]", "_", f"{mr.host or 'gitlab'}_{mr.projekt}_{mr.iid}") + ".json")
+
+
 def mr_meta_holen(mr):
-    """MR-Daten aus GitLab holen und merken. Rückgabe (mr kanonisch, meta)."""
+    """MR-Daten aus GitLab holen und in die Akte des Quell-Branches schreiben: das schaltet dort die MR-Schicht frei
+    (Feld „gitlab“). Rückgabe (Waggon des Branches, meta)."""
     roh = glab(mr.host, mr_pfad(mr))
     mr = mr_normalisieren(roh, mr)
     meta = {k: roh.get(k) for k in META_FELDER}
     autor = roh.get("author") or {}
-    meta["author"] = {"name": autor.get("name", ""), "id": autor.get("id")}  # id: eigener MR? (quellen.eigener_mr)
+    meta["author"] = {"name": autor.get("name", ""), "id": autor.get("id")}  # id: eigener MR? (eigener_mr)
     meta["_zeit"] = datetime.now().strftime("%d.%m. %H:%M")
-    with akte_bearbeiten(mr) as akte:
+    if not meta.get("source_branch"):
+        raise GitLabFehler(f"{mr.name}: GitLab nennt keinen Quell-Branch")
+    w = Waggon(repo=mr.projekt.lower(), branch=meta["source_branch"])
+    with akte_bearbeiten(w) as akte:
+        alt = mr_von(akte)
+        if alt and alt.iid != mr.iid:  # neuer MR für denselben Branch: die alte Schicht ins Archiv
+            akte_archivieren(w, akte, f"mr{alt.iid}")
+            for f in SCHICHT_FELDER:
+                akte.pop(f, None)
+            akte["kommentare"] = [k for k in akte["kommentare"] if k.get("nachrichten") is not None]
+        frueher = alte_mr_akte(mr)
+        if os.path.exists(frueher):
+            akten_vereinigen(akte, _json_lesen(frueher) or {})
         akte["meta"] = meta
-        akte["mr"] = dict(mr.als_dict(), web_url=meta.get("web_url") or "", titel=meta.get("title") or "",
-                        source_branch=meta.get("source_branch") or "", target_branch=meta.get("target_branch") or "")
-    return mr, meta
+        akte["gitlab"] = {"host": mr.host, "projekt": mr.projekt, "iid": mr.iid, "web_url": meta.get("web_url") or "",
+                          "titel": meta.get("title") or "", "source_branch": meta["source_branch"],
+                          "target_branch": meta.get("target_branch") or ""}
+    if os.path.exists(frueher):
+        os.remove(frueher)
+    return w, meta
 
 
 def gitlab_klon(ordner):
@@ -189,7 +245,7 @@ def gitlab_klon(ordner):
 
 
 def mrs_zum_branch(host, projekt, branch):
-    """Offene MRs mit diesem Quell-Branch, aus GitLab: [Waggon]."""
+    """Offene MRs mit diesem Quell-Branch, aus GitLab: [MrRef]."""
     out = []
     for it in glab(host, f"projects/{enc(projekt)}/merge_requests?state=opened&source_branch={enc(branch)}") or []:
         try:
@@ -200,52 +256,19 @@ def mrs_zum_branch(host, projekt, branch):
 
 
 def mr_anlegen(host, projekt, quelle, ziel, titel, beschreibung, ordner):
-    """MR in GitLab anlegen (docs/ein-waggon.md, Schritt 2), seine MR-Daten holen und den Klon merken: so findet ihn
-    mrs_mit_klon, und der lokale Waggon geht im MR auf. Der Branch muss schon auf origin sein. Rückgabe: Waggon."""
+    """MR in GitLab anlegen (docs/ein-waggon.md, Schritt 2) und seine MR-Daten holen: Der Branch bekommt seine
+    MR-Schicht. Der Branch muss schon auf origin sein. Rückgabe: Waggon des Branches."""
     roh = glab(host, f"projects/{enc(projekt)}/merge_requests", "POST",
                {"source_branch": quelle, "target_branch": ziel, "title": titel, "description": beschreibung})
     return mr_uebernehmen(mr_ref((roh or {}).get("web_url", "")), ordner)
 
 
 def mr_uebernehmen(mr, ordner):
-    """MR-Daten holen und ordner als seinen Klon merken (mrs_mit_klon findet ihn dann). Rückgabe: Waggon (kanonisch)."""
-    mr, _ = mr_meta_holen(mr)
-    with akte_bearbeiten(mr) as akte:
+    """MR-Daten holen und ordner als Klon merken (falls er sonst nicht zu finden ist). Rückgabe: Waggon des Branches."""
+    w, _ = mr_meta_holen(mr)
+    with akte_bearbeiten(w) as akte:
         akte["klon"] = ordner
-    return mr
-
-
-_GEHOLT = set()  # (klon, quelle, ziel), für die mr_lokal schon einmal origin geholt hat (je Serverlauf)
-
-
-def mr_lokal(mr, meta):
-    """Lokaler Klon und Stand: Kopf = Quell-Branch (lokal, sonst origin), Basis = merge-base mit dem Ziel-Branch
-    (bzw. die Basis aus GitLab, wenn GitLab beim letzten Holen auf demselben Stand war). Fehlt ein Branch, wird origin
-    einmal geholt (git fetch, ändert nichts am Arbeitsverzeichnis). Rückgabe (ordner, refs)."""
-    quelle, ziel = meta.get("source_branch") or "", meta.get("target_branch") or ""
-    gl = meta.get("diff_refs") or {}
-    gruende = []
-    for o in dict.fromkeys(os.path.realpath(k) for k in lokale_klone(mr)):
-        head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
-        if (not head or not tgt) and (o, quelle, ziel) not in _GEHOLT:
-            _GEHOLT.add((o, quelle, ziel))
-            try:
-                git_oder_fehler(o, "fetch", "-q", "origin")
-            except Fehler as e:
-                gruende.append(str(e)); continue
-            head, tgt = ref_sha(o, quelle), ref_sha(o, ziel, remote_zuerst=True)
-        if not head or not tgt:
-            gruende.append(f"{kurzpfad(o)}: Branch {quelle if not head else ziel} fehlt (auch nach git fetch)"); continue
-        zref = f"origin/{ziel}" if git(o, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{ziel}", check=False) else ziel  # wie tgt; see_also "ref": "ziel"
-        if gl.get("head_sha") == head and gl.get("base_sha") and \
-           git(o, "cat-file", "-e", gl["base_sha"] + "^{commit}", check=False) is not None:
-            return o, {"base_sha": gl["base_sha"], "start_sha": gl.get("start_sha") or tgt, "head_sha": head, "ziel": zref}
-        base = (git(o, "merge-base", tgt, head, check=False) or "").strip()
-        if not base:
-            gruende.append(f"{kurzpfad(o)}: kein gemeinsamer Vorgänger von {ziel} und {quelle}"); continue
-        return o, {"base_sha": base, "start_sha": tgt, "head_sha": head, "ziel": zref}
-    raise Fehler("kein lokaler Klon für " + f'{mr.projekt}!{mr.iid}: '
-                       + ("; ".join(gruende) or "unter [repos] eintragen, klon_ordner setzen oder „merge-train agent zeigen“ im Repo aufrufen"))
+    return w
 
 
 # Die Liste kommt aus dem Cache. GitLab wird nur im Güterbahnhof („↻ MRs“) gefragt.
@@ -263,17 +286,21 @@ def ich(host):
     return _ICH[host]
 
 
-def eigener_mr(w):
-    """Bin ich Autor und nicht Reviewer dieses MR? Dann ist sein Quell-Branch meine Entwicklung: der Agent setzt Wünsche
-    um und committet (docs/ein-waggon.md). Laut gemerkter MR-Liste (Rollen), sonst Autor der MR-Daten gegen meinen
-    GitLab-Benutzer."""
-    ende = f"/{w.projekt}/-/merge_requests/{w.iid}".lower()
+def eigener_mr(w, akte=None):
+    """Hat der Branch einen MR, bei dem ich Autor und nicht Reviewer bin? Dann ist er meine Entwicklung: der Agent setzt
+    Wünsche um und committet (docs/ein-waggon.md). Laut gemerkter MR-Liste (Rollen), sonst Autor der MR-Daten gegen
+    meinen GitLab-Benutzer. False ohne MR."""
+    akte = akte or akte_lesen(w)
+    mr = mr_von(akte)
+    if not mr:
+        return False
+    ende = f"/{mr.projekt}/-/merge_requests/{mr.iid}".lower()
     rollen = [r for it in mr_liste()[0] if it.get("web_url", "").lower().endswith(ende) for r in it.get("rollen") or []]
     if rollen:
         return "author" in rollen and "reviewer" not in rollen
-    autor = ((akte_lesen(w).get("meta") or {}).get("author") or {}).get("id")
+    autor = ((akte.get("meta") or {}).get("author") or {}).get("id")
     try:
-        return bool(autor) and autor == ich(w.host)
+        return bool(autor) and autor == ich(mr.host)
     except GitLabFehler:
         return False
 
@@ -281,15 +308,6 @@ def eigener_mr(w):
 def ausgecheckt(ordner):
     """Der im Klon ausgecheckte Branch (None bei losgelöstem HEAD)."""
     return (git(ordner, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or None
-
-
-def eigener_arbeitsstand(mr, ordner, meta, refs):
-    """Eigener MR, dessen Quell-Branch im Klon ausgecheckt ist: Kopf ist der Arbeitsstand (auch nicht Committetes,
-    docs/ein-waggon.md); refs.commit_sha = letzter Commit des Branches, refs.arbeitsstand = True. Sonst refs."""
-    quelle = meta.get("source_branch")
-    if not quelle or ausgecheckt(ordner) != quelle or not eigener_mr(mr):
-        return refs
-    return dict(refs, head_sha=arbeitsstand(ordner), commit_sha=refs["head_sha"], arbeitsstand=True)
 
 
 def mr_liste():
@@ -326,9 +344,9 @@ def mr_liste_holen():
     return items, zeit
 
 
-def geaenderte_dateien(mr, von, bis):
-    """Pfade (alt und neu), die sich zwischen von und bis geändert haben (lokaler Klon)."""
-    for o in lokale_klone(mr):
+def geaenderte_dateien(klone, von, bis):
+    """Pfade (alt und neu), die sich zwischen von und bis geändert haben (im ersten Klon, der beide kennt)."""
+    for o in klone:
         out = git(o, "-c", "core.quotepath=false", "diff", "--name-status", "-M", von, bis, check=False)
         if out is not None:
             return {p for z in out.splitlines() for p in z.split("\t")[1:]}

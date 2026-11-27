@@ -466,6 +466,107 @@ def git_commits(ordner, von=None, bis=None, *, nur=None):
     return [tuple(c.strip("\n").split("\x1f")) for c in roh.split("\x1e") if c.strip()]
 
 
+# ---- Repos und ihre Klone (docs/branch-waggon.md): ein Repo ist sein origin, ein Branch darin ist ein Waggon – in allen
+# Klonen und Worktrees dieselbe Akte. Den Arbeitsstand zeigt nur der Haupt-Klon.
+
+ORIGIN_MUSTER = (r"^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)(?:\.git)?/?$", r"^https?://(?:[^@/]+@)?([^/]+)/(.+?)(?:\.git)?/?$",
+                 r"^[\w.-]+@([^:]+):(.+?)(?:\.git)?/?$")
+
+
+def origin_teile(ordner):
+    """(host, projektpfad) aus der URL von origin, None ohne (lesbaren) origin."""
+    url = (git(ordner, "remote", "get-url", "origin", check=False) or "").strip()
+    for rx in ORIGIN_MUSTER:
+        m = re.match(rx, url)
+        if m:
+            return m.group(1), m.group(2)
+    return None
+
+
+_REPO = {}  # Klon (real) → Repo-Kennung, je Prozess
+
+
+def repo_kennung(wurzel):
+    """Kennung des Repos: Projektpfad aus origin (klein, ohne Host: SSH-Alias, https und GitLab nennen ihn
+    verschieden), ohne origin der Projektname des Ordners."""
+    echt = os.path.realpath(wurzel)
+    if echt not in _REPO:
+        teile = origin_teile(wurzel)
+        _REPO[echt] = teile[1].lower() if teile else projektname(wurzel)
+    return _REPO[echt]
+
+
+def worktrees(ordner):
+    """Alle Worktrees des Repos von ordner (auch der Hauptordner)."""
+    return [z[len("worktree "):] for z in (git(ordner, "worktree", "list", "--porcelain", check=False) or "").splitlines()
+            if z.startswith("worktree ")]
+
+
+def ist_worktree(ordner):
+    """Ist ordner ein zusätzlicher Worktree (nicht der Hauptordner seines Repos)?"""
+    a = (git(ordner, "rev-parse", "--git-dir", check=False) or "").strip()
+    b = (git(ordner, "rev-parse", "--git-common-dir", check=False) or "").strip()
+    return bool(a and b) and os.path.realpath(os.path.join(ordner, a)) != os.path.realpath(os.path.join(ordner, b))
+
+
+def klon_ordner_suchen(repo):
+    """Unter jedem Eintrag von klon_ordner: <ordner>/<letzter Teil des Projektpfads> bzw. <ordner>/<ganzer Pfad>, sofern
+    er ein Klon dieses Repos ist."""
+    ordner = KONF["klon_ordner"]
+    out = []
+    for d in ordner if isinstance(ordner, list) else [ordner]:
+        for k in dict.fromkeys(os.path.join(os.path.expanduser(d), t) for t in (repo.rsplit("/", 1)[-1], repo)):
+            if ist_repo(k) and repo_kennung(k) == repo:
+                out.append(k)
+    return out
+
+
+def repos_eintrag(repo):
+    """Klon aus [repos] („gruppe/projekt“ oder „host/gruppe/projekt“ = Pfad), None ohne."""
+    for schl, pfad in (KONF.get("repos") or {}).items():
+        s = schl.lower()
+        if s == repo or s.endswith("/" + repo) and s.count("/") == repo.count("/") + 1:
+            return os.path.expanduser(pfad)
+    return None
+
+
+_KLONE = {}  # Repo → (Zeit, Klone), kurz gemerkt (finde_repos ist teuer)
+KLONE_S = 10
+
+
+def repo_klone(repo, gemerkt=()):
+    """Alle bekannten Klone und Worktrees des Repos (real, ohne Doppel): [repos], die Repos unter projekte, klon_ordner,
+    gemerkt (z. B. der Klon aus der Akte), dazu ihre Worktrees. Der Haupt-Klon steht vorn (haupt_klon)."""
+    t, klone = _KLONE.get(repo, (0, None))
+    if klone is None or time.time() - t > KLONE_S:
+        kandidaten = [repos_eintrag(repo)] + [r for r in finde_repos(alle=True) if repo_kennung(r) == repo] + klon_ordner_suchen(repo)
+        klone = []
+        for k in kandidaten:
+            if k and os.path.isdir(k):
+                for w in [k] + worktrees(k):
+                    if os.path.realpath(w) not in klone and os.path.isdir(w):
+                        klone.append(os.path.realpath(w))
+        _KLONE[repo] = (time.time(), klone)
+    mehr = [os.path.realpath(g) for g in gemerkt if g and os.path.isdir(g) and repo_kennung(g) == repo]
+    return list(dict.fromkeys(klone + mehr))
+
+
+def haupt_klon(repo, gemerkt=()):
+    """Der Haupt-Klon des Repos (nur er zeigt den Arbeitsstand): der Eintrag in [repos], sonst das Repo unter projekte,
+    das kein Worktree ist, sonst der erste bekannte. None ohne Klon."""
+    klone = repo_klone(repo, gemerkt)
+    eintrag = repos_eintrag(repo)
+    if eintrag and os.path.realpath(eintrag) in klone:
+        return os.path.realpath(eintrag)
+    projekte = {os.path.realpath(r) for r in finde_repos(alle=True)}
+    return next((k for k in klone if k in projekte and not ist_worktree(k)), klone[0] if klone else None)
+
+
+def hat_branch(ordner, branch):
+    """Gibt es den Branch im Klon (lokal oder origin/…)?"""
+    return ref_sha(ordner, branch) is not None
+
+
 def projekt_wurzel(projekt):
     """Klon des lokalen Projekts mit diesem Namen (auch, wenn ihm gerade ein Branch fehlt)."""
     wurzel = next((r for r in finde_repos(alle=True) if projektname(r) == projekt), None)

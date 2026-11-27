@@ -1,10 +1,10 @@
 """Gespräch mit dem Agenten: Fäden an Zeilen, Nachrichten, Daten für die Seite."""
 import glob, hashlib, json, os, re
 from .einstellungen import DATEN, KONF, jetzt
-from .waggon import ARTEN, Fehler, Waggon
+from .waggon import MYRLING_ART, Fehler, Waggon
 from .git import git, inhalt
 from .zeilen import alt_zeile, bereich_anfang_vorwaerts, im_diff, zeile_vorwaerts
-from .akte import (akte_lesen, aktion_ausfuehren, andere_zweig_akten, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
+from .akte import (ZWEIGE, akte_lesen, aktion_ausfuehren, andere_zweig_akten, datei_index, eintrag_entfernen, faden_anhaengen, faden_damals, faden_finden,
     faden_geaendert, faden_stand,
     faden_status, faeden_von, kommentar_finden)
 from .hinweise import hinweise_aufloesen, see_also_aufloesen
@@ -260,18 +260,17 @@ def gespraech_aktion(waggon, eingabe):
 # ---- Agent-Seite (CLI)
 
 def alle_gespraeche(leere=False):
-    """Alle Gespräche (lokale Projekte, Myrling-Läufe und MRs) → Liste von Schlüsseln. MRs und Myrling-Läufe nur mit
-    Faden, außer leere: auch die noch ohne (horchen im Klon muss sie schon belauschen, bevor dort die erste Frage steht)."""
+    """Alle Gespräche (Branches und Myrling-Läufe) → Liste von Waggons, nur die mit Faden, außer leere: auch die noch
+    ohne (horchen im Klon muss sie schon belauschen, bevor dort die erste Frage steht)."""
     out = []
-    for art in ARTEN:
-        for p in glob.glob(os.path.join(DATEN, art.ordner, "*.json")):
-            try:
-                akte = json.load(open(p, encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            m = akte.get("mr") or {}
-            if m.get("lokal") or (m.get("iid") or m.get("myrling")) and (leere or any(k.get("nachrichten") is not None for k in akte.get("kommentare") or [])):
-                out.append(Waggon.aus_dict(m))
+    for p in glob.glob(os.path.join(DATEN, MYRLING_ART.ordner, "*.json")) + glob.glob(os.path.join(DATEN, ZWEIGE, "*", "*.json")):
+        try:
+            akte = json.load(open(p, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        m = akte.get("mr") or {}
+        if (m.get("branch") or m.get("myrling")) and (leere or any(k.get("nachrichten") is not None for k in akte.get("kommentare") or [])):
+            out.append(Waggon.aus_dict(m))
     return out
 
 

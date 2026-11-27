@@ -46,6 +46,7 @@ MODUL_TEILE = {
     "quellen": ["lokal", "arbeitsstand", "gemischt", "myrling"], "review": ["gitlab", "myrling"],
     "seite": ["lokal", "gitlab", "gemischt", "myrling"], "server": ["lokal", "gitlab", "myrling"], "syntax": ["lokal"],
     "waggon": ["lokal", "gitlab", "myrling"], "web": [], "zeilen": [], "zuhoerer": ["lokal", "horchen"],
+    "zweig": ["lokal", "arbeitsstand", "gitlab", "gemischt"],
 }
 ALLE_TEILE = ["gitlab", "lokal", "horchen", "arbeitsstand", "gemischt", "myrling"]
 NICHTS = ("docs/", "skill/", "completions/", "perf/", "README.md", "AGENTS.md", "CLAUDE.md", "refactor.md", ".gitignore",

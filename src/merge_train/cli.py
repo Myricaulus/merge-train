@@ -4,7 +4,7 @@ from .einstellungen import ARBEITSSTAND, BIS, KONF, KONFIG_DATEI, VON, dateiname
 from .waggon import Fehler, von_bis
 from .git import ANLASS, fehlende_zweige, finde_repos, git, projekt_ordner, statistik
 from .gitlab import ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig
-from .quellen import LOKAL
+from .quellen import BRANCH
 from .prozess import im_browser, server, server_stoppen
 from .instanz import beobachten_starten, zur_instanz
 from .agent_cli import agent_main
@@ -54,10 +54,10 @@ def main():
         if not KONF["gitlab"]:
             sys.exit("merge-train: GitLab ist abgeschaltet (gitlab = false in der Einstellung)")
         try:  # Aufruf von Hand: MR-Daten einmal holen, die Seite selbst fragt GitLab nicht
-            mr, _ = mr_meta_holen(mr_vollstaendig(mr_ref(o.ordner, os.getcwd())))
+            w, _ = mr_meta_holen(mr_vollstaendig(mr_ref(o.ordner, os.getcwd())))
         except Fehler as e:
             sys.exit(f"merge-train: {e}")
-        return im_browser("/mr/" + mr.id, o.nur_datei)
+        return im_browser(w.url, o.nur_datei)
     if o.mrs or (not o.ordner and not KONF["lokal"]):
         if not KONF["gitlab"]:
             sys.exit("merge-train: lokal und gitlab sind beide abgeschaltet – siehe " + KONFIG_DATEI)
@@ -79,7 +79,7 @@ def main():
                  "im Zug den Waggon aufklappen oder [zweige] in der Einstellung)")
     if wurzel:  # der Server baut die Seite beim Abruf (und danach die übrigen offenen im Hintergrund)
         return im_browser("/" + dateiname(projektname(wurzel)), o.nur_datei)
-    offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
+    offen = [w for w in BRANCH.wagen() if w.get("projekt") and w["status"] == "offen"]
     if not offen:
         print("merge-train: nichts zu prüfen – überall ist bis auf dem Stand von von"); return
     return im_browser(offen[0]["datei"], o.nur_datei)

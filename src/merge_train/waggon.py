@@ -1,8 +1,9 @@
-"""Der Waggon: ein Vergleich Quelle → Ziel in einem lokalen Klon – ein lokales Projekt (Branch bis gegen von), ein
-GitLab-Merge-Request oder ein Lauf des Myrlings, der auf eine Prüfung wartet (Skript gegen die zuletzt angesehene Fassung). Waggon ist sein Schlüssel; daraus ergeben sich Kennung, Name, Dateiname und was er kann.
-von/bis eines lokalen Projekts: von_bis."""
+"""Der Waggon: ein Branch eines Repos (docs/branch-waggon.md) – ein GitLab-MR ist nur eine Schicht darauf – oder ein Lauf
+des Myrlings, der auf eine Prüfung wartet (Skript gegen die zuletzt angesehene Fassung). Waggon ist sein Schlüssel;
+daraus ergeben sich Kennung, Name, Dateiname und was er kann. von/bis eines lokalen Projekts (Ordners): von_bis."""
 import re
-from .einstellungen import ARBEITSSTAND, BIS, KONF, VON, dateiname
+import urllib.parse
+from .einstellungen import ARBEITSSTAND, BIS, KONF, VON
 from .akte import projekt_akte_lesen
 from typing import NamedTuple, Optional
 
@@ -22,8 +23,7 @@ def zweige_standard(projekt):
 
 
 def zweige_gewaehlt(projekt):
-    """Auf der Seite (aufgeklappter Waggon) gewähltes {von, bis}, leer = Standard (in der Projekt-Akte, nicht je Branch:
-    welche Branch-Akte gilt, hängt selbst von bis ab)."""
+    """Auf der Seite (aufgeklappter Waggon) gewähltes {von, bis}, leer = Standard (in der Projekt-Akte des Ordners)."""
     return projekt_akte_lesen(projekt).get("zweige") or {}
 
 
@@ -41,11 +41,11 @@ def fertig_moeglich(projekt):
 
 
 # ---- Arten von Waggons: was an der Art hängt und ohne Klon, Seite oder GitLab auskommt – Kennung, Seite, Dateiname,
-# Akten-Ordner, Fähigkeiten. Die Quelle dazu (Klon, Seite, Zug, Prompt) steht in quellen.py und nennt ihre Art
-# (Quelle.art). Eine neue Quelle (GitHub) bekommt hier eine weitere Art.
+# Akten-Ordner. Was ein Waggon kann, entscheidet seine Quelle (quellen.py). Alte Kennungen (projekt:<name>, MR-Kennung
+# host/gruppe/projekt/42) lösen die Abkürzungen in ABKUERZUNGEN auf einen Branch auf.
 
 class Art:
-    """Art mit einem Feld des Waggons als Schlüssel; Kennung „<praefix><schlüssel>“."""
+    """Art mit einem Feld des Waggons als Schlüssel."""
     feld = praefix = titel = None
     ordner = None  # Akten-Ordner unter DATEN
 
@@ -53,53 +53,67 @@ class Art:
         """Gehört der Waggon (als dict: Feld „mr“ einer Akte, Waggon._asdict()) zu dieser Art?"""
         return bool(d.get(self.feld))
 
-    def erkennt_kennung(self, kennung):
-        return kennung.startswith(self.praefix)
+    def kann(self, w):
+        from .quellen import quelle  # quellen braucht waggon
+        return quelle(w).kann(w)
 
-    def gueltig(self, name):
-        raise NotImplementedError
+
+class BranchArt(Art):
+    """Branch eines Repos: Kennung „<repo>@<branch>“ (repo = Projektpfad aus origin bzw. Projektname)."""
+    feld, titel, ordner = "repo", "Branch", "zweige"
+
+    def erkennt_kennung(self, kennung):
+        return "@" in kennung and not kennung.startswith(("myrling:", "projekt:"))
 
     def aus_kennung(self, kennung):
-        name = kennung[len(self.praefix):]
-        if not self.gueltig(name):
-            raise Ungueltig(f"ungültige {self.titel}-Kennung: {kennung}")
-        return Waggon(**{self.feld: name})
+        repo, _, branch = kennung.partition("@")
+        if not repo or not branch or any(t in ("", ".", "..") for t in repo.split("/")) or ".." in branch.split("/"):
+            raise Ungueltig(f"ungültige Branch-Kennung: {kennung}")
+        return Waggon(repo=repo, branch=branch)
 
     def aus_dict(self, d):
-        return Waggon(**{self.feld: d[self.feld]})
+        return Waggon(repo=d["repo"], branch=d["branch"])
 
     def als_dict(self, w):
-        return {self.feld: getattr(w, self.feld)}
+        return {"repo": w.repo, "branch": w.branch}
 
     def id(self, w):
-        return self.praefix + getattr(w, self.feld)
+        return f"{w.repo}@{w.branch}"
 
     def name(self, w):
-        return getattr(w, self.feld)
-
-
-class LokalArt(Art):
-    feld, praefix, titel, ordner = "lokal", "projekt:", "Projekt", "lokal"
-
-    def gueltig(self, name):
-        return name and not any(t in ("", ".", "..") for t in name.split("/"))
+        return f"{w.repo.rsplit('/', 1)[-1]}@{w.branch}"
 
     def url(self, w):
-        return "/" + dateiname(w.lokal)
+        return "/b/" + urllib.parse.quote(self.id(w), safe="/@")
 
     def dateiname(self, w):
-        return dateiname(w.lokal)[:-5]
-
-    def kann(self, w):
-        return {"review": False, "fertig": fertig_moeglich(w.lokal), "committen": True}
+        return urllib.parse.quote(self.id(w), safe="")
 
 
 class MyrlingArt(Art):
     """Myrling: der Agent im Repo des Skripts darf es ändern; die Entscheidung über den Lauf trifft der Nutzer."""
     feld, praefix, titel, ordner = "myrling", "myrling:", "Myrling", "myrling"
 
-    def gueltig(self, name):
-        return re.fullmatch(r"[\w][\w.+-]*", name) and ".." not in name
+    def erkennt_kennung(self, kennung):
+        return kennung.startswith(self.praefix)
+
+    def aus_kennung(self, kennung):
+        name = kennung[len(self.praefix):]
+        if not (re.fullmatch(r"[\w][\w.+-]*", name) and ".." not in name):
+            raise Ungueltig(f"ungültige Myrling-Kennung: {kennung}")
+        return Waggon(myrling=name)
+
+    def aus_dict(self, d):
+        return Waggon(myrling=d["myrling"])
+
+    def als_dict(self, w):
+        return {"myrling": w.myrling}
+
+    def id(self, w):
+        return self.praefix + w.myrling
+
+    def name(self, w):
+        return w.myrling
 
     def url(self, w):
         return "/myrling/" + w.myrling
@@ -107,66 +121,33 @@ class MyrlingArt(Art):
     def dateiname(self, w):
         return w.myrling
 
-    def kann(self, w):
-        return {"review": False, "fertig": False, "committen": True}
+
+BRANCH_ART, MYRLING_ART = BranchArt(), MyrlingArt()
+ARTEN = (MYRLING_ART, BRANCH_ART)
 
 
-class MrArt(Art):
-    """Merge-Request: alles, was keine andere Art erkennt; Kennung „host/gruppe/projekt/42“."""
-    titel, ordner = "MR", "reviews"
-
-    def erkennt(self, d):
-        return True
-
-    def erkennt_kennung(self, kennung):
-        return True
-
-    def aus_kennung(self, kennung):
-        teile = kennung.split("/")
-        if len(teile) < 3 or not teile[-1].isdigit() or not re.fullmatch(r"[\w.:-]*", teile[0]) \
-           or any(t in ("", ".", "..") for t in teile[1:-1]):
-            raise Ungueltig(f"ungültige MR-Kennung: {kennung}")
-        return Waggon(host=teile[0], projekt="/".join(teile[1:-1]), iid=int(teile[-1]))
-
-    def aus_dict(self, d):
-        return Waggon(host=d["host"], projekt=d["projekt"], iid=d["iid"])
-
-    def als_dict(self, w):
-        return {"host": w.host, "projekt": w.projekt, "iid": w.iid}
-
-    def id(self, w):
-        return f"{w.host}/{w.projekt}/{w.iid}"
-
-    def name(self, w):
-        return f"{w.projekt}!{w.iid}"
-
-    def url(self, w):
-        return "/mr/" + self.id(w)
-
-    def dateiname(self, w):
-        return re.sub(r"[^\w.-]", "_", f"{w.host or 'gitlab'}_{w.projekt}_{w.iid}")
-
-    def kann(self, w):
-        return {"review": True, "fertig": False, "committen": False}
-
-
-LOKAL_ART, MYRLING_ART, MR_ART = LokalArt(), MyrlingArt(), MrArt()
-ARTEN = (LOKAL_ART, MYRLING_ART, MR_ART)  # in dieser Reihenfolge gefragt: MR_ART nimmt den Rest
+# Abkürzungen: kennung → Waggon oder None (nicht meine). Tragen ein: quellen.py (projekt:<name>), gitlab.py (MR).
+ABKUERZUNGEN = []
 
 
 class Waggon(NamedTuple):
-    lokal: Optional[str] = None    # Name des lokalen Projekts – oder der MR:
-    host: Optional[str] = None     # None = Standardhost von glab
-    projekt: Optional[str] = None  # gruppe/projekt
-    iid: Optional[int] = None
+    repo: Optional[str] = None     # Repo-Kennung (git.repo_kennung) – mit branch: ein Branch
+    branch: Optional[str] = None
     myrling: Optional[str] = None  # oder ein Lauf des Myrlings: Name des Skripts (aus --anstehend)
 
     @classmethod
     def aus_id(cls, kennung):
-        """Kennung (wie sie die Seite und der Agent nennen) → Waggon. „projekt:name“ = lokales Projekt, sonst
-        „myrling:skript“ = Lauf des Myrlings, sonst „host/gruppe/projekt/42“."""
+        """Kennung (wie sie die Seite und der Agent nennen) → Waggon: „repo@branch“, „myrling:skript“ oder eine
+        Abkürzung (projekt:<name>, MR-Kennung bzw. -URL)."""
         kennung = str(kennung)
-        return next(a for a in ARTEN if a.erkennt_kennung(kennung)).aus_kennung(kennung)
+        art = next((a for a in ARTEN if a.erkennt_kennung(kennung)), None)
+        if art:
+            return art.aus_kennung(kennung)
+        for f in ABKUERZUNGEN:
+            w = f(kennung)
+            if w:
+                return w
+        raise Ungueltig(f"unbekannte Kennung: {kennung}")
 
     @classmethod
     def aus_dict(cls, d):
@@ -179,10 +160,6 @@ class Waggon(NamedTuple):
 
     def als_dict(self):
         return self.art.als_dict(self)
-
-    @property
-    def ist_mr(self):
-        return self.art is MR_ART
 
     @property
     def id(self):
@@ -204,7 +181,7 @@ class Waggon(NamedTuple):
 
     @property
     def kann(self):
-        """review    – Review-Kommentare und Agent-Hinweise, „Review abschließen“ überträgt sie nach GitLab
+        """review    – hat eine Quellen-Schicht (MR): Review-Kommentare und Agent-Hinweise, „Review abschließen“
         fertig    – „fertig ✓“ setzt den Ziel-Branch auf den gesehenen Stand
         committen – der Agent darf Wünsche umsetzen und committen (sonst nur antworten)"""
         return self.art.kann(self)

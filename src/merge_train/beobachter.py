@@ -1,4 +1,4 @@
-"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für lokale Seiten und eigene MRs im Arbeitsstand: merkt, wann sich im Repo etwas getan hat.
+"""Ist eine offene Seite veraltet? (seite_veraltet) Dazu für Branches ohne MR und eigene MRs im Arbeitsstand: merkt, wann sich im Repo etwas getan hat.
 
 Der Beobachter (inotify über ctypes, ohne Abhängigkeit; ohne inotify alle paar Sekunden „vielleicht“) meldet nur „seit
 Zähler n hat sich etwas bewegt“. Ob sich der Stand wirklich geändert hat, prüft erst git, und das nur nach einer Meldung.
@@ -6,8 +6,7 @@ Dazu: welche Zeilen zwischen zwei Ständen neu sind (Rahmen um das Neue nach dem
 """
 import os, re, subprocess, sys, threading, time
 from .einstellungen import SPERRE
-from .waggon import Fehler, von_bis
-from .git import arbeitsstand, bis_sha, git, projekt_wurzel
+from .git import arbeitsstand, git, ref_sha
 from .akte import akte_lesen
 from .seite import seiten_schluessel, struktur_der_seite
 
@@ -90,7 +89,7 @@ class Beobachter:
             time.sleep(0.2)  # Schwall beim Speichern/Bauen zusammenfassen
 
 
-_BEOBACHTER, _GEPRUEFT = {}, {}  # wurzel → Beobachter; (wurzel, lokal?) → (Zähler, (bis-sha, von-sha)) der letzten git-Prüfung
+_BEOBACHTER, _GEPRUEFT = {}, {}  # wurzel → Beobachter; (wurzel, Kennung) → (Zähler, (Kopf-sha, von-sha)) der letzten git-Prüfung
 
 
 def beobachter(wurzel):
@@ -113,28 +112,27 @@ def seite_veraltet(waggon, seite, akte=None):
 
 
 def repo_bewegt(waggon, refs, ordner=None):
-    """Steht das Repo nicht mehr auf refs (Arbeitsverzeichnis, HEAD oder von bewegt)? git nur nach einer Meldung des
-    Beobachters, sonst die letzte Antwort. Lokale Projekte und eigene MRs im Arbeitsstand (refs.arbeitsstand, Klon
-    ordner); andere MRs und Läufe ändern sich nur auf Knopfdruck."""
+    """Steht das Repo nicht mehr auf refs (Arbeitsverzeichnis, Branch oder von bewegt)? git nur nach einer Meldung des
+    Beobachters, sonst die letzte Antwort. Branches ohne MR (Kopf und von) und Branches im Arbeitsstand (refs.arbeitsstand);
+    MRs auf dem Commit-Stand und Läufe ändern sich nur auf Knopfdruck."""
     sha = refs.get("head_sha")
-    if not sha or not (waggon.lokal or (refs.get("arbeitsstand") and ordner)):
+    if not sha or not ordner or not os.path.isdir(ordner) or not waggon.branch:
         return False
-    try:
-        wurzel = projekt_wurzel(waggon.lokal) if waggon.lokal else ordner
-    except Fehler:
+    mit_mr = bool(akte_lesen(waggon).get("gitlab"))
+    if mit_mr and not refs.get("arbeitsstand"):
         return False
-    b = beobachter(wurzel)
-    k = (wurzel, bool(waggon.lokal))
+    b = beobachter(ordner)
+    k = (ordner, waggon.id)
     alt = _GEPRUEFT.get(k)
     if not alt or alt[0] != b.zaehler:
         n = b.zaehler
-        try:
-            jetzt = ((bis_sha(wurzel), git(wurzel, "rev-parse", von_bis(waggon.lokal)[0]).strip()) if waggon.lokal
-                     else (arbeitsstand(wurzel), None))  # anderer Branch ausgecheckt: anderer Arbeitsstand
+        try:  # anderer Branch ausgecheckt: anderer Arbeitsstand
+            kopf = arbeitsstand(ordner) if refs.get("arbeitsstand") else ref_sha(ordner, waggon.branch)
+            von = None if mit_mr else (git(ordner, "rev-parse", "--verify", "-q", refs.get("ziel") or "HEAD", check=False) or "").strip()
         except subprocess.CalledProcessError:
             return False
-        alt = _GEPRUEFT[k] = (n, jetzt)
-    start = refs.get("start_sha") if waggon.lokal else None
+        alt = _GEPRUEFT[k] = (n, (kopf, von))
+    start = None if mit_mr else refs.get("start_sha")
     return alt[1][0] != sha or bool(start and alt[1][1] != start)
 
 

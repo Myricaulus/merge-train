@@ -1,15 +1,17 @@
-"""Die Seiten bauen: Diff-Seite eines Projekts, MRs bzw. Myrling-Laufs, Güterbahnhof mit Zug, Startseite."""
+"""Die Seiten bauen: Diff-Seite eines Branches (mit oder ohne MR-Schicht) bzw. Myrling-Laufs, Güterbahnhof mit Zug,
+Startseite."""
 import hashlib, html, json, os, re, shlex, shutil
 import urllib.parse
-from .einstellungen import ARBEITSSTAND, KONF, ORDNER, SKRIPT, dateiname, ersetzen, projektname, schluessel
-from .waggon import Waggon, fertig_moeglich, von_bis
-from .git import INHALT, bis_sha, blobs, diff_basis, git, git_commits, inhalt, kurzpfad, STAND_TEXT, stand_zu_gitlab, wip_name, wip_sha, zerlegen
+from .einstellungen import KONF, ORDNER, SKRIPT, ersetzen, schluessel
+from .waggon import Waggon
+from .git import INHALT, blobs, git, git_commits, inhalt, kurzpfad, STAND_TEXT, stand_zu_gitlab, wip_name, wip_sha, zerlegen
 from .syntax import vorab_lexen
 from .zeilen import paare_und_hunks
 from .web import BAHNHOF_BILD, CSS, CSS_REVIEW, ICON, JS, JS_START
 from .diff_html import datei_html, datei_schluessel, spaeter_grund, zeilenzahl
 from .akte import STRUKTUR, akte_bearbeiten, akte_lesen, struktur_lesen
-from .gitlab import MetaFehlt, eigener_arbeitsstand, gitlab_klon, mr_lokal
+from .gitlab import gitlab_klon, mr_von
+from .zweig import branch_refs, projekt_von
 from .ansichten import ansicht_aufloesen, ansicht_html
 
 def commits_html(commits, knoepfe=None):
@@ -34,41 +36,44 @@ def dateiliste_html(dateien):
     return fl
 
 
-def mr_seite(mr, ansicht=None):
-    """MR-Seite aus dem lokalen Klon (im Cache je Stand). Rückgabe (html-pfad, struktur, mr). Keine GitLab-Anfrage."""
-    akte = akte_lesen(mr)
-    meta = akte.get("meta")
-    if not meta:
-        raise MetaFehlt(f'Für {mr.projekt}!{mr.iid} gibt es noch keine MR-Daten – „merge-train agent zeigen …“ '
-                        "(jira-review) oder im Güterbahnhof „MR-Daten holen“")
-    ordner, refs = mr_lokal(mr, meta)
-    refs = eigener_arbeitsstand(mr, ordner, meta, refs)
-    # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
-    # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen; dazu der Stand der Meldung
-    # (ein Push aus dem Terminal ändert ihn, ohne dass sich Kopf oder MR-Daten ändern)
-    gl_head = (meta.get("diff_refs") or {}).get("head_sha")
+def branch_seite(w, ansicht=None):
+    """Seite eines Branches aus seinem Klon (im Cache je Stand), mit MR-Schicht im Kopf und mit deren Kommentaren, sobald
+    MR-Daten geholt sind. Rückgabe (html-pfad, struktur). Keine GitLab-Anfrage."""
+    akte = akte_lesen(w)
+    klon, refs = branch_refs(w, akte)
+    mr = mr_von(akte) if KONF["gitlab"] else None
+    meta = akte.get("meta") or {} if mr else None
     commit = refs.get("commit_sha") or refs["head_sha"]  # Arbeitsstand: GitLab kennt nur den letzten Commit
-    stand = stand_zu_gitlab(ordner, meta.get("source_branch") or "", commit, gl_head)
-    mh = hashlib.sha1(json.dumps({**{k: v for k, v in meta.items() if k != "_zeit" or stand}, "_stand": stand},
-                                 sort_keys=True).encode()).hexdigest()[:6]
-    praefix = os.path.join(MR_ORDNER, f'{mr.dateiname}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
-    pfad, struktur = seite_bauen(mr.id, ordner, refs, praefix, lambda *a: mr_html(mr, meta, *a), ansicht,
-                                 git_commits(ordner, refs["base_sha"], commit) if refs.get("arbeitsstand") else None)
+    if mr:
+        # Cache-Schlüssel nur aus dem, was die Seite zeigt: der Abrufzeitpunkt (_zeit) steht nur in der Warnung bei
+        # abweichendem Stand – sonst würde jedes „MR-Daten holen“ die ganze Seite neu bauen; dazu der Stand der Meldung
+        # (ein Push aus dem Terminal ändert ihn, ohne dass sich Kopf oder MR-Daten ändern)
+        stand = stand_zu_gitlab(klon, w.branch, commit, (meta.get("diff_refs") or {}).get("head_sha"))
+        kopf = {**{k: v for k, v in meta.items() if k != "_zeit" or stand}, "_stand": stand}
+        html_fn, commits = (lambda *a: mr_html(w, mr, meta, *a)), git_commits(klon, refs["base_sha"], commit) if refs.get("arbeitsstand") else None
+    else:
+        p = projekt_von(w, akte)
+        kopf = {"von": refs["ziel"], "wip": bool(wip_sha(klon, refs["ziel"])), "fertig": w.kann["fertig"],
+                "mr_knopf": bool(KONF["gitlab"] and gitlab_klon(klon))}
+        html_fn, commits = (lambda *a: branch_html(w, p, kopf, *a)), None
+    mh = hashlib.sha1(json.dumps(kopf, sort_keys=True).encode()).hexdigest()[:6]
+    praefix = os.path.join(BRANCH_ORDNER, f'{w.dateiname}-{refs["head_sha"][:12]}-{refs["base_sha"][:12]}-{mh}')
+    pfad, struktur = seite_bauen(w.id, klon, refs, praefix, html_fn, ansicht, commits)
     if not ansicht:
-        with akte_bearbeiten(mr) as s:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen MR
-            s["struktur"] = praefix_json(praefix)
-    return pfad, struktur, mr
+        with akte_bearbeiten(w) as a:  # Kommentare, Hinweise und Gespräch beziehen sich immer auf den ganzen Diff
+            a["struktur"] = praefix_json(praefix)
+    return pfad, struktur
 
 
-def mr_html(mr, meta, dateien, commits, texte, struktur):
-    slug = mr.id
+def mr_html(w, mr, meta, dateien, commits, texte, struktur):
+    slug = w.id
     head = struktur["refs"]["head_sha"]
     ans = struktur.get("ansicht")
     web = meta.get("web_url") or ""
     autor = (meta.get("author") or {}).get("name", "")
     beschr = (meta.get("description") or "").strip()
     cl = (f'<div class="commit"><b>Beschreibung</b><div class="nachricht">{html.escape(beschr)}</div></div>' if beschr else "") \
-        + commits_html(commits, commit_knoepfe(f"/mr/{slug}", commits, ans))
+        + commits_html(commits, commit_knoepfe(w.url, commits, ans))
     leer = '<div class="leer">Keine Änderungen in diesem Merge-Request.</div>' if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
     daten = seiten_daten(struktur, len(dateien), projekt=slug, web_url=web)
@@ -76,7 +81,7 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
              else "Klick auf Zeilennummer: Kommentar")
     hilfe = (f'<div class="hilfe">{klick}<br><kbd>n</kbd> nächster MR · '
              '<kbd>←</kbd>/<kbd>→</kbd> Datei<br><kbd>i</kbd> inline · <kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
-    ah = ansicht_html(f"/mr/{slug}", "ganzer MR", ans) if ans else ""
+    ah = ansicht_html(w.url, "ganzer MR", ans) if ans else ""
     abw = stand_html(struktur["ordner"], meta, struktur["refs"].get("commit_sha") or head)
     titel = f'{mr.projekt}!{mr.iid}'
     entwurf = '<span class="badge">Draft</span> ' if meta.get("draft") or meta.get("work_in_progress") else ""
@@ -91,11 +96,11 @@ def mr_html(mr, meta, dateien, commits, texte, struktur):
 
 
 def arbeitsstand_html(refs):
-    """Eigener MR mit ausgechecktem Quell-Branch: die Seite zeigt den Arbeitsstand (docs/ein-waggon.md)."""
+    """Eigener MR mit im Haupt-Klon ausgechecktem Quell-Branch: die Seite zeigt den Arbeitsstand (docs/ein-waggon.md)."""
     if not refs.get("arbeitsstand"):
         return ""
     sauber = refs["head_sha"] == refs.get("commit_sha")
-    return (' <span class="sub" title="Eigener MR, Quell-Branch ausgecheckt: lokaler Waggon und MR sind ein Waggon">· '
+    return (' <span class="sub" title="Eigener MR, Quell-Branch im Haupt-Klon ausgecheckt">· '
             + ("eigener MR, ausgecheckt" if sauber else "eigener MR · Arbeitsstand (nicht Committetes dabei)") + "</span>")
 
 
@@ -157,10 +162,7 @@ def gleise_html():
 # Beide Modi bauen ihre Seite gleich: Diff, Commits und Inhalte aus dem Klon, Kontext und große Dateien nachladbar,
 # Commit-Ansichten. Sie unterscheiden sich nur im Kopf (MR-Daten/Kommentare bzw. „fertig“).
 
-MR_ORDNER = os.path.join(ORDNER, "mr")
-
-
-LOKAL_ORDNER = os.path.join(ORDNER, "lokal")
+BRANCH_ORDNER = os.path.join(ORDNER, "zweige")
 
 
 # Stand des Skripts und der Einstellung (Leitstand-Knöpfe, Agenten): ändert sich eins, werden Seiten neu gebaut
@@ -264,61 +266,43 @@ def dateien_html(dateien, texte):
     return "".join(datei_html(n, d, *texte[n], luecken=True, spaeter=spaeter_grund(d)) for n, d in enumerate(dateien))
 
 
-# ---- lokales Projekt (von … bis des Projekts, z. B. reviewed … claude)
+# ---- Branch ohne MR-Schicht (gegen von seines Projekts, z. B. claude gegen reviewed)
 
-def projekt_seite(wurzel, ansicht=None):
-    """Seite eines lokalen Projekts (bis gegen von ab dem gemeinsamen Vorgänger bzw. dem Teilstand <von>-wip: diff_basis).
-    Rückgabe (html-pfad, struktur)."""
-    projekt = projektname(wurzel)
-    von, bis = von_bis(projekt)
-    waggon = Waggon(lokal=projekt)
-    head = bis_sha(wurzel, bis)
-    refs = {"base_sha": diff_basis(wurzel, von, head), "start_sha": git(wurzel, "rev-parse", von).strip(),
-            "head_sha": head, "ziel": von}
-    praefix = os.path.join(LOKAL_ORDNER, f'{waggon.dateiname}-{von}-{bis}-{head[:12]}-{refs["base_sha"][:12]}'
-                           .replace("/", "_"))
-    pfad, struktur = seite_bauen(waggon.id, wurzel, refs, praefix,
-                                 lambda *a: projekt_html(projekt, von, bis, *a, wip=bool(wip_sha(wurzel, von))), ansicht)
-    if not ansicht:
-        with akte_bearbeiten(waggon) as akte:  # Gespräch: Kommentare beziehen sich auf den ganzen Diff
-            akte["struktur"] = praefix_json(praefix)
-    return pfad, struktur
+def stand_name(w, refs):
+    """Titel für den Stand: im Arbeitsstand „Arbeitsstand <branch>“ (nicht Committetes dabei) bzw. „HEAD <branch>“
+    (sauber), sonst der Branch."""
+    if not refs.get("arbeitsstand"):
+        return w.branch
+    return f"{'HEAD' if refs['head_sha'] == refs.get('commit_sha') else 'Arbeitsstand'} {w.branch}"
 
 
-def stand_name(wurzel, bis, head):
-    """Titel für bis: beim Arbeitsstand „Arbeitsstand <branch>“ (nicht Committetes dabei) bzw. „HEAD <branch>“ (sauber)."""
-    if bis != ARBEITSSTAND:
-        return bis
-    branch = (git(wurzel, "symbolic-ref", "--short", "-q", "HEAD", check=False) or "").strip() or "(detached)"
-    sauber = head == (git(wurzel, "rev-parse", "HEAD", check=False) or "").strip()
-    return f"{'HEAD' if sauber else 'Arbeitsstand'} {branch}"
-
-
-def projekt_html(projekt, von, bis, dateien, commits, texte, struktur, wip=False):
+def branch_html(w, projekt, kopf, dateien, commits, texte, struktur):
     head = struktur["refs"]["head_sha"]
+    von = kopf["von"]
     ans = struktur.get("ansicht")
     todos = sorted(set(re.findall(r"todo:([\w.-]+)", " ".join(c[2] + " " + c[3] for c in commits))))
-    url = "/" + dateiname(projekt)
-    cl = commits_html(commits, commit_knoepfe(url, commits, ans))
+    cl = commits_html(commits, commit_knoepfe(w.url, commits, ans))
     td = ('<div class="todos">todos: ' + "".join(f"<code>{html.escape(t)}</code>" for t in todos) + "</div>"
           if todos else "")
-    leer = f'<div class="leer">Keine Unterschiede – {html.escape(von)} ist auf dem Stand von {html.escape(bis)}.</div>' \
+    leer = f'<div class="leer">Keine Unterschiede – {html.escape(von)} ist auf dem Stand von {html.escape(w.branch)}.</div>' \
         if not dateien else ""
     lesen = bool(ans and ans["art"] == "commit")
-    daten = seiten_daten(struktur, len(dateien), projekt=projekt)
+    daten = seiten_daten(struktur, len(dateien), projekt=w.id, ordner_projekt=projekt)
     klick = "nur lesen" if lesen else "Klick auf Zeilennummer: Frage/Kommentar an Claude"
-    fertig_kbd = "<kbd>Enter</kbd> fertig · " if fertig_moeglich(projekt) else ""
+    fertig_kbd = "<kbd>Enter</kbd> fertig · " if kopf["fertig"] else ""
     hilfe = (f'<div class="hilfe">{klick}<br>{fertig_kbd}<kbd>n</kbd> nächstes Projekt<br>'
              '<kbd>←</kbd>/<kbd>→</kbd> Datei · <kbd>i</kbd> inline<br><kbd>z</kbd> zu/auf · <kbd>c</kbd> Commits</div>')
-    ah = ansicht_html(url, "ganzes Projekt", ans) if ans else ""
+    ah = ansicht_html(w.url, "ganzer Branch", ans) if ans else ""
     mr_knopf = ('<button id="mrerstellen" title="Merge-Request in GitLab für diesen Branch anlegen – fragt vorher nach '
                 'Ziel-Branch und Titel; gibt es schon einen, wird er übernommen">MR erstellen</button>'
-                if KONF["gitlab"] and not lesen and gitlab_klon(struktur["ordner"]) else "")
-    return diff_seite(titel=f"MR {html.escape(projekt)}", knoepfe_mehr=mr_knopf, sid=Waggon(lokal=projekt).id, lesen=lesen, daten=daten, head=head,
+                if kopf["mr_knopf"] and not lesen else "")
+    return diff_seite(titel=f"MR {html.escape(w.name)}", knoepfe_mehr=mr_knopf, sid=w.id, lesen=lesen, daten=daten, head=head,
                       dateien=dateien, texte=texte, commits=commits,
-                      h1=f"{html.escape(projekt)}: {html.escape(stand_name(struktur['ordner'], bis, head))} → {html.escape(wip_name(von) if wip else von)}",
+                      h1=f"{html.escape(projekt or w.repo)}: {html.escape(stand_name(w, struktur['refs']))} → "
+                         f"{html.escape(wip_name(von) if kopf['wip'] else von)}",
                       fertig_titel=f"{html.escape(von)} auf diesen Stand setzen und zum nächsten Projekt",
-                      commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer)
+                      commits_titel="Commits", commits_liste=cl, unter_commits=td, nach_commits=ah, hilfe=hilfe, leer=leer,
+                      nach_sub=f'\n<span class="sub quelle-ok" title="Diff und Inhalte aus diesem Klon">· {html.escape(kurzpfad(struktur["ordner"]))}</span>')
 
 
 def diff_seite(*, titel, sid, lesen, daten, head, dateien, texte, commits, h1, commits_titel, commits_liste, fertig_titel="",
@@ -391,7 +375,7 @@ def ansicht_struktur(haupt, ansicht):
 # ---- Lauf des Myrlings (Skript und Begleitdateien, jede gegen ihre zuletzt angesehene Fassung)
 
 MYRLING_ORDNER = os.path.join(ORDNER, "myrling")
-SEITEN_ORDNER = {os.path.normpath(o) for o in (MR_ORDNER, LOKAL_ORDNER, MYRLING_ORDNER)}  # nur dort liegen Strukturen
+SEITEN_ORDNER = {os.path.normpath(o) for o in (BRANCH_ORDNER, MYRLING_ORDNER)}  # nur dort liegen Strukturen
 
 
 # Lauf-Stand aus --anstehend → Text im Kopf der Seite und Marke am Waggon

@@ -549,7 +549,7 @@ def teil_anker(b, f):
     if f.mr.startswith("projekt:"):
         return
     zustand = f.srv.umgebung["FAKE_GLAB_STATE"]
-    ap = os.path.join(f.srv.ordner, "data", "merge-train", "reviews", "gitlab.example.com_gruppe_demo_1.json")
+    ap = os.path.join(f.srv.ordner, "data", "merge-train", "zweige", "gruppe%2Fdemo", "feature.json")
     json.dump([{"id": 960, "body": "Warum hier?", "author": {"id": 2, "name": "Reviewerin"}, "system": False, "resolvable": True,
                 "resolved": False, "position": {"new_path": "App.cs", "new_line": 10}}], open(os.path.join(zustand, "notes.json"), "w"))
     r = f.srv.post("/api/gitlab", {"mr": f.mr, "aktion": "mrdaten"})
@@ -589,8 +589,9 @@ def teil_auschecken(b, f):
 
 
 def teil_mrerstellen(b, f):
-    """„MR erstellen“ auf der Seite eines lokalen Waggons (nur Fall gemischt): Rückfrage im Dialog mit Ziel-Branch und
-    Titel, „erstellen“ pusht, legt !2 an und springt zum MR; zum Branch von !1 wird der vorhandene übernommen."""
+    """„MR erstellen“ auf der Seite eines Branches ohne MR (nur Fall gemischt): Rückfrage im Dialog mit Ziel-Branch und
+    Titel, „erstellen“ pusht, legt !2 an, und die Seite zeigt den Branch mit MR-Schicht; kennt merge-train den MR !1 zum
+    Branch noch nicht, wird er übernommen."""
     if f.mr != "projekt:mr-repo":
         return
     origin = os.path.join(os.path.dirname(f.repo), "origin.git")
@@ -609,14 +610,16 @@ def teil_mrerstellen(b, f):
         assert "neu nach origin" in b.js("document.querySelector('.mr-dialog .md-hinweise').textContent")
         b.js("document.querySelector('.mr-dialog .md-titel').value = 'Aus dem Browser'")
         b.klicken(".mr-dialog .md-erstellen")
-        b.warten_bis("location.pathname === '/mr/gitlab.example.com/gruppe/demo/2' && document.readyState === 'complete' "
-                     "&& document.getElementById('abschliessen')", timeout=15)  # die MR-Seite, nicht die Startseite mit Fehler
+        b.warten_bis("location.pathname === '/b/gruppe/demo@zweiter' && document.readyState === 'complete' "
+                     "&& document.getElementById('abschliessen')", timeout=15)  # mit MR-Schicht, nicht die Startseite mit Fehler
         erstellt = json.load(open(os.path.join(zustand, "erstellt.json")))
         assert erstellt[0]["title"] == "Aus dem Browser" and erstellt[0]["source_branch"] == "zweiter", erstellt
         git(f.repo, "checkout", "-q", "feature")
+        ap = os.path.join(f.srv.ordner, "data", "merge-train", "zweige", "gruppe%2Fdemo", "feature.json")
+        akte = json.load(open(ap)); akte.pop("gitlab"); akte.pop("meta"); json.dump(akte, open(ap, "w"))  # MR !1 noch unbekannt
         seite(b, f)
         b.klicken("#mrerstellen")
-        b.warten_bis("location.pathname === '/mr/gitlab.example.com/gruppe/demo/1' && document.readyState === 'complete' "
+        b.warten_bis("location.pathname === '/b/gruppe/demo@feature' && document.readyState === 'complete' "
                      "&& document.getElementById('abschliessen')", timeout=15)
     finally:
         git(f.repo, "checkout", "-q", "feature"); git(f.repo, "branch", "-qD", "zweiter")
@@ -624,7 +627,7 @@ def teil_mrerstellen(b, f):
         for ref in ("refs/remotes/origin/main", "refs/remotes/origin/zweiter"):
             subprocess.run(["git", "-C", f.repo, "update-ref", "-d", ref])
         for p in (os.path.join(zustand, "erstellt.json"),
-                  os.path.join(f.srv.ordner, "data", "merge-train", "reviews", "gitlab.example.com_gruppe_demo_2.json")):
+                  os.path.join(f.srv.ordner, "data", "merge-train", "zweige", "gruppe%2Fdemo", "zweiter.json")):
             if os.path.exists(p):
                 os.remove(p)
 

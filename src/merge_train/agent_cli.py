@@ -1,18 +1,20 @@
 """merge-train agent …: die Befehle für den Agenten (status, feedback, antworten, horchen, kommentar, thread, zeigen, pruefen)."""
 import argparse, hashlib, json, os, re, shlex, shutil, subprocess, sys, time
 from datetime import datetime
-from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden, projektname
-from .waggon import Fehler, Waggon, von_bis
+from .einstellungen import ARBEITSSTAND, DATEN, INSTANZ, KONF, KONFIG_DATEI, SKRIPT, ersetzen, jetzt, konfig_maengel, melden
+from .waggon import Fehler, Waggon
 from .git import STAND_TEXT, fehlende_zweige, git, inhalt, kurzpfad, projekt_ordner, stand_zu_gitlab, statistik
 from .zeilen import bereich_anfang_vorwaerts, zeile_vorwaerts
 from .diff_html import zeilenzahl
 from .akte import (akte_bearbeiten, akte_datei, akte_lesen, andere_zweig_akten, entwuerfe_senden, faden_anhaengen, faden_damals, faden_finden,
                    faden_geaendert, faden_status, faeden_von, kommentar_finden,
     kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, remote_info
+from .gitlab import enc, geaenderte_dateien, glab, ist_mr_ref, mr_meta_holen, mr_ref, mr_vollstaendig, mr_von, mr_waggon, remote_info
 from .hinweise import hinweis_dateien, hinweise_aufloesen, hinweise_lesen, ort_lesen, pfad_norm, see_also_aufloesen
-from .seite import mr_seite
-from .quellen import eigener_mr, quelle, zusammengelegt
+from .seite import branch_seite
+from .quellen import quelle
+from .git import repo_klone
+from .zweig import klon_waggon
 from .zuhoerer import SEITE_WEG_S, _prozess, agent_datei, agent_session, horcht_datei, prompt_merken, seite_datei, todo_offen
 from .review import review_daten
 from .gespraech import alle_gespraeche, neue_nachricht
@@ -42,35 +44,32 @@ def agent_name(als=None, sonst=None):
 
 
 def gespraech_ziele(name=None):
-    """Welche Gespräche meint der Agent? MR-Kennung/URL bzw. „myrling:skript“ → dieses; Projekt → dessen lokales
-    Gespräch; ohne Angabe: das aktuelle Repo (lokales Gespräch und alle MRs und Myrling-Läufe mit diesem Klon). Ist der
-    Branch des lokalen Gesprächs (branch_von) ein offener MR mit diesem Klon, steht dieser MR vorn statt des lokalen
-    Gesprächs (zusammengelegt: beide teilen die Akte).
-    Rückgabe: Liste von Schlüsseln."""
+    """Welche Gespräche meint der Agent? Eine Kennung (repo@branch, myrling:skript, projekt:<name>) bzw. MR-Kennung/URL
+    → dieser Branch; ein Projekt oder Ordner bzw. ohne Angabe das aktuelle Repo: der Branch, den der Klon zeigt
+    (klon_waggon), dazu Branches mit MR-Schicht und Myrling-Läufe, deren Seite aus diesem Klon gebaut ist.
+    Rückgabe: Liste von Waggons."""
     if name:
-        mr = None
         try:
-            mr = Waggon.aus_id(name)
+            return [Waggon.aus_id(name)]
         except Fehler:
-            if ist_mr_ref(name):
-                mr = mr_ref(name, os.getcwd())
-        if mr and mr.myrling:
-            return [mr]
-        if mr and mr.ist_mr:
-            treffer = [waggon for waggon in alle_gespraeche() if waggon.ist_mr and waggon.projekt == mr.projekt
-                       and waggon.iid == mr.iid and (not mr.host or waggon.host == mr.host)]
-            return treffer[:1] or [mr]
+            pass
+        if ist_mr_ref(name):
+            mr = mr_ref(name, os.getcwd())
+            w = mr_waggon(mr)
+            if not w:
+                raise Fehler(f"{mr.name}: noch keine MR-Daten – „↻ MR-Daten“ auf seiner Seite oder merge-train agent zeigen")
+            return [w]
     ordner = name or os.getcwd()
     if name and not os.path.isdir(ordner):
         ordner = projekt_ordner(name)
     wurzel = repo_wurzel(ordner)
     if not wurzel:
         raise Fehler(f"kein Git-Repo und kein MR: {name or os.getcwd()}")
-    eigen = zusammengelegt(wurzel) if KONF["gitlab"] else None  # MR zum Branch des lokalen Waggons: er ist der lokale Waggon
-    ziele = [eigen] if eigen else [Waggon(lokal=projektname(wurzel))] if KONF["lokal"] else []
+    eigen = klon_waggon(wurzel)
+    ziele = [eigen] if eigen and (KONF["lokal"] or akte_lesen(eigen).get("gitlab")) else []
     echt = os.path.realpath(wurzel)
     for waggon in alle_gespraeche(leere=True):
-        if not waggon.lokal and waggon.id != (eigen and eigen.id):
+        if waggon != eigen and (waggon.myrling or akte_lesen(waggon).get("gitlab")):
             struktur = struktur_laden(akte_lesen(waggon))
             if struktur and os.path.realpath(struktur["ordner"]) == echt:
                 ziele.append(waggon)
@@ -917,23 +916,17 @@ def faden_zeile(k):
 
 
 def entwicklung_ziel(ziele):
-    """Wo der Agent entwickelt: das lokale Gespräch oder der eigene MR, der mit ihm zusammengelegt ist (steht dann
-    vorn, gespraech_ziele). None ohne beides."""
+    """Wo der Agent entwickelt: der Branch vorn (gespraech_ziele), wenn er dort umsetzen darf (ohne MR oder eigener MR).
+    None sonst."""
     w = ziele[0] if ziele else None
-    return w if w and (w.lokal or (w.ist_mr and quelle(w).ein_waggon(w) and eigener_mr(w))) else None
+    return w if w and w.branch and w.kann["committen"] else None
 
 
 def review_ziel(ziele):
-    """Der MR, den der Agent gerade reviewt: als einziges Ziel angegeben, oder der fremde MR, dessen Quell-Branch im
-    Klon ausgecheckt ist. None = Entwicklung (entwicklung_ziel)."""
-    lokal = next((w for w in ziele if w.lokal), None)
-    mrs = [w for w in ziele if not w.lokal]
-    if entwicklung_ziel(ziele) and not lokal:  # eigener MR, zusammengelegt
-        return None
-    if not lokal:  # nur ein MR, oder der fremde, in dem der lokale Waggon aufgeht (vorn, gespraech_ziele)
-        return mrs[0] if len(mrs) == 1 or (mrs and quelle(mrs[0]).ein_waggon(mrs[0])) else None
-    branch = quelle(lokal).branch(lokal)
-    return next((w for w in mrs if quelle(w).branch(w) == branch and not eigener_mr(w)), None)
+    """Der MR, den der Agent gerade reviewt: der Branch vorn, wenn er einen fremden MR trägt. None = Entwicklung
+    (entwicklung_ziel)."""
+    w = ziele[0] if ziele else None
+    return w if w and w.branch and w.kann["review"] and not w.kann["committen"] else None
 
 
 def offene_faeden(waggon, branch):
@@ -1003,14 +996,15 @@ def status_review(w):
     """status im Review eines MR: Stand des Klons, was am MR schon kommentiert ist, Review-JSON, Fäden, nächste Schritte."""
     wurzel, head = quelle(w).ort(w)
     branch = quelle(w).branch(w)
-    teile = [f"merge-train status · Review MR {w.name} · Branch {branch} · Stand {head[:8]} · Klon {kurzpfad(wurzel)}"]
+    mr = mr_von(akte_lesen(w))
+    teile = [f"merge-train status · Review MR {mr.name} · Branch {branch} · Stand {head[:8]} · Klon {kurzpfad(wurzel)}"]
     jetzt_head = (git(wurzel, "rev-parse", "HEAD", check=False) or "").strip()
     if jetzt_head != head:
         teile.append(f"Achtung: der Klon steht nicht auf dem MR-Stand – {branch} auschecken und vorspulen (mr-review, Schritt 2)")
     einrichtung = einrichtung_teile(wurzel, zweige=False)
     teile += [""] + einrichtung if einrichtung else []
     faeden = offene_faeden(w, branch)
-    hinweise, liste = faeden_teile(faeden, f"merge-train agent feedback {w.name}")
+    hinweise, liste = faeden_teile(faeden, f"merge-train agent feedback {w.id}")
     teile += [""] + hinweise if hinweise else []
     teile += ["", "Review: am Code nichts ändern, nichts committen. Befunde in die Review-JSON (mr-review)."]
     try:
@@ -1025,8 +1019,8 @@ def status_review(w):
         teile.append("- Review-JSON anlegen (tasks/<KEY>-review-markers.json), dann merge-train agent pruefen <json> und zeigen <json>")
     teile.append("  reich machen: see_also mit Bereich für jede genannte Stelle, \"diff\" bei Kopien (docs/agent-hinweise.md)")
     if review and any(kommentare_teile(review).values()):
-        teile.append(f"- schon am MR: {kommentare_zahl(review)} – merge-train agent kommentare {w.name} (nichts doppelt melden)")
-    teile.append(f'- Frage an den Nutzer an einer Zeile: merge-train agent thread -p {w.name} --ort <pfad>:<von>-<bis> [--siehe …] [--vergleich …] "…"')
+        teile.append(f"- schon am MR: {kommentare_zahl(review)} – merge-train agent kommentare {w.id} (nichts doppelt melden)")
+    teile.append(f'- Frage an den Nutzer an einer Zeile: merge-train agent thread -p {w.id} --ort <pfad>:<von>-<bis> [--siehe …] [--vergleich …] "…"')
     if faeden:
         teile.append(f'- an einen Faden anhängen: merge-train agent antworten <id> [--siehe …] [--vergleich …] "…"')
     teile.append(RICH)
@@ -1044,23 +1038,20 @@ def status_ausgeben(name=None):
     mr = review_ziel(ziele)
     if mr:
         return status_review(mr)
-    lokal = entwicklung_ziel(ziele)  # lokales Gespräch oder der eigene MR, mit dem es zusammengelegt ist
+    lokal = entwicklung_ziel(ziele)  # Branch ohne MR oder eigener MR
     if not lokal:
         return "merge-train status: lokaler Modus aus (lokal = false in der Einstellung) – im Review: merge-train status <MR>"
     wurzel, _ = quelle(lokal).ort(lokal)
-    branch = quelle(lokal).branch(lokal)
-    von = von_bis(lokal.lokal)[0] if lokal.lokal else quelle(lokal).ziel(lokal)
-    einrichtung = einrichtung_teile(wurzel) if lokal.lokal else []
-    st = ({"dateien": 0} if fehlende_zweige(wurzel) else statistik(wurzel)) if lokal.lokal else \
-        statistik(wurzel, von, ARBEITSSTAND)
+    branch = lokal.branch
+    von = quelle(lokal).ziel(lokal)
+    mit_mr = lokal.kann["review"]
+    einrichtung = [] if mit_mr else einrichtung_teile(wurzel)
+    st = statistik(wurzel, von, ARBEITSSTAND) if mit_mr else ({"dateien": 0} if fehlende_zweige(wurzel) else statistik(wurzel))
     offen = len([z for z in git(wurzel, "status", "--porcelain", "--ignore-submodules=dirty").splitlines() if z.strip()])
     aend = (f'+{st["plus"]} −{st["minus"]} in {st["dateien"]} Datei(en) gegen {von}' if st["dateien"] else f"keine Änderungen gegen {von}")
     aend += f", {offen} Datei(en) nicht committet" if offen else ""
     teile = [f"merge-train status · {lokal.name} · Branch {branch} · {aend}", ""] + (einrichtung + [""] if einrichtung else [])
     faeden = offene_faeden(lokal, branch)
-    for w in ziele:  # der eigene MR dieses Branches (ich bin Autor)
-        if w != lokal and not w.lokal and quelle(w).branch(w) == branch:
-            faeden += offene_faeden(w, branch)
     hinweise, liste = faeden_teile(faeden, "merge-train agent feedback")
     teile += hinweise
     if not (st["dateien"] or offen):
@@ -1199,19 +1190,19 @@ def befehl_hinweise(o):
     except (OSError, ValueError) as e:
         print(f"merge-train: {o.datei} nicht lesbar: {e}", file=sys.stderr); return 2
     try:
-        mr, ordner = mr_fuer_hinweise(pfad, daten, o.mr)
+        ref, ordner = mr_fuer_hinweise(pfad, daten, o.mr)
+        mr, meta = mr_meta_holen(ref)  # die einzige GitLab-Anfrage: aktuelle MR-Daten, in die Akte des Quell-Branches
         try:
-            klon = remote_info(ordner)[1].lower() == (mr.projekt or "").lower()
+            klon = remote_info(ordner)[1].lower() == (ref.projekt or "").lower()
         except Fehler:
             klon = False
         if klon:
-            with akte_bearbeiten(mr) as akte:  # Repo der Hinweis-Datei als lokalen Klon merken (vor dem Seitenaufbau)
+            with akte_bearbeiten(mr) as akte:  # Repo der Hinweis-Datei als Klon merken (vor dem Seitenaufbau)
                 akte["klon"] = ordner
-        mr, meta = mr_meta_holen(mr)  # die einzige GitLab-Anfrage: aktuelle MR-Daten für die Seite merken
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 2
     try:
-        _, struktur, mr = mr_seite(mr)
+        _, struktur = branch_seite(mr)
     except Fehler as e:
         print(f"merge-train: {e}", file=sys.stderr); return 3
     vorstellen = None
@@ -1232,14 +1223,14 @@ def befehl_hinweise(o):
         if not seit:
             print("merge-train: --seit ohne Commit und kein reviewed_commit in der JSON", file=sys.stderr); return 2
         try:
-            geaendert = geaenderte_dateien(mr, seit, head)
+            geaendert = geaenderte_dateien([struktur["ordner"]] + repo_klone(mr.repo), seit, head)
         except Fehler as e:
             print(f"merge-train: {e}", file=sys.stderr); return 2
     hinweise, _ = hinweise_aufloesen(mr, akte, struktur, nur=[pfad])
-    print(f'{mr.projekt}!{mr.iid} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
+    print(f'{ref.projekt}!{ref.iid} · Stand {head[:8]} · {len(daten["markers"])} Einträge')
     print(f'Quelle: lokal ({kurzpfad(struktur["ordner"])})')
     gl_head = (meta.get("diff_refs") or {}).get("head_sha") or ""
-    abweichend = stand_zu_gitlab(struktur["ordner"], meta.get("source_branch") or "", head, gl_head)
+    abweichend = stand_zu_gitlab(struktur["ordner"], mr.branch, struktur["refs"].get("commit_sha") or head, gl_head)
     if abweichend:
         print(f"Achtung: GitLab steht auf {gl_head[:8]}, der lokale Branch auf {head[:8]} – {STAND_TEXT[abweichend]}")
     if vorstellen:
@@ -1258,7 +1249,7 @@ def befehl_hinweise(o):
             elif s["warnung"]:
                 print(f'{"":<5}   siehe auch {s["path"]}: Achtung: {s["warnung"]}')
     if o.befehl == "zeigen":
-        im_browser("/mr/" + mr.id, nur_url=o.nicht_oeffnen)
+        im_browser(mr.url, nur_url=o.nicht_oeffnen)
     if schlecht:
         return 1
     return 3 if abweichend else 0

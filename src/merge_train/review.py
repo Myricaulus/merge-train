@@ -10,21 +10,31 @@ from .akte import (akte_bearbeiten, akte_datei, akte_lesen, aktion_ausfuehren, a
     diskussion_stand, hinweis_stand, in_gitlab, kommentar_stand,
     diskussionen_stand, eintrag_entfernen, kommentar_anhaengen, notizen_von_anderen,
     kommentar_finden, kommentar_status, review_kommentare, struktur_laden)
-from .gitlab import GitLabFehler, alle, ausgecheckt, glab, ich, mr_lokal, mr_meta_holen, mr_pfad
+from .gitlab import GitLabFehler, alle, ausgecheckt, glab, ich, mr_meta_holen, mr_pfad, mr_von
 from .hinweise import hinweis_dateien, hinweise_aufloesen, pfad_norm
 from .ansichten import ansicht_lesen
-from .seite import ansicht_struktur, mr_seite, struktur_der_seite
+from .seite import ansicht_struktur, branch_seite, struktur_der_seite
+from .git import haupt_klon
+from .zweig import gemerkte_klone
 from .zuhoerer import horcht, kontext
 from .beobachter import seite_veraltet
 from collections import Counter
 from dataclasses import dataclass
+
+def mr_zu(w, akte=None):
+    """Der MR der Schicht des Branches – für die GitLab-Aufrufe (ohne MR-Daten: Fehler)."""
+    mr = mr_von(akte or akte_lesen(w))
+    if not mr:
+        raise Fehler(f"{w.name}: noch keine MR-Daten – „↻ MR-Daten“")
+    return mr
+
 
 def stand(waggon, akte):
     teile = [akte.get("struktur") or ""]
     teile.append(horcht(waggon) or "")  # „🎧 … hört zu“ soll sich auch ohne neue Nachricht aktualisieren
     k = kontext(waggon)
     teile.append(str(k and k["prozent"]))  # Kontext-Füllstand im HUD
-    for p in [akte_datei(waggon)] + (hinweis_dateien(waggon, akte) if waggon.ist_mr else []):
+    for p in [akte_datei(waggon)] + (hinweis_dateien(waggon, akte) if akte.get("gitlab") else []):
         try:
             s = os.stat(p); teile.append(f"{p}:{s.st_mtime_ns}:{s.st_size}")
         except OSError:
@@ -73,7 +83,7 @@ def diskussionen_fuer_seite(akte, struktur):
     Antwort-Entwürfe ungesendet mit ihrer Stufe), Stand (entwurf | wartet | antwort | erledigt), Ort auf den Stand der
     Seite umgerechnet. Bei eigenen gilt der Ort des Kommentars (allgemein gesendete stehen so an ihrer Zeile)."""
     eigene = {(k.get("gitlab_diskussion") or {}).get("id"): k for k in review_kommentare(akte) if k.get("gitlab_weg")}
-    head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], akte["mr"].get("web_url") or ""
+    head, ordner, web = struktur["refs"]["head_sha"], struktur["ordner"], (akte.get("gitlab") or {}).get("web_url") or ""
     ich_id = akte.get("ich_id")
     out = []
     lokal = bool(struktur["refs"].get("arbeitsstand"))
@@ -160,7 +170,8 @@ def diskussion_aufloesen(mr, eingabe):
     did, zu = eingabe.get("diskussion"), eingabe.get("aktion") == "erledigen"
     if not diskussion_finden(akte_lesen(mr), did):
         return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
-    roh = glab(mr.host, f"{mr_pfad(mr)}/discussions/{did}?resolved={'true' if zu else 'false'}", "PUT")  # ohne Sperre
+    gl = mr_zu(mr)
+    roh = glab(gl.host, f"{mr_pfad(gl)}/discussions/{did}?resolved={'true' if zu else 'false'}", "PUT")  # ohne Sperre
     neu = diskussion_kompakt(roh) if isinstance(roh, dict) else None
     with akte_bearbeiten(mr) as akte:
         d = diskussion_finden(akte, did)
@@ -191,7 +202,7 @@ def review_daten(mr, ansicht=None, seite=None):
     if struktur is None and seite:
         return {"ok": False, "text": "Seite unbekannt – neu laden"}
     if struktur is None:
-        _, struktur, mr = mr_seite(mr)
+        _, struktur = branch_seite(mr)
         akte = akte_lesen(mr)
     hinweise, quellen = hinweise_aufloesen(mr, akte, struktur)
     for h in hinweise:
@@ -209,7 +220,7 @@ def review_daten(mr, ansicht=None, seite=None):
         ausserhalb = vorher - len(kommentare) - sum(1 for h in hinweise if h["status"] == "offen")
     return {"ok": True, "kommentare": kommentare, "hinweise": hinweise, "diskussionen": diskussionen,
             "diskussionen_stand": diskussionen_stand(akte), "quellen": quellen, "stand": stand(mr, akte),
-            "web_url": akte["mr"].get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
+            "web_url": (akte.get("gitlab") or {}).get("web_url", ""), "ausstehend": ausstehend(akte), "ausserhalb": ausserhalb,
             "in_gitlab": in_gitlab(akte),
             "reihenfolge": reihenfolge}
 
@@ -459,7 +470,8 @@ def antwort_senden(mr, eingabe):
         return False, "Diskussion nicht gefunden – „↻ MR-Daten“"
     if not text:
         return False, "leere Antwort"
-    note = glab(mr.host, f"{mr_pfad(mr)}/discussions/{did}/notes", "POST", {"body": text}) or {}  # GitLab, ohne Sperre
+    gl = mr_zu(mr)
+    note = glab(gl.host, f"{mr_pfad(gl)}/discussions/{did}/notes", "POST", {"body": text}) or {}  # GitLab, ohne Sperre
     antwort = {"id": note.get("id"), "wer": (note.get("author") or {}).get("name") or "",
                "wer_id": (note.get("author") or {}).get("id"), "text": note.get("body") or text,
                "zeit": note.get("created_at") or jetzt(zone=True)}
@@ -524,7 +536,8 @@ def hinweis_aktion(mr, eingabe):
 
 def entwurf_anlegen(mr, k, head, proj_url):
     """Draft-Note anlegen: an der Zeile, sonst (oder wenn GitLab ablehnt) als allgemeiner Kommentar mit Link."""
-    host, mr_api = mr.host, mr_pfad(mr)
+    gl = mr_zu(mr)
+    host, mr_api = gl.host, mr_pfad(gl)
     refs = k.get("refs") or {}
     if k.get("antwort_auf"):  # Antwort auf eine Diskussion: Ort hat die Diskussion
         return glab(host, f"{mr_api}/draft_notes", "POST", {"note": k["text"], "in_reply_to_discussion_id": k["antwort_auf"]}), "antwort"
@@ -559,7 +572,8 @@ def fehlende_entwuerfe(akte, vorhanden):
 
 def eigene_kommentartexte(mr):
     """Texte meiner (nicht System-)Kommentare im MR – um veröffentlichte Entwürfe zu erkennen. GitLab-Anfragen."""
-    host, mr_api = mr.host, mr_pfad(mr)
+    gl = mr_zu(mr)
+    host, mr_api = gl.host, mr_pfad(gl)
     ich_id = ich(host)
     return [n.get("body") or "" for n in alle(host, f"{mr_api}/notes") if (n.get("author") or {}).get("id") == ich_id and not n.get("system")]
 
@@ -663,8 +677,9 @@ def meta_und_entwuerfe(mr):
         ANLASS.name = name
         return f(*a)
     with ThreadPoolExecutor(2) as ex:
-        f_meta = ex.submit(mit, mr_meta_holen, mr)
-        f_ent = ex.submit(mit, alle, mr.host, f"{mr_pfad(mr)}/draft_notes")
+        gl = mr_zu(mr)
+        f_meta = ex.submit(mit, mr_meta_holen, gl)
+        f_ent = ex.submit(mit, alle, gl.host, f"{mr_pfad(gl)}/draft_notes")
         try:
             ent = {d.get("id"): d for d in f_ent.result()}
         except Fehler as e:
@@ -695,7 +710,8 @@ def mr_gitlab_holen(mr):
     if veroeffentlicht:
         teile.append(f"{veroeffentlicht} in GitLab veröffentlicht")
     try:  # GitLab, ohne Sperre
-        diskussionen, ich_id = alle(mr.host, f"{mr_pfad(mr)}/discussions"), ich(mr.host)
+        gl = mr_zu(mr)
+        diskussionen, ich_id = alle(gl.host, f"{mr_pfad(gl)}/discussions"), ich(gl.host)
     except Fehler as e:
         return teile + [f"Diskussionen nicht abrufbar: {e}"]
     with akte_bearbeiten(mr) as akte:
@@ -716,7 +732,7 @@ def mr_auschecken(mr):
     so, und die Seite bietet „auschecken“ an (auscheck_hinweis). Ging es nicht (offene Änderungen …), beim nächsten
     Besuch wieder. Die Seite hängt nicht davon ab (sie liest die Branch-Refs, nicht HEAD), muss also nicht neu laden.
     Rückgabe: Text für die Glocke oder ""."""
-    if not KONF["mr_auschecken"] or akte_lesen(mr).get("ausgecheckt"):
+    if not KONF["mr_auschecken"] or akte_lesen(mr).get("ausgecheckt") or not akte_lesen(mr).get("gitlab"):
         return ""
     with _AUSCHECKEN:
         akte = akte_lesen(mr)
@@ -729,10 +745,13 @@ def mr_auschecken(mr):
 
 
 def auschecken_versuchen(mr, akte):
-    """Quell-Branch im Klon auschecken (branch_auschecken) und das Ergebnis in der Akte merken: „ausgecheckt“ bzw. der
-    Grund, warum nicht (für auscheck_hinweis). Fehler, wenn es keinen Klon gibt. Rückgabe (erledigt, text)."""
-    ordner, _ = mr_lokal(mr, akte["meta"])
-    erledigt, text = branch_auschecken(ordner, akte["meta"].get("source_branch") or "")
+    """Quell-Branch im Haupt-Klon auschecken (branch_auschecken: nur dort gibt es den Arbeitsstand) und das Ergebnis in
+    der Akte merken: „ausgecheckt“ bzw. der Grund, warum nicht (für auscheck_hinweis). Fehler, wenn es keinen Klon
+    gibt. Rückgabe (erledigt, text)."""
+    ordner = haupt_klon(mr.repo, gemerkte_klone(akte))
+    if not ordner:
+        raise Fehler(f"{mr.name}: kein Klon bekannt")
+    erledigt, text = branch_auschecken(ordner, mr.branch)
     with akte_bearbeiten(mr) as a:
         if erledigt:
             a["ausgecheckt"] = jetzt()
@@ -743,11 +762,12 @@ def auschecken_versuchen(mr, akte):
 
 
 def auscheck_hinweis(mr, akte):
-    """Für api/stand: Steht der Quell-Branch im Klon nicht ausgecheckt (auch nicht in einem anderen Worktree), liest die
-    Seite nur aus den Refs: {branch, text} für den Hinweis mit Knopf „auschecken“. Sonst None."""
-    branch = (akte.get("mr") or {}).get("source_branch")
-    ordner = (struktur_laden(akte) or {}).get("ordner")
-    if not branch or not ordner or not os.path.isdir(ordner) or ausgecheckt(ordner) == branch or worktree_mit(ordner, branch):
+    """Für api/stand: Hat der Branch eine MR-Schicht und steht er im Haupt-Klon nicht ausgecheckt (auch nicht in einem
+    anderen Worktree), liest die Seite nur aus den Refs: {branch, text} für den Hinweis mit Knopf „auschecken“. Sonst
+    None."""
+    branch = mr.branch
+    ordner = haupt_klon(mr.repo, gemerkte_klone(akte)) if akte.get("gitlab") and branch else None
+    if not ordner or ausgecheckt(ordner) == branch or worktree_mit(ordner, branch):
         return None
     grund = akte.get("auscheck_grund") or f"{branch} ist im Klon nicht ausgecheckt"
     return {"branch": branch, "text": f"{grund}. Die Seite zeigt den Stand aus den Refs (nur lesen); was du im Klon "
@@ -759,7 +779,7 @@ def mr_daten_holen(mr):
     vorher = akte_lesen(mr).get("struktur")
     teile = mr_gitlab_holen(mr)
     try:  # neu laden muss der Browser nur, wenn sich die Seite geändert hat
-        mr_seite(mr)
+        branch_seite(mr)
         neu_laden = akte_lesen(mr).get("struktur") != vorher
     except Fehler:
         neu_laden = True
@@ -821,11 +841,12 @@ def abschluss_planen(akte, vorhanden, platz):
 
 def schritt_ausfuehren(mr, s, head, proj_url):
     """Einen Schritt in GitLab ausführen (ohne Sperre). Rückgabe: (gitlab_id, gitlab_art) des Entwurfs bzw. (None, None)."""
-    entwurf = f"{mr_pfad(mr)}/draft_notes/{s.gitlab_id}"
+    gl = mr_zu(mr)
+    entwurf = f"{mr_pfad(gl)}/draft_notes/{s.gitlab_id}"
     if s.art == "loeschen":
-        glab(mr.host, entwurf, "DELETE")
+        glab(gl.host, entwurf, "DELETE")
     elif s.art == "aendern":
-        glab(mr.host, entwurf, "PUT", {"note": s.text})
+        glab(gl.host, entwurf, "PUT", {"note": s.text})
     elif s.art == "anlegen":
         antwort, gitlab_art = entwurf_anlegen(mr, s.kommentar, head, proj_url)
         return (antwort or {}).get("id"), gitlab_art
@@ -899,16 +920,17 @@ def urteil_knopf(urteil):
 def urteil_senden(mr, urteil):
     """Urteil des Reviews in GitLab setzen: genehmigen (REST approve) oder Änderungen anfordern (GraphQL
     mergeRequestRequestChanges – REST kennt das nicht). kommentieren setzt nichts."""
+    gl = mr_zu(mr)
     if urteil == "genehmigen":
         try:
-            glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
+            glab(gl.host, f"{mr_pfad(gl)}/approve", "POST")
         except GitLabFehler:  # z. B. EOF (Verbindung ohne Antwort zu): hat es doch geklappt? Sonst einmal neu
-            if not (glab(mr.host, f"{mr_pfad(mr)}/approvals") or {}).get("user_has_approved"):
-                glab(mr.host, f"{mr_pfad(mr)}/approve", "POST")
+            if not (glab(gl.host, f"{mr_pfad(gl)}/approvals") or {}).get("user_has_approved"):
+                glab(gl.host, f"{mr_pfad(gl)}/approve", "POST")
     elif urteil == "aendern":
-        r = glab(mr.host, "graphql", "POST", {
+        r = glab(gl.host, "graphql", "POST", {
             "query": "mutation($p: ID!, $i: String!) { mergeRequestRequestChanges(input: {projectPath: $p, iid: $i}) "
-                     "{ errors } }", "variables": {"p": mr.projekt, "i": str(mr.iid)}}) or {}
+                     "{ errors } }", "variables": {"p": gl.projekt, "i": str(gl.iid)}}) or {}
         fehler = [e.get("message", str(e)) for e in r.get("errors") or []] + \
             list(((r.get("data") or {}).get("mergeRequestRequestChanges") or {}).get("errors") or [])
         if fehler:
@@ -926,7 +948,7 @@ def abschliessen(mr, direkt=False, urteil="kommentieren"):
     Je MR nur ein Lauf gleichzeitig: zwei Läufe planten denselben Stand und legten jeden Entwurf doppelt an."""
     with _ABSCHLUSS_SPERRE:
         if mr.id in _ABSCHLUSS_LAEUFT:
-            return False, LAEUFT_SCHON, akte_lesen(mr)["mr"].get("web_url", "")
+            return False, LAEUFT_SCHON, (akte_lesen(mr).get("gitlab") or {}).get("web_url", "")
         _ABSCHLUSS_LAEUFT.add(mr.id)
     try:
         return abschluss_lauf(mr, direkt, urteil)
@@ -940,7 +962,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
         raise Ungueltig(f"unbekanntes Urteil {urteil!r}")
     akte = akte_lesen(mr)
     head = ((struktur_laden(akte) or {}).get("refs") or {}).get("head_sha")
-    web = akte["mr"].get("web_url", "")
+    web = (akte.get("gitlab") or {}).get("web_url", "")
     proj_url = web.split("/-/merge_requests/")[0]
     meta, vorhanden = meta_und_entwuerfe(mr)  # aktueller GitLab-Stand (Abschließen ist ohnehin eine GitLab-Aktion)
     gl_head = (meta.get("diff_refs") or {}).get("head_sha")
@@ -967,7 +989,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
             noch_da = schritt_eintragen(akte, s, gitlab_id, gitlab_art)
         if not noch_da and s.art == "anlegen" and gitlab_id:  # währenddessen gelöscht: nicht verwaisen lassen
             try:
-                glab(mr.host, f"{mr_pfad(mr)}/draft_notes/{gitlab_id}", "DELETE")
+                glab(mr_zu(mr).host, f"{mr_pfad(mr_zu(mr))}/draft_notes/{gitlab_id}", "DELETE")
             except Fehler:
                 pass
             continue
@@ -976,7 +998,7 @@ def abschluss_lauf(mr, direkt=False, urteil="kommentieren"):
     teile = []
     if not fehler and direkt and (schritte or vorhanden):
         try:
-            glab(mr.host, f"{mr_pfad(mr)}/draft_notes/bulk_publish", "POST")
+            glab(mr_zu(mr).host, f"{mr_pfad(mr_zu(mr))}/draft_notes/bulk_publish", "POST")
             gezaehlt["publiziert"] = 1
             teile = mr_gitlab_holen(mr)  # Entwürfe sind weg: als veröffentlicht erkennen, Diskussionen dazu holen
         except Fehler as e:

@@ -10,7 +10,8 @@ from pathlib import Path
 import contextlib, glob, io, os, subprocess, sys, tempfile, threading, unittest, urllib.parse
 
 T = tempfile.mkdtemp(prefix="merge-train-einheiten-")
-open(f"{T}/leer.toml", "w").close()
+open(f"{T}/leer.toml", "w").write(f'projekte = "{T}/projekte"\n')  # nie ~/Projects des Nutzers durchsuchen
+os.makedirs(f"{T}/projekte")
 os.environ.update(MERGE_TRAIN_CONFIG=f"{T}/leer.toml", XDG_CACHE_HOME=f"{T}/cache", XDG_DATA_HOME=f"{T}/data",
                   XDG_CONFIG_HOME=f"{T}/config")  # nie die Einstellung oder Daten des Nutzers lesen
 os.makedirs(f"{T}/bin")
@@ -209,33 +210,51 @@ class Stufen(unittest.TestCase):
         self.assertEqual(ausstehend(akte), 1)
 
 
+def mr_akte(projekt, iid, branch="feature", host="gitlab.example", repo=None, **felder):
+    """Branch mit MR-Schicht, wie nach „MR-Daten holen“ (frische Akte). repo: Repo-Kennung, Standard der Projektpfad."""
+    w = Waggon(repo=repo or projekt.lower(), branch=branch)
+    if os.path.exists(akte_datei(w)):
+        os.remove(akte_datei(w))
+    with akte_bearbeiten(w) as akte:
+        akte["gitlab"] = {"host": host, "projekt": projekt, "iid": iid, "source_branch": branch, "target_branch": "main",
+                          "web_url": f"https://{host}/{projekt}/-/merge_requests/{iid}", "titel": ""}
+        akte["meta"] = {"source_branch": branch, "target_branch": "main", "state": "opened"}
+        akte.update(felder)
+    return w
+
+
 class WaggonTest(unittest.TestCase):
     def test_kennung_hin_und_zurueck(self):
-        for kennung in ("projekt:merge-train", "projekt:gruppe/sub", "gitlab.example.com/gruppe/demo/1",
-                        "gitlab.example.com:8443/a/b/c/42"):
+        for kennung in ("merge-train@claude", "gruppe/sub@feature/x", "myrling:skript.sh"):
             self.assertEqual(Waggon.aus_id(kennung).id, kennung)
-        w = Waggon.aus_id("h/gruppe/sub/projekt/7")
-        self.assertEqual((w.host, w.projekt, w.iid), ("h", "gruppe/sub/projekt", 7))
+        w = Waggon.aus_id("gruppe/sub/projekt@a@b")
+        self.assertEqual((w.repo, w.branch, w.name), ("gruppe/sub/projekt", "a@b", "projekt@a@b"))
+
+    def test_abkuerzung_mr(self):
+        """Alte MR-Kennung, MR-URL, gruppe/projekt!42: der Branch, dessen Akte den MR trägt – sonst unbekannt."""
+        w = mr_akte("G/Kennung", 4, branch="feat")
+        for k in ("gitlab.example/G/Kennung/4", "https://gitlab.example/G/Kennung/-/merge_requests/4", "g/kennung!4"):
+            self.assertEqual(Waggon.aus_id(k), w, k)
+        with self.assertRaises(Fehler):
+            Waggon.aus_id("gitlab.example/G/Kennung/5")
 
     def test_ungueltig(self):
-        for kennung in ("projekt:", "projekt:a/../b", "projekt:a//b", "h/p", "h/g/p/x", "h/../p/1", "h//p/1",
-                        "h/g/p/", "ho st/g/p/1"):
+        for kennung in ("@x", "a@", "a/../b@x", "a//b@x", "a@x/../y", "kaputt", "projekt:gibts-nicht", "h/g/p/1"):
             with self.assertRaises(Fehler, msg=kennung):
                 Waggon.aus_id(kennung)
 
     def test_dict(self):
-        for w in (Waggon(lokal="proj"), Waggon(host="h", projekt="g/p", iid=3)):
+        for w in (Waggon(repo="g/p", branch="feature/x"), Waggon(myrling="s")):
             self.assertEqual(Waggon.aus_dict(w.als_dict()), w)
 
     def test_dateiname(self):
-        for w in (Waggon(host="gitlab.example.com:8443", projekt="g/p q", iid=3), Waggon(projekt="g/p", iid=1),
-                  Waggon(lokal="a/b")):
-            self.assertRegex(w.dateiname, r"^[\w.-]+$")
-        self.assertNotEqual(Waggon(host="h", projekt="g/p", iid=1).dateiname, Waggon(host="h", projekt="g/p", iid=2).dateiname)
+        for w in (Waggon(repo="g/p q", branch="a/b"), Waggon(repo="a", branch="b")):
+            self.assertRegex(w.dateiname, r"^[\w.%-]+$")
+        self.assertNotEqual(Waggon(repo="a/b", branch="c").dateiname, Waggon(repo="a", branch="b/c").dateiname)
 
     def test_kann(self):
-        self.assertTrue(Waggon(host="h", projekt="g/p", iid=1).kann["review"])
-        self.assertFalse(Waggon(lokal="p").kann["review"])
+        self.assertTrue(mr_akte("g/kann", 1).kann["review"])
+        self.assertFalse(Waggon(repo="g/ohne", branch="x").kann["review"])
 
 
 class Abschliessen(unittest.TestCase):
@@ -398,8 +417,8 @@ class Hinweise(unittest.TestCase):
 
 # ---- Akte: Speichern, Ablehnen, kaputte Datei, Sperre
 
-def frische_akte(name):
-    w = Waggon(lokal=name)
+def frische_akte(name, branch="main"):
+    w = Waggon(repo=name, branch=branch)
     for p in [akte_datei(w)] + glob.glob(akte_datei(w) + ".kaputt-*"):
         os.remove(p) if os.path.exists(p) else None
     return w
@@ -478,14 +497,14 @@ class RoutenTest(unittest.TestCase):
 
     def test_falscher_schluessel(self):
         for methode, pfad in (("GET", "api/review"), ("POST", "api/kommentar")):
-            a = self.frage(methode, pfad, mr="projekt:x", k="falsch")
+            a = self.frage(methode, pfad, mr="x@main", k="falsch")
             self.assertEqual(a.status, 403)
             self.assertTrue(a.typ.startswith("application/json"), pfad)
 
     def test_fehler_nach_art(self):
         a = self.frage("POST", "api/kommentar", k=schluessel(), mr="kaputt")  # ungültige Kennung
         self.assertEqual((a.status, a.typ.split(";")[0]), (400, "application/json"))
-        a = self.frage("POST", "api/gespraech", k=schluessel(), mr="projekt:x", aktion="gibtsnicht")
+        a = self.frage("POST", "api/gespraech", k=schluessel(), mr="x@main", aktion="gibtsnicht")
         self.assertEqual(a.status, 400)
         self.assertIn("unbekannte Aktion", a.inhalt)
 
@@ -521,29 +540,19 @@ class FadenBranchTest(unittest.TestCase):
     """Fäden gehören zum Branch, auf dem sie entstanden; andere Branches sehen sie nur (lesend)."""
     def test_lokal(self):
         from unittest import mock
-        from merge_train.quellen import LOKAL
+        from merge_train.quellen import BRANCH
         w = frische_akte("branches")
-        with mock.patch.object(LOKAL, "branch", lambda waggon: "feature/a"):
+        with mock.patch.object(BRANCH, "branch", lambda waggon: "feature/a"):
             self.assertTrue(gespraech_aktion(w, {"aktion": "neu", "text": "auf a"})[0])
         k = faeden_von(akte_lesen(w))[0]
         self.assertEqual(k["branch"], "feature/a")
         self.assertEqual([x["id"] for x in faeden_von(akte_lesen(w), "feature/a")], [k["id"]])
         self.assertEqual(faeden_von(akte_lesen(w), "feature/b"), [])
-        with mock.patch.object(LOKAL, "branch", lambda waggon: "feature/b"):
+        with mock.patch.object(BRANCH, "branch", lambda waggon: "feature/b"):
             ok, text = gespraech_aktion(w, {"aktion": "erledigt", "id": k["id"]})
         self.assertFalse(ok)
         self.assertIn("feature/a", text)
         self.assertIsNone(faeden_von(akte_lesen(w))[0]["erledigt"])
-
-    def test_mr_alte_faeden_zum_quell_branch(self):
-        w = Waggon(host="h", projekt="g/p", iid=7)
-        with akte_bearbeiten(w) as akte:
-            akte["mr"]["source_branch"] = "feature/x"
-            akte["kommentare"].append({"id": "alt", "nachrichten": []})
-            akte["kommentare"].append({"id": "kom", "text": "Review"})
-        akte = akte_lesen(w)
-        self.assertEqual([k["id"] for k in faeden_von(akte, "feature/x")], ["alt"])
-        self.assertNotIn("branch", akte["kommentare"][1])  # Review-Kommentare bleiben ohne
 
 
 class DiskussionenTest(unittest.TestCase):
@@ -649,10 +658,10 @@ class DiskussionenTest(unittest.TestCase):
 
     def test_waggon_fertig(self):
         """Waggon fertig (grüner Rahmen), sobald in keiner Diskussion mehr du dran bist; vorher „● n dran“."""
-        from merge_train.quellen import mr_wagen
+        from merge_train.quellen import mr_wagen_fuer
         n = self.note
-        mr = Waggon(host="gitlab.example", projekt="g/fertig", iid=3)
-        wagen = lambda: next(w for w in mr_wagen(mr.id) if w["p"] == mr.id)
+        mr = mr_akte("g/fertig", 3)
+        wagen = lambda: mr_wagen_fuer(mr, akte_lesen(mr), "", 0)
         with akte_bearbeiten(mr) as akte:
             review.diskussionen_abgleichen(akte, [{"id": "x", "notes": [n(50, 5, "Frage", resolved=False)]},
                                                   {"id": "y", "notes": [n(51, 5, "Noch eine", resolved=False)]}], 1)
@@ -695,9 +704,7 @@ class AbschlussLaufTest(unittest.TestCase):
         self.vorher = review.glab, review.meta_und_entwuerfe
         self.fake = review.glab = GitLabFake()
         review.meta_und_entwuerfe = lambda mr: ({}, dict(self.fake.entwuerfe))
-        self.mr = Waggon(host="gitlab.example", projekt="g/" + self._testMethodName.replace("_", "-"), iid=1)
-        if os.path.exists(akte_datei(self.mr)):
-            os.remove(akte_datei(self.mr))
+        self.mr = mr_akte("g/" + self._testMethodName.replace("_", "-"), 1)
 
     def tearDown(self):
         review.glab, review.meta_und_entwuerfe = self.vorher
@@ -1022,9 +1029,9 @@ class AktualisierenTest(unittest.TestCase):
 
     def test_aktion(self):
         neu = self.commit(self.oben, "b"); self.g("push", "-q", "origin", "HEAD:mr", ort=self.oben)
-        mr = Waggon(host="gitlab.example", projekt="g/akt", iid=7)
-        with akte_bearbeiten(mr) as akte:
-            akte.update(klon=self.klon, meta={"source_branch": "mr", "target_branch": "mr"})
+        from merge_train.git import repo_kennung
+        mr = mr_akte("g/akt", 7, branch="mr", repo=repo_kennung(self.klon), klon=self.klon,
+                     meta={"source_branch": "mr", "target_branch": "mr"})
         from merge_train.server import aktualisieren_aktion
         d = aktualisieren_aktion(Anfrage("POST", "api/gitlab", "", {"mr": mr.id}, None))
         self.assertTrue(d["ok"] and d["neu_laden"]); self.assertIn(neu[:8], d["text"])
@@ -1040,9 +1047,9 @@ class AktualisierenTest(unittest.TestCase):
         ok, text = branch_auschecken(self.klon, "feature")
         self.assertFalse(ok); self.assertIn("nicht committete", text)
         self.g("checkout", "-q", "f", ort=self.klon)
-        mr = Waggon(host="gitlab.example", projekt="g/aus", iid=8)
-        with akte_bearbeiten(mr) as akte:
-            akte.update(klon=self.klon, meta={"source_branch": "feature", "target_branch": "mr"})
+        from merge_train.git import repo_kennung
+        mr = mr_akte("g/aus", 8, branch="feature", repo=repo_kennung(self.klon), klon=self.klon,
+                     meta={"source_branch": "feature", "target_branch": "mr"})
         self.assertIn("mr → feature ausgecheckt", mr_auschecken(mr))
         self.assertEqual(self.g("rev-parse", "--abbrev-ref", "HEAD", ort=self.klon), "feature")
         self.assertEqual(self.g("rev-parse", "--abbrev-ref", "feature@{u}", ort=self.klon), "origin/feature")
@@ -1052,14 +1059,14 @@ class AktualisierenTest(unittest.TestCase):
         self.assertEqual(branch_auschecken(self.klon, "mr"), (True, ""))  # schon ausgecheckt
 
     def test_fehlender_branch_holt(self):
-        """mr_lokal: Quell-Branch noch nicht geholt → einmal git fetch, dann geht es."""
-        from merge_train.gitlab import mr_lokal
+        """branch_refs: Quell-Branch noch nicht geholt → einmal git fetch, dann geht es."""
+        from merge_train.git import repo_kennung
+        from merge_train.zweig import branch_refs
         self.g("switch", "-q", "-c", "spaet", ort=self.oben); neu = self.commit(self.oben, "s")
         self.g("push", "-q", "origin", "spaet", ort=self.oben)
-        mr = Waggon(host="gitlab.example", projekt="g/spaet", iid=9)
-        with akte_bearbeiten(mr) as akte:
-            akte.update(klon=self.klon)
-        _, refs = mr_lokal(mr, {"source_branch": "spaet", "target_branch": "mr"})
+        mr = mr_akte("g/spaet", 9, branch="spaet", repo=repo_kennung(self.klon), klon=self.klon,
+                     meta={"source_branch": "spaet", "target_branch": "mr"})
+        _, refs = branch_refs(mr)
         self.assertEqual(refs["head_sha"], neu)
 
     def test_schuetzt_eigenes(self):
@@ -1100,11 +1107,11 @@ class ZweigeTest(unittest.TestCase):
             self.assertEqual(q.stand_oder_fehlt(w)["marke"], "⚠ keine Basis")
             self.assertTrue(q.projekt_einstellung("demo")["ohne_basis"])
             self.assertTrue(q.projekt_einstellen("demo", "main", "x")[0]); sh("switch", "-q", "x"); sh("branch", "-qD", "neu")
-            self.assertTrue(Waggon(lokal="demo").kann["fertig"])
+            self.assertTrue(Waggon(repo="demo", branch="x").kann["fertig"])
             d = q.projekt_einstellung("demo")
             self.assertEqual((d["von"], d["bis"], d["gewaehlt"], sorted(d["lokal"])), ("main", "x", True, ["main", "x"]))
             self.assertTrue(q.projekt_einstellen("demo", "main", "arbeitsstand")[0])
-            self.assertFalse(Waggon(lokal="demo").kann["fertig"])  # arbeitsstand: kein „fertig“
+            self.assertFalse(Waggon(repo="demo", branch="x").kann["fertig"])  # arbeitsstand: kein „fertig“
             e.KONF["zweige"] = {"demo": {"von": "main", "bis": "x"}}
             self.assertEqual(zweige_standard("demo"), ("main", "x"))
             self.assertTrue(q.projekt_einstellen("demo", "", "")[0])  # zurück zum Standard
@@ -1153,9 +1160,9 @@ class ZweigeTest(unittest.TestCase):
         try:
             g.PROJEKTE_LISTE[:] = e.PROJEKTE_LISTE[:] = [w]
             e.KONF.update(von="reviewed", bis="claude", zweige={})
-            wg = frische_akte("wipdemo")
+            wg = frische_akte("wipdemo", "claude")
             kopf = sh("rev-parse", "claude").strip()
-            st = q.LOKAL.seite(wg)[1]
+            st = q.BRANCH.seite(wg)[1]
             self.assertEqual(sorted(f["neu"] for f in st["dateien"]), ["a", "b", "d"])
             self.assertFalse(q.abgeben("wipdemo", kopf, st)[0])  # nichts abgehakt
             abhaken(wg, st, "a"); abhaken(wg, st, "b")
@@ -1169,7 +1176,7 @@ class ZweigeTest(unittest.TestCase):
             wagen = q.lokal_wagen([g.statistik(w)])
             self.assertTrue(wagen[0]["abgegeben"])
             self.assertNotIn("abgehakt", akte_lesen(wg))
-            st = q.LOKAL.seite(wg)[1]
+            st = q.BRANCH.seite(wg)[1]
             self.assertEqual([f["neu"] for f in st["dateien"]], ["d"])
             abhaken(wg, st, "d")
             ok, text = q.abgeben("wipdemo", kopf, st)  # alles abgegeben: wie fertig
@@ -1188,9 +1195,9 @@ class ZweigeTest(unittest.TestCase):
 
 
 class KlonSuchenTest(unittest.TestCase):
-    """klon_ordner: <ordner>/<projekt> zählt nur, wenn origin auf genau dieses Projekt zeigt."""
+    """klon_ordner: <ordner>/<projekt> zählt nur, wenn origin auf genau dieses Repo zeigt."""
     def test_finden(self):
-        from merge_train import gitlab
+        from merge_train import git
         from merge_train.einstellungen import KONF
         d = tempfile.mkdtemp(dir=T)
         for name, url in (("metrics-client", "git@gitlab.example:Gruppe/Metrics-Client.git"),
@@ -1200,11 +1207,10 @@ class KlonSuchenTest(unittest.TestCase):
         alt = KONF["klon_ordner"]
         try:
             KONF["klon_ordner"] = d  # ein Eintrag statt Liste geht auch
-            self.assertEqual(gitlab.klon_suchen("gruppe/metrics-client"), [f"{d}/metrics-client"])
-            self.assertEqual(gitlab.klon_suchen("gruppe/fremd"), [])  # gleicher Name, anderes Projekt
-            self.assertEqual(gitlab.klon_suchen("gruppe/gibts-nicht"), [])
-            mr = Waggon(host="gitlab.example", projekt="gruppe/metrics-client", iid=3)
-            self.assertIn(f"{d}/metrics-client", gitlab.lokale_klone(mr))
+            self.assertEqual(git.klon_ordner_suchen("gruppe/metrics-client"), [f"{d}/metrics-client"])
+            self.assertEqual(git.klon_ordner_suchen("gruppe/fremd"), [])  # gleicher Name, anderes Projekt
+            self.assertEqual(git.klon_ordner_suchen("gruppe/gibts-nicht"), [])
+            self.assertIn(os.path.realpath(f"{d}/metrics-client"), git.repo_klone("gruppe/metrics-client"))
         finally:
             KONF["klon_ordner"] = alt
 

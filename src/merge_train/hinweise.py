@@ -166,7 +166,7 @@ def hinweis_dateien(mr, akte):
     for muster in KONF["hinweise"]:
         for p in sorted(glob.glob(os.path.expanduser(muster))):
             p = os.path.abspath(p)
-            if p not in dateien and hinweis_passt(p, akte["mr"]):
+            if p not in dateien and hinweis_passt(p, akte.get("gitlab") or {}):
                 dateien.append(p)
     return dateien
 

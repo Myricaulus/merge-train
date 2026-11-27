@@ -40,7 +40,7 @@
   }
   setInterval(hoererTakt, 300);
   let hoererStand = {}; // Kennung → {wer, tut}
-  const kennung = w => (w.quelle && w.quelle !== 'lokal' ? w.p : 'projekt:' + w.p);
+  const kennung = w => w.p; // Kennung des Waggons (repo@branch, myrling:…, MR ohne MR-Daten: host/gruppe/projekt/42)
   function hoererSetzen() {
     document.querySelectorAll('#zug .hoerer-g').forEach(g => {
       const w = zugWagen[+g.dataset.i],
@@ -170,7 +170,7 @@
       g.addEventListener('click', e => {
         const w = zugWagen[+g.dataset.i];
         if (!w) return;
-        if (e.target.closest('.auf') || w.status === 'fehlt') return w.quelle && w.quelle !== 'lokal' ? undefined : karteOeffnen(w, g); // Karte nur lokal
+        if (e.target.closest('.auf') || w.status === 'fehlt') return w.projekt ? karteOeffnen(w, g) : undefined; // Karte: von/bis des Projekt-Ordners
         if (w.p !== waggon.projekt && (w.status === 'offen' || (w.quelle && w.quelle !== 'lokal')))
           location.href = w.datei;
       })
@@ -225,7 +225,7 @@
     karte.style.top = r.bottom + 14 + 'px';
     karte.style.left = Math.max(8, Math.min(r.left, innerWidth - karte.offsetWidth - 8)) + 'px';
     const k = karte;
-    fetch('/api/projekt?p=' + encodeURIComponent(w.p) + '&k=' + encodeURIComponent(waggon.k || ''))
+    fetch('/api/projekt?p=' + encodeURIComponent(w.projekt) + '&k=' + encodeURIComponent(waggon.k || ''))
       .then(r => r.json())
       .then(d => {
         if (karte !== k) return;
@@ -247,7 +247,7 @@
               App.melden(e.text);
               if (!e.ok) return;
               karteZu();
-              if (d.p === waggon.projekt) App.neuHolen(e.text);
+              if (d.p === waggon.ordner_projekt) App.neuHolen(e.text);
               else zugSetzen(e.wagen || zugWagen);
             })
             .catch(() => App.melden(App.serverWeg));

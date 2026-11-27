@@ -10,11 +10,13 @@ from .web import CSS, FAVICON, ICON, bild
 from .akte import akte_lesen
 from .abhaken import abhaken
 from .beobachter import neue_zeilen, seite_veraltet
-from .gitlab import GitLabFehler, mr_liste, mr_liste_holen, mr_lokal, mr_ref, mr_vollstaendig
+from .gitlab import GitLabFehler, mr_aus_kennung, mr_index, mr_liste, mr_liste_holen, mr_meta_holen, mr_ref, mr_vollstaendig, mr_waggon
 from .ansichten import ansicht_lesen
-from .seite import VERSION, mr_seite, myrling_seite, projekt_seite, seiten_teile, startseite
+from .seite import VERSION, branch_seite, myrling_seite, seiten_teile, startseite
 from .myrling import anstehend_warten, im_hintergrund_holen
-from .quellen import GITLAB, LOKAL, MYRLING, QUELLEN, abgeben, alle_wagen, fertig, mr_erstellen, mr_planen, projekt_einstellen, projekt_einstellung, quelle, schluessel_von
+from .quellen import (BRANCH, GITLAB, LOKAL, MYRLING, SCHICHTEN, abgeben, alle_wagen, fertig, mr_erstellen, mr_planen,
+                      projekt_einstellen, projekt_einstellung, quelle, schluessel_von)
+from .zweig import branch_ort, projekt_von, projekt_waggon
 from .zuhoerer import feedback_senden, horcht, kontext, prompt_lesen, prompt_vorschau, seite_lebt, session_starten, zuhoerer, zuhoerer_abmelden
 from .review import (NUR_LESEN, abschliessen, auscheck_hinweis, auschecken_versuchen, datei_nachladen, hinweis_aktion, kommentar_aktion, mr_auschecken, mr_daten_holen, mr_gitlab_holen, seiten_struktur, stand,
     vergleich_daten, zeilen_daten)
@@ -46,7 +48,7 @@ def vorbauen(repos):
         try:
             for r in repos.values():
                 if statistik(r)["dateien"]:
-                    projekt_seite(r)
+                    branch_seite(projekt_waggon(r))
         except Exception:
             pass
         finally:
@@ -188,16 +190,16 @@ def favicon(anfrage):
 
 @route("GET", re.compile(r"logo/(\w+)\.svg"), mit_schluessel=False)
 def logo(anfrage, name):
-    """Logo einer Quelle (wer = extern in den Listen)."""
-    q = next((q for q in QUELLEN if q.name == name and q.logo), None)
+    """Logo einer Schicht (wer = extern in den Listen)."""
+    q = next((q for q in SCHICHTEN if q.name == name and q.logo), None)
     return Antwort(200, bild(q.logo), "image/svg+xml") if q else NICHT_GEFUNDEN
 
 
 @route("GET", "", mit_schluessel=False)
 def start(anfrage):
-    """Start: erster offener lokaler Waggon, sonst Zug (mit MR-Feld)."""
+    """Start: erster offener Waggon eines Projekts, sonst Zug (mit MR-Feld)."""
     if LOKAL.an():
-        offen = [w for w in LOKAL.wagen() if w["status"] == "offen"]
+        offen = [w for w in BRANCH.wagen() if w.get("projekt") and w["status"] == "offen"]
         if offen:
             return weiterleitung(offen[0]["datei"])
         if not (GITLAB.an() or MYRLING.an()):
@@ -215,16 +217,35 @@ def mr_oeffnen(anfrage):
     return weiterleitung(mr_vollstaendig(mr_ref(anfrage.daten.get("u", ""))).url)
 
 
+@route("GET", re.compile(r"b/(.*)", re.S), mit_schluessel=False, quelle=BRANCH)
+def branch_seite_liefern(anfrage, kennung):
+    """Seite eines Branches (mit MR-Schicht, sobald MR-Daten geholt sind). Erster Besuch mit MR: Quell-Branch im
+    Haupt-Klon auschecken (im Hintergrund)."""
+    try:
+        w = Waggon.aus_id(kennung)
+        if not w.branch:
+            return weiterleitung(w.url)
+        datei, _ = branch_seite(w, ansicht=anfrage.seiten_ansicht)
+    except Fehler as e:  # kein Klon, Branch fehlt …: Güterbahnhof mit dem Grund
+        return Antwort(200, startseite(str(e), kennung))
+    if w.id != kennung:  # Kennung kanonisch machen
+        return weiterleitung(w.url + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
+    if akte_lesen(w).get("gitlab"):
+        im_hintergrund(w, mr_auschecken)  # Seite nicht aufhalten; Meldung kommt über api/stand
+    elif not anfrage.seiten_ansicht and LOKAL.an():
+        vorbauen({r: r for r in finde_repos()})  # startet im Hintergrund, die Seite geht trotzdem sofort raus
+    return Antwort(200, open(datei, "rb").read())
+
+
 @route("GET", re.compile(r"mr/(.*)", re.S), mit_schluessel=False, quelle=GITLAB)
 def mr_seite_liefern(anfrage, kennung):
-    try:
-        datei, _, mr = mr_seite(Waggon.aus_id(kennung), ansicht=anfrage.seiten_ansicht)
-    except Fehler as e:  # keine MR-Daten / kein Klon: Güterbahnhof anbieten
-        return Antwort(200, startseite(str(e), kennung))
-    if mr.id != kennung:  # Kennung kanonisch machen
-        return weiterleitung("/mr/" + mr.id + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
-    im_hintergrund(mr, mr_auschecken)  # Seite nicht aufhalten; Meldung kommt über api/stand
-    return Antwort(200, open(datei, "rb").read())
+    """Alte MR-Seite: weiter zum Branch, der den MR trägt; ohne MR-Daten der Güterbahnhof mit „↻ MR-Daten“."""
+    mr = mr_aus_kennung(kennung)
+    w = mr and mr_waggon(mr)
+    if w:
+        return weiterleitung(w.url + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
+    return Antwort(200, startseite(f"Für {mr.name if mr else kennung} gibt es noch keine MR-Daten – „↻ MR-Daten“ im "
+                                   "Güterbahnhof holt sie", kennung))
 
 
 @route("GET", re.compile(r"myrling/(.*)", re.S), mit_schluessel=False, quelle=MYRLING)
@@ -240,13 +261,11 @@ def myrling_seite_liefern(anfrage, skript):
 
 @route("GET", re.compile(r".*\.html", re.S), mit_schluessel=False, quelle=LOKAL)
 def projekt_seite_liefern(anfrage):
-    repos = {dateiname(projektname(r)): r for r in finde_repos()}
+    """Alte Projekt-Seite: weiter zum Branch, den das Projekt gerade zeigt."""
+    repos = {dateiname(projektname(r)): r for r in finde_repos(alle=True)}
     if anfrage.pfad not in repos:
         return NICHT_GEFUNDEN
-    datei, _ = projekt_seite(repos[anfrage.pfad], ansicht=anfrage.seiten_ansicht)
-    if not anfrage.seiten_ansicht:
-        vorbauen(repos)  # startet im Hintergrund, die Seite geht trotzdem sofort raus
-    return Antwort(200, open(datei, "rb").read())
+    return weiterleitung(projekt_waggon(repos[anfrage.pfad]).url + (f"?{anfrage.abfrage}" if anfrage.abfrage else ""))
 
 
 # ---- GET: Daten der Seite
@@ -296,7 +315,7 @@ def api_stand(anfrage, waggon):
     seite_lebt(waggon)
     akte = akte_lesen(waggon)
     return {"stand": stand(waggon, akte), "meldung": MELDUNGEN.pop(waggon.id, None), "version": VERSION,
-            "server": server_stand(), "auschecken": auscheck_hinweis(waggon, akte) if waggon.ist_mr else None,
+            "server": server_stand(), "auschecken": auscheck_hinweis(waggon, akte) if waggon.branch else None,
             "veraltet": bool(anfrage.seite) and not anfrage.ansicht and seite_veraltet(waggon, anfrage.seite, akte)}
 
 
@@ -475,11 +494,12 @@ def api_abschliessen(anfrage, waggon):
 @route("POST", "fertig")
 def api_fertig(anfrage):
     d = anfrage.daten
-    waggon = schluessel_von(d.get("mr") or Waggon(lokal=str(d.get("projekt", ""))).id)
+    waggon = schluessel_von(d.get("mr") or "projekt:" + str(d.get("projekt", "")))
     if not waggon.kann["fertig"]:
         return NICHT_GEFUNDEN
     sha = str(d.get("sha", ""))  # teil: „abgeben“ – nur die abgehakten Dateien (Teilstand <von>-wip)
-    ok, text = abgeben(waggon.lokal, sha, haken_struktur(waggon, anfrage.seite)) if d.get("teil") else fertig(waggon.lokal, sha)
+    projekt = projekt_von(waggon)
+    ok, text = abgeben(projekt, sha, haken_struktur(waggon, anfrage.seite)) if d.get("teil") else fertig(projekt, sha)
     return json_antwort(200 if ok else 400, {"ok": ok, "text": text, "wagen": alle_wagen(waggon.id)})
 
 
@@ -507,11 +527,12 @@ def mr_liste_aktion(anfrage):
             mrs.append(mr_ref(it.get("web_url", "")))
         except Fehler:
             pass
-    name = anlass()
+    name, index = anlass(), mr_index()
     def holen(mr):
         ANLASS.name = name
         try:
-            return mr, mr_gitlab_holen(mr), None
+            w = mr_waggon(mr, index) or mr_meta_holen(mr)[0]  # neu: erst die MR-Daten, sie nennen den Branch
+            return mr, mr_gitlab_holen(w), None
         except Fehler as e:
             return mr, [], e
     with ThreadPoolExecutor(4) as ex:
@@ -524,14 +545,19 @@ def mr_liste_aktion(anfrage):
 
 
 def mr_daten_aktion(anfrage):
-    return mr_daten_holen(Waggon.aus_id(anfrage.daten.get("mr", "")))
+    """„↻ MR-Daten“: auf der Seite eines Branches mit MR-Schicht dessen MR; auf dem Güterbahnhof eines MR ohne Daten
+    (Kennung des MR) holt es sie zum ersten Mal, die Seite geht dann zum Branch (url)."""
+    kennung = str(anfrage.daten.get("mr", ""))
+    mr = mr_aus_kennung(kennung)
+    w = (mr and (mr_waggon(mr) or mr_meta_holen(mr)[0])) or Waggon.aus_id(kennung)
+    return dict(mr_daten_holen(w), url=w.url)
 
 
 def branch_aktion(anfrage, tun):
     """Knopf an der Stand-Meldung eines MR: tun(Klon, meta) am Quell-Branch, dann die MR-Daten holen."""
     mr = Waggon.aus_id(anfrage.daten.get("mr", ""))
     meta = akte_lesen(mr).get("meta") or {}
-    ordner, _ = mr_lokal(mr, meta)
+    ordner, _ = branch_ort(mr)
     text = tun(ordner, meta)
     try:  # der Branch ist schon geändert: scheitert GitLab, trotzdem melden und neu laden
         text += " · " + mr_daten_holen(mr)["text"]
@@ -556,11 +582,14 @@ def pushen_aktion(anfrage):
 
 
 def lokales_projekt(anfrage):
-    """Projektname des lokalen Waggons, von dessen Seite die Anfrage kommt (sonst Fehler)."""
+    """Projekt (Ordner) des Branches ohne MR, von dessen Seite die Anfrage kommt (sonst Fehler)."""
     waggon = schluessel_von(anfrage.daten.get("mr", ""))
-    if waggon.art is not LOKAL.art:
-        raise Ungueltig("„MR erstellen“ gibt es nur auf der Seite eines lokalen Waggons")
-    return waggon.lokal
+    if not waggon.branch or waggon.kann["review"]:
+        raise Ungueltig("„MR erstellen“ gibt es nur auf der Seite eines Branches ohne MR")
+    projekt = projekt_von(waggon)
+    if not projekt:
+        raise Fehler(f"{waggon.name}: kein Klon bekannt")
+    return projekt
 
 
 def mr_planen_aktion(anfrage):
